@@ -1,0 +1,3 @@
+[submodule "bsiCPP"]
+	path = bsiCPP
+	url = https://github.com/gguzunsjsu/bsiCPP.git
