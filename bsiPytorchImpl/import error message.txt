@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/home/psachin/Ra Stuff/bsiPytorch/bsiPytorchImpl/TEST.PY", line 2, in <module>
+    import bsi_ops
+ImportError: /home/psachin/.conda/envs/pytorch/lib/python3.10/site-packages/bsi_ops-0.0.0-py3.10-linux-x86_64.egg/bsi_ops.cpython-310-x86_64-linux-gnu.so: undefined symbol: _ZNK2at10TensorBase8data_ptrImEEPT_v
