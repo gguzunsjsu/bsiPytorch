@@ -16,7 +16,7 @@ uint64_t timeSinceEpoch() {
     return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
 }
 
-long dot_product(torch::Tensor m, torch::Tensor n) {
+torch::Tensor dot_product(torch::Tensor m, torch::Tensor n) {
     std::vector<long> m_v(m.data_ptr<long>(), m.data_ptr<long>() + m.numel());
     std::vector<long> n_v(n.data_ptr<long>(), n.data_ptr<long>() + n.numel());
 
@@ -32,8 +32,10 @@ long dot_product(torch::Tensor m, torch::Tensor n) {
     bsi_2->setFirstSliceFlag(true);
     bsi_2->setLastSliceFlag(true);
 
+    torch::Tensor result = torch::zeros({1}, torch::kInt64);
     BsiAttribute<uint64_t>* res = bsi_1->multiplyBSI(bsi_2);
-    return res->sumOfBsi();
+    result[0] = res->sumOfBsi();
+    return result;
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
