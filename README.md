@@ -46,7 +46,7 @@ python bsiPytorch/model_test/iris_test.py
 
 iris_test.py loads the iris dataset and trains a simple SVC model. If we open the file we can see we can change which dot product function is being used and we can build our own dot product to replace the one available.
 
-
+Copied from [here](https://github.com/mtrencseni/pytorch-playground/blob/master/03-svm/SVM%20with%20Pytorch.ipynb)
 # Current bugs/issues in bsi_ops
 1. Tensor is converted to bsi by converting it to a vector first, a direct conversion would be faster.
 2. Not yet implemented a method to convert a tensor with "float" or "double" to bsi, we can run iris test properly with that.
