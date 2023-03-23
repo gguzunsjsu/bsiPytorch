@@ -4,8 +4,17 @@
 #include <torch/extension.h>
 
 #include <vector>
-// #include <iostream>
 
+// for printing and timing related reasons
+#include <iostream>
+#include <chrono>
+
+// function to return time since epoch
+// for measuring how long certain tasks take
+uint64_t timeSinceEpoch() {
+    using namespace std::chrono;
+    return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+}
 
 long dot_product(torch::Tensor m, torch::Tensor n) {
     std::vector<long> m_v(m.data_ptr<long>(), m.data_ptr<long>() + m.numel());
