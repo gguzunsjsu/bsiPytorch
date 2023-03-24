@@ -37,7 +37,7 @@ torch::Tensor dot_product(torch::Tensor m, torch::Tensor n) {
     }
     u_int64_t end = timeSinceEpoch();
 
-    std::cout << "[C++] Time Taken to convert tensors to vectors: " << end - start << "ns" << std::endl;
+    // std::cout << "[C++] Time Taken to convert tensors to vectors: " << end - start << "ns" << std::endl;
 
     BsiUnsigned<uint64_t> ubsi;
     BsiAttribute<uint64_t>* bsi_1;

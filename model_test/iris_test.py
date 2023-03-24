@@ -24,7 +24,7 @@ def load_iris_and_train_model(dot_product_function=torch.dot):
     b = torch.autograd.Variable(torch.rand(1), requires_grad=True)
 
     step_size = 1e-3
-    num_epochs = 5000
+    num_epochs = 5  #5000
     minibatch_size = 20
 
     start = time.time()
@@ -37,7 +37,9 @@ def load_iris_and_train_model(dot_product_function=torch.dot):
         for i in range(len(inds)):
             L = max(0, 1 - y_train[inds[i]] * (dot_product_function(w, torch.Tensor(X_train[inds[i]])) -b)) ** 2
             if L != 0:
+                #print(f'Before: w.data: {w.data}, w.grad.data: {w.grad.data}, b.data: {b.data}, b.grad.data: {b.grad.data}')
                 L.backward()
+                print(f'After: w.data: {w.data}, w.grad.data: {w.grad.data}, b.data: {b.data}, b.grad.data: {b.grad.data}')
                 w.data -= step_size * w.grad.data
                 b.data -= step_size * b.grad.data
                 w.grad.data.zero_()
