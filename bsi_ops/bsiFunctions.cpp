@@ -13,12 +13,31 @@
 // for measuring how long certain tasks take
 uint64_t timeSinceEpoch() {
     using namespace std::chrono;
-    return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    return duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
 }
 
 torch::Tensor dot_product(torch::Tensor m, torch::Tensor n) {
-    std::vector<long> m_v(m.data_ptr<long>(), m.data_ptr<long>() + m.numel());
-    std::vector<long> n_v(n.data_ptr<long>(), n.data_ptr<long>() + n.numel());
+    long CONVERSION_FACTOR = 10000000;  // 10^7
+    uint64_t start = timeSinceEpoch();
+
+    // to be used if we are converting from tensor long to long
+    // std::vector<long> m_v(m.data_ptr<long>(), m.data_ptr<long>() + m.numel());
+    // std::vector<long> n_v(n.data_ptr<long>(), n.data_ptr<long>() + n.numel());
+
+    //convert float tensor to vector float
+    std::vector<long> m_v = {};
+    std::vector<long> n_v = {};
+    auto m_a = m.accessor<float, 1>();
+    auto n_a = n.accessor<float, 1>();
+    for(auto i=0; i<m_a.size(0); i++) {
+        m_v.push_back(static_cast<long>(m_a[i] * CONVERSION_FACTOR));
+    }
+    for(auto i=0; i<n_a.size(0); i++) {
+        n_v.push_back(static_cast<long>(n_a[i] * CONVERSION_FACTOR));
+    }
+    u_int64_t end = timeSinceEpoch();
+
+    std::cout << "[C++] Time Taken to convert tensors to vectors: " << end - start << "ns" << std::endl;
 
     BsiUnsigned<uint64_t> ubsi;
     BsiAttribute<uint64_t>* bsi_1;
@@ -32,9 +51,12 @@ torch::Tensor dot_product(torch::Tensor m, torch::Tensor n) {
     bsi_2->setFirstSliceFlag(true);
     bsi_2->setLastSliceFlag(true);
 
-    torch::Tensor result = torch::zeros({1}, torch::kInt64);
+    torch::Tensor result = torch::zeros({1}, torch::kFloat64);
     BsiAttribute<uint64_t>* res = bsi_1->multiplyBSI(bsi_2);
-    result[0] = res->sumOfBsi();
+
+    // divide by conversion factor twice because mutiplication
+    result[0] = 1.0 * res->sumOfBsi() / CONVERSION_FACTOR;
+    result[0] = result[0] / CONVERSION_FACTOR;
     return result;
 }
 

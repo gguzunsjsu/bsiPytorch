@@ -49,4 +49,4 @@ iris_test.py loads the iris dataset and trains a simple SVC model. If we open th
 Copied from [here](https://github.com/mtrencseni/pytorch-playground/blob/master/03-svm/SVM%20with%20Pytorch.ipynb)
 # Current bugs/issues in bsi_ops
 1. Tensor is converted to bsi by converting it to a vector first, a direct conversion would be faster.
-2. Not yet implemented a method to convert a tensor with "float" or "double" to bsi, we can run iris test properly with that.
+2. While we have floating point supported by the dot product, currently it does not respect something about autograd and it needs to  
