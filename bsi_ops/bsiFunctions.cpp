@@ -51,13 +51,13 @@ torch::Tensor dot_product(torch::Tensor m, torch::Tensor n) {
     bsi_2->setFirstSliceFlag(true);
     bsi_2->setLastSliceFlag(true);
 
-    torch::Tensor result = torch::zeros({1}, torch::kFloat64);
+    // torch::Tensor result = torch::zeros({1}, torch::kFloat64);
     BsiAttribute<uint64_t>* res = bsi_1->multiplyBSI(bsi_2);
 
     // divide by conversion factor twice because mutiplication
-    result[0] = 1.0 * res->sumOfBsi() / CONVERSION_FACTOR;
-    result[0] = result[0] / CONVERSION_FACTOR;
-    return result;
+    float result = 1.0 * res->sumOfBsi() / CONVERSION_FACTOR;
+    result = result / CONVERSION_FACTOR;
+    return torch::tensor(result);
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
