@@ -1,5 +1,7 @@
+import torch
 import numpy as np
 from scipy import signal
+from .matrix_multiplication import matrix_multiplication
 
 # Base class
 class Layer:
@@ -38,21 +40,23 @@ class ActivationLayer(Layer):
 class FCLayer(Layer):
     # input_size = number of input neurons
     # output_size = number of output neurons
-    def __init__(self, input_size, output_size, dot_function=np.dot):
-        self.weights = np.random.rand(input_size, output_size) - 0.5
-        self.bias = np.random.rand(1, output_size) - 0.5
+    def __init__(self, input_size, output_size, dot_function=torch.dot):
+        self.weights = torch.randn(input_size, output_size) - 0.5
+        self.bias = torch.randn(1, output_size) - 0.5
         self.dot_function = dot_function
 
     # returns output for a given input
     def forward_propagation(self, input_data):
         self.input = input_data
-        self.output = self.dot_function(self.input, self.weights) + self.bias
+        self.output = matrix_multiplication(self.input, self.weights, self.dot_function) + self.bias
+        print('did a thing')
         return self.output
 
     # computes dE/dW, dE/dB for a given output_error=dE/dY. Returns input_error=dE/dX.
     def backward_propagation(self, output_error, learning_rate):
-        input_error = self.dot_function(output_error, self.weights.T)
-        weights_error = self.dot_function(self.input.T, output_error)
+        input_error = matrix_multiplication(output_error, self.weights.T, self.dot_function)
+        weights_error = matrix_multiplication(self.input.T, output_error, self.dot_function)
+        print('erturned a thing')
         # dBias = output_error
 
         # update parameters

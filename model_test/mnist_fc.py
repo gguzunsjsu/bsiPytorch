@@ -10,6 +10,8 @@ from personal_net.losses import mse, mse_prime
 from keras.datasets import mnist
 from keras.utils import np_utils
 
+import time
+
 # load MNIST from server
 (x_train, y_train), (x_test, y_test) = mnist.load_data()
 
@@ -28,24 +30,49 @@ x_test = x_test.astype('float32')
 x_test /= 255
 y_test = np_utils.to_categorical(y_test)
 
-# Network
-net = Network()
-net.add(FCLayer(28*28, 100))                # input_shape=(1, 28*28)    ;   output_shape=(1, 100)
-net.add(ActivationLayer(tanh, tanh_prime))
-net.add(FCLayer(100, 50))                   # input_shape=(1, 100)      ;   output_shape=(1, 50)
-net.add(ActivationLayer(tanh, tanh_prime))
-net.add(FCLayer(50, 10))                    # input_shape=(1, 50)       ;   output_shape=(1, 10)
-net.add(ActivationLayer(tanh, tanh_prime))
+# convert everything to a tensor
+x_train = torch.tensor(x_train, dtype=torch.float32)
+x_test = torch.tensor(x_test, dtype=torch.float32)
+y_train = torch.tensor(y_train, dtype=torch.float32)
+y_test = torch.tensor(y_test, dtype=torch.float32)
 
-# train on 1000 samples
-# as we didn't implemented mini-batch GD, training will be pretty slow if we update at each iteration on 60000 samples...
-net.use(mse, mse_prime)
-net.fit(x_train[0:1000], y_train[0:1000], epochs=35, learning_rate=0.1)
+def train_and_time_network(dot_product_function=torch.dot):
+    start = time.time()
 
-# test on 3 samples
-out = net.predict(x_test[0:3])
-print("\n")
-print("predicted values : ")
-print(out, end="\n")
-print("true values : ")
-print(y_test[0:3])
+    # Network
+    net = Network()
+    net.add(FCLayer(28*28, 100, dot_function=dot_product_function))                # input_shape=(1, 28*28)    ;   output_shape=(1, 100)
+    net.add(ActivationLayer(tanh, tanh_prime))
+    net.add(FCLayer(100, 50, dot_function=dot_product_function))                   # input_shape=(1, 100)      ;   output_shape=(1, 50)
+    net.add(ActivationLayer(tanh, tanh_prime))
+    net.add(FCLayer(50, 10, dot_function=dot_product_function))                    # input_shape=(1, 50)       ;   output_shape=(1, 10)
+    net.add(ActivationLayer(tanh, tanh_prime))
+
+    # train on 1000 samples
+    # as we didn't implemented mini-batch GD, training will be pretty slow if we update at each iteration on 60000 samples...
+    net.use(mse, mse_prime)
+    net.fit(x_train[0:500], y_train[0:500], epochs=35, learning_rate=0.1)
+
+    # test on 3 samples
+    out = net.predict(x_test[0:3])
+    print("\n")
+    print("predicted values : ")
+    print(out, end="\n")
+    print("true values : ")
+    print(y_test[0:3])
+
+    end = time.time()
+
+    return end - start
+
+def main():
+    dot_product_functions = [torch.dot, bsi_ops.dot_product][::-1]
+    dot_product_function_names = ['torch.dot', 'bsi_osp.dot_product'][::-1]
+
+    for func, func_name in zip(dot_product_functions, dot_product_function_names):
+        time_taken = train_and_time_network(func)
+
+        print(f"{func_name} took {time_taken} amount of time")
+
+
+main()

@@ -29,6 +29,9 @@ torch::Tensor dot_product(torch::Tensor m, torch::Tensor n) {
     std::vector<long> n_v = {};
     auto m_a = m.accessor<float, 1>();
     auto n_a = n.accessor<float, 1>();
+
+    // std::cout << "[C++]" << "Got tensors of size " << m_a.size(0) << " and " << n_a.size(0) << std::endl;
+
     for(auto i=0; i<m_a.size(0); i++) {
         m_v.push_back(static_cast<long>(m_a[i] * CONVERSION_FACTOR));
     }
@@ -37,6 +40,7 @@ torch::Tensor dot_product(torch::Tensor m, torch::Tensor n) {
     }
     u_int64_t end = timeSinceEpoch();
 
+    // std::cout << "[C++] Converted tensors to vectors" << std::endl;
     // std::cout << "[C++] Time Taken to convert tensors to vectors: " << end - start << "ns" << std::endl;
 
     BsiUnsigned<uint64_t> ubsi;
@@ -57,6 +61,12 @@ torch::Tensor dot_product(torch::Tensor m, torch::Tensor n) {
     // divide by conversion factor twice because mutiplication
     float result = 1.0 * res->sumOfBsi() / CONVERSION_FACTOR;
     result = result / CONVERSION_FACTOR;
+
+    // std::cout << "[C++] Operation complete" << std::endl;
+
+    delete bsi_1;
+    delete bsi_2;
+
     return torch::tensor(result);
 }
 
