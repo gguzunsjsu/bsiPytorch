@@ -66,8 +66,8 @@ def train_and_time_network(dot_product_function=torch.dot):
     return end - start
 
 def main():
-    dot_product_functions = [torch.dot, bsi_ops.dot_product][::-1]
-    dot_product_function_names = ['torch.dot', 'bsi_osp.dot_product'][::-1]
+    dot_product_functions = [torch.dot, bsi_ops.dot_product]
+    dot_product_function_names = ['torch.dot', 'bsi_osp.dot_product']
 
     for func, func_name in zip(dot_product_functions, dot_product_function_names):
         time_taken = train_and_time_network(func)
