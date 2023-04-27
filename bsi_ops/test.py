@@ -3,7 +3,12 @@ import bsi_ops
 
 print('import works')  # just to verify against import errors
 
-TENSOR_SIZE = 300
+# small test 
+m = torch.tensor([1,2,3], dtype=torch.float32)
+n = torch.tensor([4,5,6], dtype=torch.float32)
+
+print('small stuff:: bsi:', bsi_ops.dot_product(m,n), 'torch.dot:', torch.dot(m, n))
+
 m = torch.tensor([0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
         0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
         0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
@@ -251,5 +256,4 @@ n = torch.tensor([-7.3152e-01,  1.9651e-01, -2.9938e-02, -4.2841e-01, -1.0970e+0
         -7.9964e-01, -1.9872e-03, -8.3338e-01, -2.1845e-01],
         dtype=torch.float32)
 res = bsi_ops.dot_product(m, n)
-print('bsi:',res,'normal:',torch.dot(m, n))
-print(res == torch.dot(m, n))
+print('big stuff::: bsi:',res,'normal:',torch.dot(m, n))
