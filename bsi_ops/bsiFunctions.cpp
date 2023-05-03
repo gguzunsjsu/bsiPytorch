@@ -17,7 +17,9 @@ uint64_t timeSinceEpoch() {
 }
 
 torch::Tensor dot_product(torch::Tensor m, torch::Tensor n) {
+    // long CONVERSION_FACTOR = 1000;  // 10^4
     long CONVERSION_FACTOR = 10000000;  // 10^7
+
     uint64_t start = timeSinceEpoch();
 
     // to be used if we are converting from tensor long to long
@@ -54,6 +56,11 @@ torch::Tensor dot_product(torch::Tensor m, torch::Tensor n) {
     bsi_2->setPartitionID(0);
     bsi_2->setFirstSliceFlag(true);
     bsi_2->setLastSliceFlag(true);
+
+    std::cout << "Printing out the bsi vector arrays (x 10^7 for conversion factor)" << std::endl;
+    for(int i=0; i<m_a.size(0); i++) {
+        std::cout << bsi_1->getValue(i) << " " << bsi_2->getValue(i) << std::endl;
+    }
 
     // torch::Tensor result = torch::zeros({1}, torch::kFloat64);
     BsiAttribute<uint64_t>* res = bsi_1->multiplyBSI(bsi_2);
