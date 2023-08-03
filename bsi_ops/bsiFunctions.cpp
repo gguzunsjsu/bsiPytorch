@@ -17,8 +17,8 @@ uint64_t timeSinceEpoch() {
 }
 
 torch::Tensor dot_product(torch::Tensor m, torch::Tensor n) {
-    // long CONVERSION_FACTOR = 1000;  // 10^4
-    long CONVERSION_FACTOR = 10000000;  // 10^7
+    long CONVERSION_FACTOR = 1000;  // 10^4
+//    long CONVERSION_FACTOR = 10000000;  // 10^7
 
     uint64_t start = timeSinceEpoch();
 
@@ -32,7 +32,7 @@ torch::Tensor dot_product(torch::Tensor m, torch::Tensor n) {
     auto m_a = m.accessor<float, 1>();
     auto n_a = n.accessor<float, 1>();
 
-    // std::cout << "[C++]" << "Got tensors of size " << m_a.size(0) << " and " << n_a.size(0) << std::endl;
+    std::cout << "[C++]" << "Got tensors of size " << m_a.size(0) << " and " << n_a.size(0) << std::endl;
 
     for(auto i=0; i<m_a.size(0); i++) {
         m_v.push_back(static_cast<long>(m_a[i] * CONVERSION_FACTOR));
@@ -58,16 +58,21 @@ torch::Tensor dot_product(torch::Tensor m, torch::Tensor n) {
     bsi_2->setLastSliceFlag(true);
 
     std::cout << "Printing out the bsi vector arrays (x 10^7 for conversion factor)" << std::endl;
-    for(int i=0; i<m_a.size(0); i++) {
-        std::cout << bsi_1->getValue(i) << " " << bsi_2->getValue(i) << std::endl;
-    }
+//    for(int i=0; i<m_a.size(0); i++) {
+////        std::cout << bsi_1->getValue(i) << " ::  " << bsi_2->getValue(i) << std::endl;
+//        std::cout << bsi_1->getValue(i) << std::endl;
+//
+//    }
+    std::cout << "Printing bsi vector done" << std::endl;
 
     // torch::Tensor result = torch::zeros({1}, torch::kFloat64);
-    BsiAttribute<uint64_t>* res = bsi_1->multiplyBSI(bsi_2);
-
+//    BsiAttribute<uint64_t>* res = bsi_1->multiplyBSI(bsi_2);
+    std::cout <<"Starting dot product"<<std:endl;
+    long res = bsi_1->dot(bsi_2);
+    std::cout <<"Completed dot product"<<std:endl;
     // divide by conversion factor twice because mutiplication
-    float result = 1.0 * res->sumOfBsi() / CONVERSION_FACTOR;
-    result = result / CONVERSION_FACTOR;
+//    float result = 1.0 * res->sumOfBsi() / CONVERSION_FACTOR;
+    result = res / CONVERSION_FACTOR;
 
     // std::cout << "[C++] Operation complete" << std::endl;
 
@@ -78,7 +83,8 @@ torch::Tensor dot_product(torch::Tensor m, torch::Tensor n) {
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-   m.def("dot_product", &dot_product, "Dot product using BSI (Non-CUDA)");
+m.def("dot_product", &dot_product, "Dot product using BSI (Non-CUDA)");
 }
+
 
 

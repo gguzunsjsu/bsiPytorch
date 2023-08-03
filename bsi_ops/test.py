@@ -7,7 +7,7 @@ print('import works')  # just to verify against import errors
 m = torch.tensor([1,2,3], dtype=torch.float32)
 n = torch.tensor([4,5,6], dtype=torch.float32)
 
-print('small stuff:: bsi:', bsi_ops.dot_product(m,n), 'torch.dot:', torch.dot(m, n))
+print('\nsmall stuff:: bsi:', bsi_ops.dot_product(m,n), 'torch.dot:', torch.dot(m, n))
 
 m = torch.tensor([0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
         0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
