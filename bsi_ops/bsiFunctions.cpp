@@ -17,7 +17,7 @@ uint64_t timeSinceEpoch() {
 }
 
 torch::Tensor dot_product(torch::Tensor m, torch::Tensor n) {
-    long CONVERSION_FACTOR = 1000;  // 10^4
+    long CONVERSION_FACTOR = 1000;  // 10^3
 //    long CONVERSION_FACTOR = 10000000;  // 10^7
 
     uint64_t start = timeSinceEpoch();
@@ -31,14 +31,18 @@ torch::Tensor dot_product(torch::Tensor m, torch::Tensor n) {
     std::vector<long> n_v = {};
     auto m_a = m.accessor<float, 1>();
     auto n_a = n.accessor<float, 1>();
+//    auto m_a = m.accessor<double, 1>();
+//    auto n_a = n.accessor<double, 1>();
 
     std::cout << "[C++]" << "Got tensors of size " << m_a.size(0) << " and " << n_a.size(0) << std::endl;
 
     for(auto i=0; i<m_a.size(0); i++) {
         m_v.push_back(static_cast<long>(m_a[i] * CONVERSION_FACTOR));
+//        m_v.push_back(static_cast<long>(m_a[i]));
     }
     for(auto i=0; i<n_a.size(0); i++) {
         n_v.push_back(static_cast<long>(n_a[i] * CONVERSION_FACTOR));
+//        n_v.push_back(static_cast<long>(n_a[i]));
     }
     u_int64_t end = timeSinceEpoch();
 
@@ -57,9 +61,9 @@ torch::Tensor dot_product(torch::Tensor m, torch::Tensor n) {
     bsi_2->setFirstSliceFlag(true);
     bsi_2->setLastSliceFlag(true);
 
-    std::cout << "Printing out the bsi vector arrays (x 10^7 for conversion factor)" << std::endl;
+    std::cout << "Printing out the bsi vector arrays (x 10^3 for conversion factor)" << std::endl;
 //    for(int i=0; i<m_a.size(0); i++) {
-////        std::cout << bsi_1->getValue(i) << " ::  " << bsi_2->getValue(i) << std::endl;
+//        std::cout << bsi_1->getValue(i) << " ::  " << bsi_2->getValue(i) << std::endl;
 //        std::cout << bsi_1->getValue(i) << std::endl;
 //
 //    }
@@ -67,19 +71,27 @@ torch::Tensor dot_product(torch::Tensor m, torch::Tensor n) {
 
     // torch::Tensor result = torch::zeros({1}, torch::kFloat64);
 //    BsiAttribute<uint64_t>* res = bsi_1->multiplyBSI(bsi_2);
-    std::cout <<"Starting dot product"<<std:endl;
-    long res = bsi_1->dot(bsi_2);
-    std::cout <<"Completed dot product"<<std:endl;
+//    std::cout <<"Starting dot product"<<std:endl;
+//    long res = bsi_1->dot(bsi_2);
+//    std::cout <<"Completed dot product"<<std:endl;
     // divide by conversion factor twice because mutiplication
 //    float result = 1.0 * res->sumOfBsi() / CONVERSION_FACTOR;
-    result = res / CONVERSION_FACTOR;
+//    float result = res / CONVERSION_FACTOR;
 
     // std::cout << "[C++] Operation complete" << std::endl;
+    double res = bsi_1->dot(bsi_2);
+    std::cout<<"res: "<<res<<std::endl;
 
+    // divide by conversion factor twice because mutiplication
+//    float result = 1.0 * res->sumOfBsi() / CONVERSION_FACTOR;
+    double result = res/float(CONVERSION_FACTOR * CONVERSION_FACTOR);
+    std::cout<<"result after division: "<<result<<std::endl;
     delete bsi_1;
     delete bsi_2;
 
     return torch::tensor(result);
+//    return torch::tensor(res);
+
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
