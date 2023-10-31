@@ -113,3 +113,20 @@ pickle_file_path = 'weight_pairs.pkl'
 # Save the weight pairs to the pickle file
 with open(pickle_file_path, 'wb') as file:
     pickle.dump(weight_pairs, file)
+
+normalized_weight_pairs = []
+
+for input_weights, hidden_weights in weight_pairs:
+        # Normalize input weights to the range [0, 1]
+        input_weights_normalized = (input_weights - input_weights.min()) / (input_weights.max() - input_weights.min())
+
+        # Normalize hidden weights to the range [0, 1]
+        hidden_weights_normalized = (hidden_weights - hidden_weights.min()) / (hidden_weights.max() - hidden_weights.min())
+
+        normalized_weight_pairs.append((input_weights_normalized, hidden_weights_normalized))
+# Specify the file path for saving the normalized weight pairs
+pickle_file_path = 'normalized_weight_pairs.pkl'
+
+# Save the normalized weight pairs to the pickle file
+with open(pickle_file_path, 'wb') as file:
+    pickle.dump(normalized_weight_pairs, file)

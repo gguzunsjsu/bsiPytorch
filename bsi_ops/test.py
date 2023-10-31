@@ -20,6 +20,7 @@ print("Shape of the two tensors: ", m.shape)
 
 # Specify the file path from which to load the weight pairs
 pickle_file_path = 'weight_pairs.pkl'
+pickle_file_path = 'normalized_weight_pairs.pkl'
 
 # Load the weight pairs from the pickle file
 with open(pickle_file_path, 'rb') as file:
@@ -30,13 +31,13 @@ for i, (input_weights, hidden_weights) in enumerate(loaded_weight_pairs):
     max_decimal_places = 0
     print(f"Pair {i + 1}: Input Weights Shape - {input_weights.shape}, Hidden Weights Shape - {hidden_weights.shape}")
     #An attempt to calculate a good conversion factor
-    max_value = max(torch.abs(input_weights).min(), torch.abs(hidden_weights).min())
-    max_decimal_places = max(max_decimal_places, -int(torch.floor(torch.log10(max_value))))
+    #max_value = min(torch.abs(input_weights).min(), torch.abs(hidden_weights).min())
+    #max_decimal_places = max(max_decimal_places, -int(torch.floor(torch.log10(max_value))))
     # Calculate the conversion factor based on the maximum decimal places
     conversion_factor = 10.0 ** max_decimal_places
     # Try to find an optimal conversion factor
-    conversion_factor = 10000000.0
-    conversion_factor = 10000.0;
+    #conversion_factor = 10000000.0
+    conversion_factor = 1000.0;
     print(conversion_factor)
     res = bsi_ops.dot_product(input_weights, hidden_weights,conversion_factor)
-    print('LSTM input and hidden layer dot product::: bsi:',res,'normal:',torch.dot(input_weights, hidden_weights))
+    print('LSTM normalized input and hidden layer dot product::: bsi:',res,'normal:',torch.dot(input_weights, hidden_weights))
