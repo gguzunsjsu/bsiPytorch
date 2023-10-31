@@ -25,6 +25,6 @@ def get_fc_weight_row_one():
         if 'weight' in name:
             print(f'Layer: {name}, Shape: {param.shape}')
             weight_vectors[name] = param.detach().cpu().numpy()
-    print(weight_vectors["fc.weight"][1])
-    print(weight_vectors["fc.weight"][1].shape)
-    return weight_vectors["fc.weight"][1]
+    print(weight_vectors["fc.weight"][2])
+    print(weight_vectors["fc.weight"][2].shape)
+    return weight_vectors["fc.weight"][2]

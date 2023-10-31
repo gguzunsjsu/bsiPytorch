@@ -16,9 +16,10 @@ uint64_t timeSinceEpoch() {
     return duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
 }
 
-torch::Tensor dot_product(torch::Tensor m, torch::Tensor n) {
-    long CONVERSION_FACTOR = 1000;  // 10^4
+torch::Tensor dot_product(torch::Tensor m, torch::Tensor n, float conversion_factor) {
+    //long CONVERSION_FACTOR = 10000;  // 10^4
     //long CONVERSION_FACTOR = 100000000;  // 10^7
+    long CONVERSION_FACTOR = static_cast<long>(conversion_factor);
 
     uint64_t start = timeSinceEpoch();
 
