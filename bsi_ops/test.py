@@ -8,11 +8,14 @@ print('import works')  # just to verify against import errors
 m = torch.tensor([1,2,3], dtype=torch.float32)
 n = torch.tensor([4,5,6], dtype=torch.float32)
 
-print('small stuff:: bsi:', bsi_ops.dot_product(m,n), 'torch.dot:', torch.dot(m, n))
+print('small stuff:: bsi:', bsi_ops.topk(m), 'torch.dot:', torch.topk(m))
+print('small stuff:: bsi:', bsi_ops.topk(n), 'torch.dot:', torch.topk(n))
 
 #Use the tensor from resnet extracted using the script to check the result
 m = torch.tensor(get_fc_weight_row_one())
 n = torch.tensor(get_fc_weight_row_one())
 print("Shape of the two tensors: ", m.shape)
-res = bsi_ops.dot_product(m, n)
-print('resnet fc layer 1 dot product::: bsi:',res,'normal:',torch.dot(m, n))
+res = bsi_ops.topk(m)
+print('resnet fc layer 1 topk::: bsi:',res,'normal:',torch.topk(m))
+res = bsi_ops.topk(n)
+print('resnet fc layer 1 topk::: bsi:',res,'normal:',torch.topk(n))

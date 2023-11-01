@@ -16,6 +16,26 @@ uint64_t timeSinceEpoch() {
     return duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
 }
 
+torch::Tensor dot_product(torch::Tensor m) {
+    BsiSigned<uint64_t> bsi;
+    BsiAttribute<uint64_t>* bsi_1;
+    bsi_1 = bsi.buildBsiAttributeFromTensor(m, 1);
+    /*
+    std::cout << "Printing out the bsi vector arrays (x 10^3 for conversion factor)" << std::endl;
+    for(int i=0; i<m_a.size(0); i++) {
+        std::cout << bsi_1->getValue(i) << " " << bsi_2->getValue(i) << std::endl;
+    }
+    std::cout << "Printing bsi vector done" << std::endl;
+    */
+    // torch::Tensor result = torch::zeros({1}, torch::kFloat64);
+    HybridBitmap<uint64_t> res = bsi_1->topk(10);
+    std::cout<<"result: "<<result<<std::endl;
+    delete bsi_1;
+
+    return torch::tensor(result.positionsToVector());
+
+}
+
 torch::Tensor dot_product(torch::Tensor m, torch::Tensor n) {
     long CONVERSION_FACTOR = 1000;  // 10^4
     //long CONVERSION_FACTOR = 100000000;  // 10^7

@@ -16,15 +16,15 @@ def get_fc_weight_row_one():
             dummy_input = layer(dummy_input)
             data_vectors.append(dummy_input.cpu().numpy())
 
-    for i, data_vector in enumerate(data_vectors):
-        print(f"Layer {i}: Shape {data_vector.shape}")
+    #for i, data_vector in enumerate(data_vectors):
+    #    print(f"Layer {i}: Shape {data_vector.shape}")
 
     weight_vectors = {}
-    print("\nWeight Vectors (Parameters):")
+    #print("\nWeight Vectors (Parameters):")
     for name, param in model.named_parameters():
         if 'weight' in name:
-            print(f'Layer: {name}, Shape: {param.shape}')
+            #print(f'Layer: {name}, Shape: {param.shape}')
             weight_vectors[name] = param.detach().cpu().numpy()
-    print(weight_vectors["fc.weight"][1])
-    print(weight_vectors["fc.weight"][1].shape)
+    #print(weight_vectors["fc.weight"][1])
+    #print(weight_vectors["fc.weight"][1].shape)
     return weight_vectors["fc.weight"][1]
