@@ -41,3 +41,38 @@ for i, (input_weights, hidden_weights) in enumerate(loaded_weight_pairs):
     print(conversion_factor)
     res = bsi_ops.dot_product(input_weights, hidden_weights,conversion_factor)
     print('LSTM normalized input and hidden layer dot product::: bsi:',res,'normal:',torch.dot(input_weights, hidden_weights))
+
+# Load the triplets from the saved pickle file
+with open('bert_triplets.pkl', 'rb') as f:
+    triplets = pickle.load(f)
+print("BERT triplets loaded from the pickle file")
+# List to store dot products for each layer
+dot_products = []
+
+# Create a text file for saving the results
+output_text_file = 'dot_product_results.txt'
+
+
+# Iterate through each layer's triplets
+for i, triplet in enumerate(triplets, 1):
+    Q, K, V = triplet
+    # Flatten the tensors to 1D using reshape
+    Q_flat = Q.reshape(-1)
+    K_flat = K.reshape(-1)
+    V_flat = V.reshape(-1)
+
+    # Print the shape of the flattened tensors
+    print(f"Layer {i} - Q shape: {Q_flat.shape}, K shape: {K_flat.shape}, V shape: {V_flat.shape}")
+    conversion_factor = 1000.0;
+    res = bsi_ops.dot_product(Q_flat, K_flat, conversion_factor)
+    torch_res = torch.dot(Q_flat, K_flat)
+    percentage_error = (abs(res - torch_res) / res) * 100
+    print('BERT normalized Q and K dot product::: bsi:', res, 'normal:',torch_res)
+    with open(output_text_file, 'a') as text_file:
+        text_file.write(f"Layer {i} - Q shape: {Q.shape}, K shape: {K.shape}, V shape: {V.shape}\n")
+        text_file.write(f'BERT normalized Q and K dot product::: bsi: {res}, normal: {torch_res}, '
+                        f'percentage error: {percentage_error}%\n\n\n')
+        text_file.write('\n')
+print(f"Results saved to {output_text_file}")
+
+

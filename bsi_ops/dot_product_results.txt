@@ -1,0 +1,132 @@
+Layer 1 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 95846.421875, normal: 96035.1328125, percentage error: 0.19688887894153595%
+Layer 2 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 86109.4609375, normal: 86287.7578125, percentage error: 0.20705841481685638%
+Layer 3 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 84226.6171875, normal: 84403.25, percentage error: 0.20971140265464783%
+Layer 4 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 95170.6953125, normal: 95358.75, percentage error: 0.19759726524353027%
+Layer 5 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 112379.0703125, normal: 112583.2421875, percentage error: 0.18168140947818756%
+Layer 6 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 98674.4375, normal: 98865.875, percentage error: 0.1940092146396637%
+Layer 7 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 94181.390625, normal: 94369.2578125, percentage error: 0.1994737833738327%
+Layer 8 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 104543.7421875, normal: 104740.78125, percentage error: 0.18847523629665375%
+Layer 9 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 87071.375, normal: 87251.734375, percentage error: 0.20713968575000763%
+Layer 10 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 97208.8203125, normal: 97399.9765625, percentage error: 0.19664496183395386%
+Layer 11 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 96218.9375, normal: 96408.296875, percentage error: 0.19680051505565643%
+Layer 12 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 92796.5859375, normal: 92982.6640625, percentage error: 0.20052260160446167%
+Layer 1 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 95846.421875, normal: 96035.1328125, percentage error: 0.19688887894153595%
+
+
+Layer 2 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 86109.4609375, normal: 86287.7578125, percentage error: 0.20705841481685638%
+
+
+Layer 3 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 84226.6171875, normal: 84403.25, percentage error: 0.20971140265464783%
+
+
+Layer 4 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 95170.6953125, normal: 95358.75, percentage error: 0.19759726524353027%
+
+
+Layer 5 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 112379.0703125, normal: 112583.2421875, percentage error: 0.18168140947818756%
+
+
+Layer 6 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 98674.4375, normal: 98865.875, percentage error: 0.1940092146396637%
+
+
+Layer 7 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 94181.390625, normal: 94369.2578125, percentage error: 0.1994737833738327%
+
+
+Layer 8 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 104543.7421875, normal: 104740.78125, percentage error: 0.18847523629665375%
+
+
+Layer 9 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 87071.375, normal: 87251.734375, percentage error: 0.20713968575000763%
+
+
+Layer 10 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 97208.8203125, normal: 97399.9765625, percentage error: 0.19664496183395386%
+
+
+Layer 11 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 96218.9375, normal: 96408.296875, percentage error: 0.19680051505565643%
+
+
+Layer 12 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 92796.5859375, normal: 92982.6640625, percentage error: 0.20052260160446167%
+
+
+Layer 1 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 95846.421875, normal: 96035.1328125, percentage error: 0.19688887894153595%
+
+
+
+Layer 2 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 86109.4609375, normal: 86287.7578125, percentage error: 0.20705841481685638%
+
+
+
+Layer 3 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 84226.6171875, normal: 84403.25, percentage error: 0.20971140265464783%
+
+
+
+Layer 4 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 95170.6953125, normal: 95358.75, percentage error: 0.19759726524353027%
+
+
+
+Layer 5 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 112379.0703125, normal: 112583.2421875, percentage error: 0.18168140947818756%
+
+
+
+Layer 6 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 98674.4375, normal: 98865.875, percentage error: 0.1940092146396637%
+
+
+
+Layer 7 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 94181.390625, normal: 94369.2578125, percentage error: 0.1994737833738327%
+
+
+
+Layer 8 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 104543.7421875, normal: 104740.78125, percentage error: 0.18847523629665375%
+
+
+
+Layer 9 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 87071.375, normal: 87251.734375, percentage error: 0.20713968575000763%
+
+
+
+Layer 10 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 97208.8203125, normal: 97399.9765625, percentage error: 0.19664496183395386%
+
+
+
+Layer 11 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 96218.9375, normal: 96408.296875, percentage error: 0.19680051505565643%
+
+
+
+Layer 12 - Q shape: torch.Size([1, 482, 768]), K shape: torch.Size([1, 482, 768]), V shape: torch.Size([1, 482, 768])
+BERT normalized Q and K dot product::: bsi: 92796.5859375, normal: 92982.6640625, percentage error: 0.20052260160446167%
+
+
+
