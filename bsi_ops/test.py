@@ -52,26 +52,26 @@ dot_products = []
 # Create a text file for saving the results
 output_text_file = 'dot_product_results.txt'
 
+with open(output_text_file, 'w') as text_file:
+    # Iterate through each layer's triplets
+    for i, triplet in enumerate(triplets, 1):
+        Q, K, V = triplet
+        # Flatten the tensors to 1D using reshape
+        Q_flat = Q.reshape(-1)
+        K_flat = K.reshape(-1)
+        V_flat = V.reshape(-1)
 
-# Iterate through each layer's triplets
-for i, triplet in enumerate(triplets, 1):
-    Q, K, V = triplet
-    # Flatten the tensors to 1D using reshape
-    Q_flat = Q.reshape(-1)
-    K_flat = K.reshape(-1)
-    V_flat = V.reshape(-1)
+        # Print the shape of the flattened tensors
+        print(f"Layer {i} - Q shape: {Q_flat.shape}, K shape: {K_flat.shape}, V shape: {V_flat.shape}")
+        conversion_factor = 1000.0;
+        res = bsi_ops.dot_product(Q_flat, K_flat, conversion_factor)
+        torch_res = torch.dot(Q_flat, K_flat)
+        percentage_error = (abs(res - torch_res) / res) * 100
+        print('BERT normalized Q and K dot product::: bsi:', res, 'normal:',torch_res)
 
-    # Print the shape of the flattened tensors
-    print(f"Layer {i} - Q shape: {Q_flat.shape}, K shape: {K_flat.shape}, V shape: {V_flat.shape}")
-    conversion_factor = 1000.0;
-    res = bsi_ops.dot_product(Q_flat, K_flat, conversion_factor)
-    torch_res = torch.dot(Q_flat, K_flat)
-    percentage_error = (abs(res - torch_res) / res) * 100
-    print('BERT normalized Q and K dot product::: bsi:', res, 'normal:',torch_res)
-    with open(output_text_file, 'a') as text_file:
         text_file.write(f"Layer {i} - Q shape: {Q.shape}, K shape: {K.shape}, V shape: {V.shape}\n")
         text_file.write(f'BERT normalized Q and K dot product::: bsi: {res}, normal: {torch_res}, '
-                        f'percentage error: {percentage_error}%\n\n\n')
+                            f'percentage error: {percentage_error}%\n\n\n')
         text_file.write('\n')
 print(f"Results saved to {output_text_file}")
 
