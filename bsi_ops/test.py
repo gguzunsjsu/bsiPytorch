@@ -2,6 +2,7 @@ import torch
 import bsi_ops
 from extract_resnet_tensors import get_fc_weight_row_one
 import pickle
+import matplotlib.pyplot as plt
 
 print('import works')  # just to verify against import errors
 
@@ -51,7 +52,9 @@ dot_products = []
 
 # Create a text file for saving the results
 output_text_file = 'dot_product_results.txt'
-
+bsi_values = []
+normal_values = []
+percentage_error_values = []
 with open(output_text_file, 'w') as text_file:
     # Iterate through each layer's triplets
     for i, triplet in enumerate(triplets, 1):
@@ -67,6 +70,9 @@ with open(output_text_file, 'w') as text_file:
         res = bsi_ops.dot_product(Q_flat, K_flat, conversion_factor)
         torch_res = torch.dot(Q_flat, K_flat)
         percentage_error = (abs(res - torch_res) / res) * 100
+        bsi_values.append(res)
+        normal_values.append(torch_res.detach().numpy())
+        percentage_error_values.append(percentage_error.detach().numpy())
         print('BERT normalized Q and K dot product::: bsi:', res, 'normal:',torch_res)
 
         text_file.write(f"Layer {i} - Q shape: {Q.shape}, K shape: {K.shape}, V shape: {V.shape}\n")
@@ -74,5 +80,40 @@ with open(output_text_file, 'w') as text_file:
                             f'percentage error: {percentage_error}%\n\n\n')
         text_file.write('\n')
 print(f"Results saved to {output_text_file}")
+
+#Create visualization
+layer_numbers = list(range(1, 13))
+# Create subplots for bsi, normal, and percentage error
+fig, ax = plt.subplots(3, 1, figsize=(10, 12))
+
+# Plot BSI values
+ax[0].plot(layer_numbers, bsi_values, marker='o', linestyle='-', color='b')
+ax[0].set_title('BSI Values')
+ax[0].set_xlabel('Layer')
+ax[0].set_ylabel('Value')
+
+# Plot Normal values
+ax[1].plot(layer_numbers, normal_values, marker='o', linestyle='-', color='g')
+ax[1].set_title('Normal Values')
+ax[1].set_xlabel('Layer')
+ax[1].set_ylabel('Value')
+
+# Plot Percentage Error values
+ax[2].plot(layer_numbers, percentage_error_values, marker='o', linestyle='-', color='r')
+ax[2].set_title('Percentage Error')
+ax[2].set_xlabel('Layer')
+ax[2].set_ylabel('Error (%)')
+
+# Add a common x-axis label
+fig.text(0.5, 0.04, 'Layer', ha='center')
+
+# Adjust spacing between subplots
+plt.tight_layout()
+
+# Save the plot as an image (e.g., PNG)
+plt.savefig('bert_visualization.png')
+
+# Show the plot (optional)
+plt.show()
 
 
