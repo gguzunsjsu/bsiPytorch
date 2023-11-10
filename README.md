@@ -15,7 +15,7 @@ Note: we can probably skip cuda for now since we are running only cpu operations
 
 2. Clone and initialise this repo
 ```
-git clone https://github.com/raspuchin/bsiPytorch.git
+git clone https://github.com/gguzunsjsu/bsiPytorch.git
 cd bsiPytorch
 git submodule update --init --recursive
 ```
