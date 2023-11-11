@@ -16,10 +16,10 @@ uint64_t timeSinceEpoch() {
     return duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
 }
 
-torch::Tensor dot_product(torch::Tensor m) {
+torch::Tensor topKMax(torch::Tensor m, int k) {
     BsiSigned<uint64_t> bsi;
     BsiAttribute<uint64_t>* bsi_1;
-    bsi_1 = bsi.buildBsiAttributeFromTensor(m, 1);
+    bsi_1 = buildBsiAttributeFromTensor(m, 1);
     /*
     std::cout << "Printing out the bsi vector arrays (x 10^3 for conversion factor)" << std::endl;
     for(int i=0; i<m_a.size(0); i++) {
@@ -28,7 +28,7 @@ torch::Tensor dot_product(torch::Tensor m) {
     std::cout << "Printing bsi vector done" << std::endl;
     */
     // torch::Tensor result = torch::zeros({1}, torch::kFloat64);
-    HybridBitmap<uint64_t> res = bsi_1->topk(10);
+    HybridBitmap<uint64_t> res = bsi_1->topKMax(k);
     std::cout<<"result: "<<result<<std::endl;
     delete bsi_1;
 
