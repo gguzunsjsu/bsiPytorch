@@ -1,35 +1,40 @@
 #include "../bsiCPP/bsi/BsiAttribute.hpp"
+#include "../bsiCPP/bsi/hybridBitmap/hybridbitmap.h"
 #include <torch/torch.h>
+
+/*std::vector< std::vector< uword > > bringTheBits(BsiAttribute<uword>* build, const torch::Tensor& nums, int slices, int numberOfElements);
+BsiAttribute<uword>* buildBsiAttributeFromTensor(BsiAttribute<uword>* build, torch::Tensor& nums, double compressThreshold);
+*/
 /*
  Building a function to directly build bsi attribute from the PyTorch input tensor
  */
 
-template <class uword>
-BsiAttribute<uword>* BsiAttribute<uword>::buildBsiAttributeFromTensor(torch::Tensor& nums, double compressThreshold) const{
+/*template <class uword>
+BsiAttribute<uword>* buildBsiAttributeFromTensor(BsiAttribute<uword>* build, torch::Tensor& nums, double compressThreshold) {
     const int MAXLONGLENGTH = 64;
     int slices = 0;
     long min = 0;
     int numberOfElements = nums.numel();
-    std::vector<uword> signBits(numberOfElements/(bits)+1);
-    std::vector<uword> existBits(numberOfElements/(bits)+1); // keep track for non-zero values
+    std::vector<uword> signBits(numberOfElements/(build->bits)+1);
+    std::vector<uword> existBits(numberOfElements/(build->bits)+1); // keep track for non-zero values
     int countOnes = 0;
     int CountZeros = 0;
     const uword one = 1;
 
     for (int i=0; i<numberOfElements; i++){
-        int offset = i%(bits);
+        int offset = i%(build->bits);
         auto value = nums[i].item<long>(); // Extract a long value from the tensor element
         min = std::min(min, value);
         if(value < 0){
             value = -value;
-            signBits[i / (bits)] |= (one << offset); // setting sign bit
+            signBits[i / (build->bits)] |= (one << offset); // setting sign bit
             countOnes++;
         }
-        existBits[i / (bits)] |= (one << offset); // setting one at position
+        existBits[i / (build->bits)] |= (one << offset); // setting one at position
         if(value == 0){
             CountZeros++;
         }
-        slices = std::max(slices,sliceLengthFinder(value)); //Finding the maximum length of the bit representation of the numbers
+        slices = std::max(slices,build->sliceLengthFinder(value)); //Finding the maximum length of the bit representation of the numbers
     }
 
     BsiAttribute* res;
@@ -48,7 +53,7 @@ BsiAttribute<uword>* BsiAttribute<uword>::buildBsiAttributeFromTensor(torch::Ten
     }
 
     double existBitDensity = (CountZeros/(double)nums.numel()); // to decide whether to compress or not
-    double existCompressRatio = 1-pow((1-existBitDensity), (2*bits))-pow(existBitDensity, (2*bits));
+    double existCompressRatio = 1-pow((1-existBitDensity), (2*build->bits))-pow(existBitDensity, (2*build->bits));
     if(existCompressRatio >= compressThreshold){
         HybridBitmap<uword> bitmap;
         for(int j=0; j<existBits.size(); j++){
@@ -72,7 +77,7 @@ BsiAttribute<uword>* BsiAttribute<uword>::buildBsiAttributeFromTensor(torch::Ten
 
     for(int i=0; i<slices; i++){
         double bitDensity = bitSlices[i][0]/(double)numberOfElements; // the bit density for this slice
-        double compressRatio = 1-pow((1-bitDensity), (2*bits))-pow(bitDensity, (2*bits));
+        double compressRatio = 1-pow((1-bitDensity), (2*build->bits))-pow(bitDensity, (2*build->bits));
         if(compressRatio<compressThreshold && compressRatio!=0 ){
             //build compressed bitmap
             HybridBitmap<uword> bitmap;
@@ -108,14 +113,14 @@ BsiAttribute<uword>* BsiAttribute<uword>::buildBsiAttributeFromTensor(torch::Ten
     res->rows = numberOfElements;
     //res->is_signed = true;
     return res;
-};
+};*/
 /*
  * Function bringTheBits when input parameter is tensor
  */
-template <class uword>
-std::vector< std::vector< uword > > BsiAttribute<uword>::bringTheBits(const torch::Tensor& nums, int slices, int numberOfElements) const{
+/*template <class uword>
+std::vector< std::vector< uword > > bringTheBits(BsiAttribute<uword>* build, const torch::Tensor& nums, int slices, int numberOfElements) {
     //The number of words needed to represent the elements in the array
-    int wordsNeeded = ceil( numberOfElements / (double)(bits));
+    int wordsNeeded = ceil( numberOfElements / (double)(build->bits));
     //The result of this method is a 2D vector of words
     //Each row represents a slice
     //Each column represents an element in the input array
@@ -131,8 +136,8 @@ std::vector< std::vector< uword > > BsiAttribute<uword>::bringTheBits(const torc
     // one for the bit density (the first word in each slice)
     uword thisBin = 0;
     for (int seq = 0; seq < numberOfElements; seq++) {
-        int w = (seq / (bits)+1);
-        int offset = seq % (bits);
+        int w = (seq / (build->bits)+1);
+        int offset = seq % (build->bits);
         thisBin = nums[seq].item<long>(); //accessing nums as tensor
         int slice = 0;
         while (thisBin != 0 && slice<slices) {
@@ -145,4 +150,4 @@ std::vector< std::vector< uword > > BsiAttribute<uword>::bringTheBits(const torc
         }
     }
     return bitmapDataRaw;
-};
+};*/

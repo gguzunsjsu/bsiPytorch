@@ -1,6 +1,7 @@
 #include "../bsiCPP/bsi/BsiAttribute.hpp"
 #include "../bsiCPP/bsi/BsiUnsigned.hpp"
 #include "../bsiCPP/bsi/BsiSigned.hpp"
+#include "../bsi_ops/tensorToBsi.cpp"
 #include <torch/extension.h>
 
 #include <vector>
@@ -19,20 +20,21 @@ uint64_t timeSinceEpoch() {
 torch::Tensor topKMax(torch::Tensor m, int k) {
     BsiSigned<uint64_t> bsi;
     BsiAttribute<uint64_t>* bsi_1;
-    bsi_1 = buildBsiAttributeFromTensor(m, 1);
-    /*
-    std::cout << "Printing out the bsi vector arrays (x 10^3 for conversion factor)" << std::endl;
-    for(int i=0; i<m_a.size(0); i++) {
-        std::cout << bsi_1->getValue(i) << " " << bsi_2->getValue(i) << std::endl;
+
+    // build bsi from vector
+    std::vector<long> v = {};
+    auto a = m.accessor<float, 1>();
+    for(auto i=0; i<a.size(0); i++) {
+        v.push_back(static_cast<long>(a[i]));
     }
-    std::cout << "Printing bsi vector done" << std::endl;
-    */
-    // torch::Tensor result = torch::zeros({1}, torch::kFloat64);
+
+    // build bsi from tensor
+    //bsi_1 = buildBsiAttributeFromTensor(bsi_1, m, 1);
+
     HybridBitmap<uint64_t> res = bsi_1->topKMax(k);
-    std::cout<<"result: "<<result<<std::endl;
     delete bsi_1;
 
-    return torch::tensor(result.positionsToVector());
+    return torch::tensor(res.positionsToVector());
 
 }
 
