@@ -3,6 +3,11 @@ import bsi_ops
 import pickle
 import matplotlib.pyplot as plt
 import time
+m = torch.tensor([1,2,3], dtype=torch.float32)
+n = torch.tensor([4,5,6], dtype=torch.float32)
+
+print('small stuff:: bsi:', bsi_ops.dot_product(m,n), 'torch.dot:', torch.dot(m, n))
+
 
 #Use the tensor to check the result
 m = torch.tensor([1,2,3,5])

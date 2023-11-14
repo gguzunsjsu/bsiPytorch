@@ -17,7 +17,7 @@ uint64_t timeSinceEpoch() {
     return duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
 }
 
-torch::Tensor topKMax(torch::Tensor m, int k) {
+torch::Tensor topKMax(torch::Tensor m, long k) {
     BsiSigned<uint64_t> bsi;
     BsiAttribute<uint64_t>* bsi_1;
 
@@ -100,6 +100,7 @@ torch::Tensor dot_product(torch::Tensor m, torch::Tensor n) {
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
    m.def("dot_product", &dot_product, "Dot product using BSI (Non-CUDA)");
+   m.def("topKMax", &topKMax, "Top K Max using BSI (Non-CUDA)");
 }
 
 
