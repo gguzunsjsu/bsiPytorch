@@ -16,7 +16,13 @@ uint64_t timeSinceEpoch() {
     return duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
 }
 
-torch::Tensor dot_product(torch::Tensor m, torch::Tensor n, float conversion_factor) {
+// Define a structure to hold the result and time
+struct DotProductResult {
+    double result;
+    uint64_t timeTaken;
+};
+
+DotProductResult dot_product(torch::Tensor m, torch::Tensor n, float conversion_factor) {
     //long CONVERSION_FACTOR = 10000;  // 10^4
     //long CONVERSION_FACTOR = 100000000;  // 10^7
     long CONVERSION_FACTOR = static_cast<long>(conversion_factor);
@@ -65,20 +71,31 @@ torch::Tensor dot_product(torch::Tensor m, torch::Tensor n, float conversion_fac
     std::cout << "Printing bsi vector done" << std::endl;
     */
     // torch::Tensor result = torch::zeros({1}, torch::kFloat64);
+    uint64_t start_dot_product = timeSinceEpoch();
     double res = bsi_1->dot(bsi_2);
+    uint64_t end_dot_product = timeSinceEpoch();
     std::cout<<"res: "<<res<<std::endl;
     // divide by conversion factor twice because mutiplication
     double result = res/float(CONVERSION_FACTOR * CONVERSION_FACTOR);
     std::cout<<"result after division: "<<result<<std::endl;
     delete bsi_1;
     delete bsi_2;
+    DotProductResult resultStruct;
+    resultStruct.result = result;
+    resultStruct.timeTaken = end_dot_product - start_dot_product;
 
-    return torch::tensor(result);
 
+    return resultStruct;
+
+}
+// Modify the PyTorch binding to specify the return type as a tuple
+pybind11::tuple dot_product_with_time(torch::Tensor m, torch::Tensor n, float conversion_factor) {
+    DotProductResult result = dot_product(m, n, conversion_factor);
+    return pybind11::make_tuple(result.result, result.timeTaken);
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-   m.def("dot_product", &dot_product, "Dot product using BSI (Non-CUDA)");
+   m.def("dot_product", &dot_product_with_time, "Dot product using BSI (Non-CUDA)");
 }
 
 
