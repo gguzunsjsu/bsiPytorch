@@ -1,6 +1,7 @@
 #include "../bsiCPP/bsi/BsiAttribute.hpp"
 #include "../bsiCPP/bsi/BsiUnsigned.hpp"
 #include "../bsiCPP/bsi/BsiSigned.hpp"
+#include <fstream>
 #include <torch/extension.h>
 
 #include <vector>
@@ -14,6 +15,34 @@
 uint64_t timeSinceEpoch() {
     using namespace std::chrono;
     return duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
+}
+
+// Function to get the size of the bsi vector and count the verbatim elements
+std::pair<size_t, size_t> getBsiInfo(const BsiAttribute<uint64_t>& bsiAttribute) {
+    size_t size = bsiAttribute.bsi.size();
+    size_t verbatimCount = 0;
+
+    // Iterate through the vector
+    for (const auto& element : bsiAttribute.bsi) {
+        // Check if the verbatim field is true
+        if (element.verbatim) {
+            verbatimCount++;
+        }
+    }
+
+    return std::make_pair(size, verbatimCount);
+}
+
+// Function to log information to a text file
+void logToFile(size_t size, size_t verbatimCount) {
+    std::ofstream outFile("extract_tensors/log.txt", std::ios::app);  // Open file in append mode
+    if (outFile.is_open()) {
+        double ratio = static_cast<double>(verbatimCount) / size;
+        outFile << "Number of BSI slices: " << size << ", Number of verbatim slices: " << verbatimCount << ", Ratio: " << ratio << "\n";
+        outFile.close();
+    } else {
+        std::cerr << "Unable to open log file for writing." << std::endl;
+    }
 }
 
 // Define a structure to hold the result and time
@@ -63,6 +92,11 @@ DotProductResult dot_product(torch::Tensor m, torch::Tensor n, float conversion_
     bsi_2->setPartitionID(0);
     bsi_2->setFirstSliceFlag(true);
     bsi_2->setLastSliceFlag(true);
+
+    std::pair<size_t, size_t> bsi1Info = getBsiInfo(*bsi_1);
+    std::pair<size_t, size_t> bsi2Info = getBsiInfo(*bsi_2);
+    logToFile(bsi1Info.first, bsi1Info.second);
+    logToFile(bsi1Info.first, bsi1Info.second);
     /*
     std::cout << "Printing out the bsi vector arrays (x 10^3 for conversion factor)" << std::endl;
     for(int i=0; i<m_a.size(0); i++) {
