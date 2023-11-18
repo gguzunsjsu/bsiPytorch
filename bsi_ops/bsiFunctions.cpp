@@ -49,6 +49,8 @@ void logToFile(size_t size, size_t verbatimCount) {
 struct DotProductResult {
     double result;
     uint64_t timeTaken;
+    //BsiAttribute<uint64_t>* bsi_1;
+    //BsiAttribute<uint64_t>* bsi_2;
 };
 
 DotProductResult dot_product(torch::Tensor m, torch::Tensor n, float conversion_factor) {
@@ -97,6 +99,8 @@ DotProductResult dot_product(torch::Tensor m, torch::Tensor n, float conversion_
     std::pair<size_t, size_t> bsi2Info = getBsiInfo(*bsi_2);
     logToFile(bsi1Info.first, bsi1Info.second);
     logToFile(bsi1Info.first, bsi1Info.second);
+
+
     /*
     std::cout << "Printing out the bsi vector arrays (x 10^3 for conversion factor)" << std::endl;
     for(int i=0; i<m_a.size(0); i++) {
@@ -112,11 +116,14 @@ DotProductResult dot_product(torch::Tensor m, torch::Tensor n, float conversion_
     // divide by conversion factor twice because mutiplication
     double result = res/float(CONVERSION_FACTOR * CONVERSION_FACTOR);
     std::cout<<"result after division: "<<result<<std::endl;
-    delete bsi_1;
-    delete bsi_2;
+
     DotProductResult resultStruct;
     resultStruct.result = result;
     resultStruct.timeTaken = end_dot_product - start_dot_product;
+    //resultStruct.bsi_1 = bsi_1;
+    //resultStruct.bsi_2 = bsi_2;
+    delete bsi_1;
+    delete bsi_2;
 
 
     return resultStruct;

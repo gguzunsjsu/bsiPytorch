@@ -3,6 +3,8 @@ import bsi_ops
 import pickle
 import matplotlib.pyplot as plt
 import time
+import sys
+
 print('import works')  # just to verify against import errors
 
 # Load the triplets from the saved pickle file
@@ -38,13 +40,25 @@ with open(output_text_file, 'w') as text_file:
         # Store histogram data
         q_flat_histograms.append(Q_flat.detach().numpy())
         k_flat_histograms.append(K_flat.detach().numpy())
-        # Print the shape of the flattened tensors
-        print(f"Layer {i} - Q shape: {Q_flat.shape}, K shape: {K_flat.shape}, V shape: {V_flat.shape}")
-        conversion_factor = 1000.0;
 
+
+        # Print the shape and size of  of the flattened tensors
+        print(f"Layer {i} - Q shape: {Q_flat.shape}, K shape: {K_flat.shape}, V shape: {V_flat.shape}")
+        # Calculate the total size of each tensor in bytes using sys.getsizeof
+        Q_size = sys.getsizeof(Q_flat.storage()) + sys.getsizeof(Q_flat)
+        K_size = sys.getsizeof(K_flat.storage()) + sys.getsizeof(K_flat)
+        V_size = sys.getsizeof(V_flat.storage()) + sys.getsizeof(V_flat)
+
+        # Convert sizes to kilobytes (optional)
+        Q_size_kb = Q_size / 1024
+        K_size_kb = K_size / 1024
+        V_size_kb = V_size / 1024
+
+        conversion_factor = 1000.0;
         custom_exec_times = []
         torch_exec_times = []
         for _ in range(num_runs):
+            #res, time_taken, bsiQ, bsiK = bsi_ops.dot_product(Q_flat, K_flat, conversion_factor)
             res, time_taken = bsi_ops.dot_product(Q_flat, K_flat, conversion_factor)
             custom_exec_times.append(time_taken/1e9)
             start_time = time.time()
@@ -54,15 +68,31 @@ with open(output_text_file, 'w') as text_file:
         custom_avg_time = sum(custom_exec_times) / num_runs
         torch_avg_time = sum(torch_exec_times) / num_runs
 
-        custom_times.append(custom_avg_time)
-        torch_times.append(torch_avg_time)
-        percentage_error = (abs(res - torch_res) / res) * 100
+        custom_times.append(custom_avg_time*1000)
+        torch_times.append(torch_avg_time*1000)
+        percentage_error = (abs(res - torch_res) / torch_res) * 100
         bsi_values.append(res)
         normal_values.append(torch_res.detach().numpy())
         percentage_error_values.append(percentage_error.detach().numpy())
         print('BERT normalized Q and K dot product::: bsi:', res, 'normal:',torch_res)
 
         text_file.write(f"Layer {i} - Q shape: {Q.shape}, K shape: {K.shape}, V shape: {V.shape}\n")
+        text_file.write(f"Q size: {Q_size} bytes\n")
+        text_file.write(f"K size: {K_size} bytes\n")
+        #bsiSizeQ = sys.getsizeof(bsiQ)
+        #bsiSizeK = sys.getsizeof(bsiK)
+        #bsiSizeK = 0
+        #bsiSizeQ = 0
+        #text_file.write(f"BSI Q size: {bsiSizeQ} bytes\n")
+        #text_file.write(f"BSI K size: {bsiSizeK} bytes\n")
+        dtype = Q_flat.dtype
+        precision = torch.finfo(dtype).bits
+        text_file.write(f"Precision of the K tensor: {precision} bits\n")
+        text_file.write(f"Data Type of the K tensor: {dtype} \n")
+        dtype = K_flat.dtype
+        precision = torch.finfo(dtype).bits
+        text_file.write(f"Precision of the K tensor: {precision} bits\n")
+        text_file.write(f"Data Type of the K tensor: {dtype} \n")
         text_file.write(f'BERT normalized Q and K dot product::: bsi: {res}, normal: {torch_res}, '
                             f'percentage error: {percentage_error}%\n')
         text_file.write(f"Time taken for BSI operation: {custom_avg_time}\n Time taken for torch operation: {torch_avg_time}\n")
@@ -110,7 +140,7 @@ plt.figure(figsize=(10, 6))
 plt.plot(layer_numbers, custom_times, marker='o', label='Custom Dot Product')
 plt.plot(layer_numbers, torch_times, marker='o', label='Torch Dot Product')
 plt.xlabel('Layer Number')
-plt.ylabel('Average Execution Time (seconds)')
+plt.ylabel('Average Execution Time (milliseconds)')
 plt.legend()
 plt.title('Average Execution Time Comparison (5 Runs)')
 plt.grid(True)
