@@ -17,21 +17,32 @@ uint64_t timeSinceEpoch() {
     return duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
 }
 
-torch::Tensor topKMax(torch::Tensor m, long k) {
+torch::Tensor topKMax(torch::Tensor m, int k) {
     BsiSigned<uint64_t> bsi;
     BsiAttribute<uint64_t>* bsi_1;
 
     // build bsi from vector
+    long CONVERSION_FACTOR = 10;
     std::vector<long> v = {};
     auto a = m.accessor<float, 1>();
+    int count = 10;
+    //std::cout<<a.size(0)<<"\n";
     for(auto i=0; i<a.size(0); i++) {
-        v.push_back(static_cast<long>(a[i]));
+        v.push_back(static_cast<long>(a[i]*CONVERSION_FACTOR));
+        //std::cout<<count<<"\n";
+        count --;
+        if (count <= 0) {
+            //std::cout<<"break"<<"\n";
+            break;
+        }
     }
+    bsi_1 = bsi.buildBsiAttributeFromVector(v, 1);
 
     // build bsi from tensor
     //bsi_1 = buildBsiAttributeFromTensor(bsi_1, m, 1);
-
+    std::cout<<"run topkmax\n";
     HybridBitmap<uint64_t> res = bsi_1->topKMax(k);
+    std::cout<<"finish running topkmax\n";
     delete bsi_1;
 
     return torch::tensor(res.positionsToVector());

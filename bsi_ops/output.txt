@@ -110,17 +110,17 @@ In file included from bsiFunctions.cpp:3:
 ./../bsiCPP/bsi/BsiSigned.hpp:1888:13: warning: variable 'i' set but not used [-Wunused-but-set-variable]
         int i = 0;
             ^
-bsiFunctions.cpp:34:34: warning: variable 'bsi_1' is uninitialized when used here [-Wuninitialized]
+bsiFunctions.cpp:39:34: warning: variable 'bsi_1' is uninitialized when used here [-Wuninitialized]
     HybridBitmap<uint64_t> res = bsi_1->topKMax(k);
                                  ^~~~~
 bsiFunctions.cpp:22:34: note: initialize the variable 'bsi_1' to silence this warning
     BsiAttribute<uint64_t>* bsi_1;
                                  ^
                                   = nullptr
-bsiFunctions.cpp:45:14: warning: unused variable 'start' [-Wunused-variable]
+bsiFunctions.cpp:50:14: warning: unused variable 'start' [-Wunused-variable]
     uint64_t start = timeSinceEpoch();
              ^
-bsiFunctions.cpp:65:15: warning: unused variable 'end' [-Wunused-variable]
+bsiFunctions.cpp:70:15: warning: unused variable 'end' [-Wunused-variable]
     u_int64_t end = timeSinceEpoch();
               ^
 In file included from bsiFunctions.cpp:1:
@@ -1169,7 +1169,7 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:383:31: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
             for (int i = 0; i < this->sizeInWords(); i++) {
                             ~ ^ ~~~~~~~~~~~~~~~~~~~
-bsiFunctions.cpp:37:30: note: in instantiation of member function 'HybridBitmap<unsigned long long>::positionsToVector' requested here
+bsiFunctions.cpp:42:30: note: in instantiation of member function 'HybridBitmap<unsigned long long>::positionsToVector' requested here
     return torch::tensor(res.positionsToVector());
                              ^
 In file included from bsiFunctions.cpp:1:
@@ -1184,7 +1184,7 @@ In file included from bsiFunctions.cpp:1:
 ./../bsiCPP/bsi/BsiAttribute.hpp:482:20: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
     for (int i=0; i<nums.size(); i++){
                   ~^~~~~~~~~~~~
-bsiFunctions.cpp:73:18: note: in instantiation of member function 'BsiAttribute<unsigned long long>::buildBsiAttributeFromVector' requested here
+bsiFunctions.cpp:78:18: note: in instantiation of member function 'BsiAttribute<unsigned long long>::buildBsiAttributeFromVector' requested here
     bsi_1 = ubsi.buildBsiAttributeFromVector(m_v, 1);
                  ^
 In file included from bsiFunctions.cpp:1:
@@ -1272,17 +1272,17 @@ In file included from bsiFunctions.cpp:3:
 ./../bsiCPP/bsi/BsiSigned.hpp:1888:13: warning: variable 'i' set but not used [-Wunused-but-set-variable]
         int i = 0;
             ^
-bsiFunctions.cpp:34:34: warning: variable 'bsi_1' is uninitialized when used here [-Wuninitialized]
+bsiFunctions.cpp:39:34: warning: variable 'bsi_1' is uninitialized when used here [-Wuninitialized]
     HybridBitmap<uint64_t> res = bsi_1->topKMax(k);
                                  ^~~~~
 bsiFunctions.cpp:22:34: note: initialize the variable 'bsi_1' to silence this warning
     BsiAttribute<uint64_t>* bsi_1;
                                  ^
                                   = nullptr
-bsiFunctions.cpp:45:14: warning: unused variable 'start' [-Wunused-variable]
+bsiFunctions.cpp:50:14: warning: unused variable 'start' [-Wunused-variable]
     uint64_t start = timeSinceEpoch();
              ^
-bsiFunctions.cpp:65:15: warning: unused variable 'end' [-Wunused-variable]
+bsiFunctions.cpp:70:15: warning: unused variable 'end' [-Wunused-variable]
     u_int64_t end = timeSinceEpoch();
               ^
 In file included from bsiFunctions.cpp:1:
@@ -2331,7 +2331,7 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:383:31: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
             for (int i = 0; i < this->sizeInWords(); i++) {
                             ~ ^ ~~~~~~~~~~~~~~~~~~~
-bsiFunctions.cpp:37:30: note: in instantiation of member function 'HybridBitmap<unsigned long long>::positionsToVector' requested here
+bsiFunctions.cpp:42:30: note: in instantiation of member function 'HybridBitmap<unsigned long long>::positionsToVector' requested here
     return torch::tensor(res.positionsToVector());
                              ^
 In file included from bsiFunctions.cpp:1:
@@ -2346,7 +2346,7 @@ In file included from bsiFunctions.cpp:1:
 ./../bsiCPP/bsi/BsiAttribute.hpp:482:20: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
     for (int i=0; i<nums.size(); i++){
                   ~^~~~~~~~~~~~
-bsiFunctions.cpp:73:18: note: in instantiation of member function 'BsiAttribute<unsigned long long>::buildBsiAttributeFromVector' requested here
+bsiFunctions.cpp:78:18: note: in instantiation of member function 'BsiAttribute<unsigned long long>::buildBsiAttributeFromVector' requested here
     bsi_1 = ubsi.buildBsiAttributeFromVector(m_v, 1);
                  ^
 In file included from bsiFunctions.cpp:1:
@@ -2364,10 +2364,10 @@ In file included from bsiFunctions.cpp:1:
                          ~^~~~~~~~~~~~~~~~~~~~
 130 warnings generated.
 clang++ -bundle -undefined dynamic_lookup -arch arm64 -arch x86_64 -g build/temp.macosx-10.9-universal2-cpython-310/bsiFunctions.o -L/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/lib -lc10 -ltorch -ltorch_cpu -ltorch_python -o build/lib.macosx-10.9-universal2-cpython-310/bsi_ops.cpython-310-darwin.so
-ld: warning: ignoring file '/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/lib/libtorch_cpu.dylib': found architecture 'x86_64', required architecture 'arm64'
-ld: warning: ignoring file '/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/lib/libtorch.dylib': found architecture 'x86_64', required architecture 'arm64'
 ld: warning: ignoring file '/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/lib/libc10.dylib': found architecture 'x86_64', required architecture 'arm64'
+ld: warning: ignoring file '/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/lib/libtorch_cpu.dylib': found architecture 'x86_64', required architecture 'arm64'
 ld: warning: ignoring file '/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/lib/libtorch_python.dylib': found architecture 'x86_64', required architecture 'arm64'
+ld: warning: ignoring file '/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/lib/libtorch.dylib': found architecture 'x86_64', required architecture 'arm64'
 creating build/bdist.macosx-10.9-universal2/egg
 copying build/lib.macosx-10.9-universal2-cpython-310/bsi_ops.cpython-310-darwin.so -> build/bdist.macosx-10.9-universal2/egg
 creating stub loader for bsi_ops.cpython-310-darwin.so
@@ -2383,6 +2383,7 @@ __pycache__.bsi_ops.cpython-310: module references __file__
 creating 'dist/bsi_ops-0.0.0-py3.10-macosx-10.9-universal2.egg' and adding 'build/bdist.macosx-10.9-universal2/egg' to it
 removing 'build/bdist.macosx-10.9-universal2/egg' (and everything under it)
 Processing bsi_ops-0.0.0-py3.10-macosx-10.9-universal2.egg
+removing '/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/bsi_ops-0.0.0-py3.10-macosx-10.9-universal2.egg' (and everything under it)
 creating /Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/bsi_ops-0.0.0-py3.10-macosx-10.9-universal2.egg
 Extracting bsi_ops-0.0.0-py3.10-macosx-10.9-universal2.egg to /Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages
 Adding bsi-ops 0.0.0 to easy-install.pth file

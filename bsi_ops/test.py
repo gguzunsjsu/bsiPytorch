@@ -3,14 +3,14 @@ import bsi_ops
 import pickle
 import matplotlib.pyplot as plt
 import time
-m = torch.tensor([1,2,3], dtype=torch.float32)
+'''m = torch.tensor([1,2,3], dtype=torch.float32)
 n = torch.tensor([4,5,6], dtype=torch.float32)
 
 print('small stuff:: bsi:', bsi_ops.dot_product(m,n), 'torch.dot:', torch.dot(m, n))
-
+'''
 
 #Use the tensor to check the result
-m = torch.tensor([1,2,3,5])
+m = torch.tensor([1.0,2.0,3.0,5.0])
 res = bsi_ops.topKMax(m,2)
 print('resnet fc layer 1 topk::: bsi:',res,'normal:',torch.topk(m,2))
 
@@ -18,6 +18,8 @@ print('resnet fc layer 1 topk::: bsi:',res,'normal:',torch.topk(m,2))
 with open('pkl_files/resnet50_data_vectors.pkl', 'rb') as f:
     data = pickle.load(f)
 print("Resnet50 data vectors loaded from the pickle file")
+print(data)
+
 # List to store topKMax for each layer
 topkMax = []
 # Lists to store execution times
@@ -35,10 +37,12 @@ with open(output_text_file, 'w') as text_file:
     # Iterate through each layer's triplets
     for i,d in enumerate(data,1):
         # Flatten the tensors to 1D using reshape
+        print("flattening vector")
         print(d)
         d_flat = d.reshape(-1)
+        print("flattened vector")
         print(d)
-
+'''
         # Print the shape of the flattened tensors
         print(f"Layer {i} - Q shape: {d_flat.shape}")
 
@@ -77,4 +81,4 @@ plt.legend()
 plt.title('Average Execution Time Comparison (5 Runs)')
 plt.grid(True)
 plt.savefig('fig/topK_time_visualization.png')
-plt.show()
+plt.show()'''
