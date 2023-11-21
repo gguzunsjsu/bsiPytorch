@@ -49,8 +49,10 @@ void logToFile(size_t size, size_t verbatimCount) {
 struct DotProductResult {
     double result;
     uint64_t timeTaken;
-    //BsiAttribute<uint64_t>* bsi_1;
-    //BsiAttribute<uint64_t>* bsi_2;
+    size_t sizeOfBsi1;
+    size_t sizeOfBsi2;
+
+
 };
 
 DotProductResult dot_product(torch::Tensor m, torch::Tensor n, float conversion_factor) {
@@ -120,8 +122,8 @@ DotProductResult dot_product(torch::Tensor m, torch::Tensor n, float conversion_
     DotProductResult resultStruct;
     resultStruct.result = result;
     resultStruct.timeTaken = end_dot_product - start_dot_product;
-    //resultStruct.bsi_1 = bsi_1;
-    //resultStruct.bsi_2 = bsi_2;
+    resultStruct.sizeOfBsi1 = bsi_1->getSizeInMemory();;
+    resultStruct.sizeOfBsi2 = bsi_2->getSizeInMemory();;
     delete bsi_1;
     delete bsi_2;
 
@@ -132,7 +134,7 @@ DotProductResult dot_product(torch::Tensor m, torch::Tensor n, float conversion_
 // Modify the PyTorch binding to specify the return type as a tuple
 pybind11::tuple dot_product_with_time(torch::Tensor m, torch::Tensor n, float conversion_factor) {
     DotProductResult result = dot_product(m, n, conversion_factor);
-    return pybind11::make_tuple(result.result, result.timeTaken);
+    return pybind11::make_tuple(result.result, result.timeTaken, result.sizeOfBsi1,result.sizeOfBsi2);
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {

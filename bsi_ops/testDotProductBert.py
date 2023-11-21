@@ -59,7 +59,7 @@ with open(output_text_file, 'w') as text_file:
         torch_exec_times = []
         for _ in range(num_runs):
             #res, time_taken, bsiQ, bsiK = bsi_ops.dot_product(Q_flat, K_flat, conversion_factor)
-            res, time_taken = bsi_ops.dot_product(Q_flat, K_flat, conversion_factor)
+            res, time_taken, bsiSizeQ, bsiSizeK = bsi_ops.dot_product(Q_flat, K_flat, conversion_factor)
             custom_exec_times.append(time_taken/1e9)
             start_time = time.time()
             torch_res = torch.dot(Q_flat, K_flat)
@@ -83,8 +83,8 @@ with open(output_text_file, 'w') as text_file:
         #bsiSizeK = sys.getsizeof(bsiK)
         #bsiSizeK = 0
         #bsiSizeQ = 0
-        #text_file.write(f"BSI Q size: {bsiSizeQ} bytes\n")
-        #text_file.write(f"BSI K size: {bsiSizeK} bytes\n")
+        text_file.write(f"BSI Q size: {bsiSizeQ} bytes\n")
+        text_file.write(f"BSI K size: {bsiSizeK} bytes\n")
         dtype = Q_flat.dtype
         precision = torch.finfo(dtype).bits
         text_file.write(f"Precision of the K tensor: {precision} bits\n")
