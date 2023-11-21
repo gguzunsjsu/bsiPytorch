@@ -8,8 +8,8 @@ Data Type of the K tensor: torch.float32
 Precision of the K tensor: 32 bits
 Data Type of the K tensor: torch.float32 
 BERT normalized Q and K dot product::: bsi: 137199.40625, normal: 138249.59375, percentage error: 0.7596315145492554%
-Time taken for BSI operation: 0.001238
- Time taken for torch operation: 0.00020060539245605468
+Time taken for BSI operation: 0.0012324
+ Time taken for torch operation: 0.00012884140014648437
 
 Layer 2 - Q shape: torch.Size([1, 512, 1024]), K shape: torch.Size([1, 512, 1024]), V shape: torch.Size([1, 512, 1024])
 Q size: 2097296 bytes
@@ -21,8 +21,8 @@ Data Type of the K tensor: torch.float32
 Precision of the K tensor: 32 bits
 Data Type of the K tensor: torch.float32 
 BERT normalized Q and K dot product::: bsi: 123699.92805480957, normal: 124700.0625, percentage error: 0.8020306825637817%
-Time taken for BSI operation: 0.0012188000000000001
- Time taken for torch operation: 0.00013489723205566405
+Time taken for BSI operation: 0.0011972
+ Time taken for torch operation: 0.00013360977172851562
 
 Layer 3 - Q shape: torch.Size([1, 512, 1024]), K shape: torch.Size([1, 512, 1024]), V shape: torch.Size([1, 512, 1024])
 Q size: 2097296 bytes
@@ -34,8 +34,8 @@ Data Type of the K tensor: torch.float32
 Precision of the K tensor: 32 bits
 Data Type of the K tensor: torch.float32 
 BERT normalized Q and K dot product::: bsi: 124043.93801879883, normal: 125046.0703125, percentage error: 0.8014109134674072%
-Time taken for BSI operation: 0.0012105999999999998
- Time taken for torch operation: 0.00010433197021484376
+Time taken for BSI operation: 0.0012614
+ Time taken for torch operation: 0.00010714530944824218
 
 Layer 4 - Q shape: torch.Size([1, 512, 1024]), K shape: torch.Size([1, 512, 1024]), V shape: torch.Size([1, 512, 1024])
 Q size: 2097296 bytes
@@ -47,8 +47,8 @@ Data Type of the K tensor: torch.float32
 Precision of the K tensor: 32 bits
 Data Type of the K tensor: torch.float32 
 BERT normalized Q and K dot product::: bsi: 136914.09982299805, normal: 137967.5, percentage error: 0.7635176777839661%
-Time taken for BSI operation: 0.0013844000000000003
- Time taken for torch operation: 0.00011401176452636718
+Time taken for BSI operation: 0.0011978
+ Time taken for torch operation: 0.00011086463928222656
 
 Layer 5 - Q shape: torch.Size([1, 512, 1024]), K shape: torch.Size([1, 512, 1024]), V shape: torch.Size([1, 512, 1024])
 Q size: 2097296 bytes
@@ -60,8 +60,8 @@ Data Type of the K tensor: torch.float32
 Precision of the K tensor: 32 bits
 Data Type of the K tensor: torch.float32 
 BERT normalized Q and K dot product::: bsi: 142861.1534576416, normal: 143936.8125, percentage error: 0.7473114132881165%
-Time taken for BSI operation: 0.0012201999999999998
- Time taken for torch operation: 0.00010595321655273437
+Time taken for BSI operation: 0.0012062
+ Time taken for torch operation: 0.00018668174743652344
 
 Layer 6 - Q shape: torch.Size([1, 512, 1024]), K shape: torch.Size([1, 512, 1024]), V shape: torch.Size([1, 512, 1024])
 Q size: 2097296 bytes
@@ -73,8 +73,8 @@ Data Type of the K tensor: torch.float32
 Precision of the K tensor: 32 bits
 Data Type of the K tensor: torch.float32 
 BERT normalized Q and K dot product::: bsi: 130334.39778137207, normal: 131357.875, percentage error: 0.7791512608528137%
-Time taken for BSI operation: 0.0012452
- Time taken for torch operation: 0.00010614395141601562
+Time taken for BSI operation: 0.001206
+ Time taken for torch operation: 0.00010275840759277344
 
 Layer 7 - Q shape: torch.Size([1, 512, 1024]), K shape: torch.Size([1, 512, 1024]), V shape: torch.Size([1, 512, 1024])
 Q size: 2097296 bytes
@@ -86,8 +86,8 @@ Data Type of the K tensor: torch.float32
 Precision of the K tensor: 32 bits
 Data Type of the K tensor: torch.float32 
 BERT normalized Q and K dot product::: bsi: 131576.9966430664, normal: 132605.9375, percentage error: 0.7759361863136292%
-Time taken for BSI operation: 0.0012439999999999999
- Time taken for torch operation: 0.00010685920715332031
+Time taken for BSI operation: 0.0012
+ Time taken for torch operation: 0.00011334419250488281
 
 Layer 8 - Q shape: torch.Size([1, 512, 1024]), K shape: torch.Size([1, 512, 1024]), V shape: torch.Size([1, 512, 1024])
 Q size: 2097296 bytes
@@ -99,8 +99,8 @@ Data Type of the K tensor: torch.float32
 Precision of the K tensor: 32 bits
 Data Type of the K tensor: torch.float32 
 BERT normalized Q and K dot product::: bsi: 117954.31300354004, normal: 118936.875, percentage error: 0.8261210322380066%
-Time taken for BSI operation: 0.0013046
- Time taken for torch operation: 0.00011429786682128906
+Time taken for BSI operation: 0.0013302000000000001
+ Time taken for torch operation: 0.00011115074157714843
 
 Layer 9 - Q shape: torch.Size([1, 512, 1024]), K shape: torch.Size([1, 512, 1024]), V shape: torch.Size([1, 512, 1024])
 Q size: 2097296 bytes
@@ -112,8 +112,8 @@ Data Type of the K tensor: torch.float32
 Precision of the K tensor: 32 bits
 Data Type of the K tensor: torch.float32 
 BERT normalized Q and K dot product::: bsi: 151026.20664978027, normal: 152130.234375, percentage error: 0.7257145643234253%
-Time taken for BSI operation: 0.0012538
- Time taken for torch operation: 0.00011706352233886719
+Time taken for BSI operation: 0.0012008
+ Time taken for torch operation: 0.00012831687927246095
 
 Layer 10 - Q shape: torch.Size([1, 512, 1024]), K shape: torch.Size([1, 512, 1024]), V shape: torch.Size([1, 512, 1024])
 Q size: 2097296 bytes
@@ -125,8 +125,8 @@ Data Type of the K tensor: torch.float32
 Precision of the K tensor: 32 bits
 Data Type of the K tensor: torch.float32 
 BERT normalized Q and K dot product::: bsi: 136443.01997375488, normal: 137491.09375, percentage error: 0.762287974357605%
-Time taken for BSI operation: 0.0011987999999999999
- Time taken for torch operation: 0.00011801719665527344
+Time taken for BSI operation: 0.0012426
+ Time taken for torch operation: 0.00011196136474609376
 
 Layer 11 - Q shape: torch.Size([1, 512, 1024]), K shape: torch.Size([1, 512, 1024]), V shape: torch.Size([1, 512, 1024])
 Q size: 2097296 bytes
@@ -138,8 +138,8 @@ Data Type of the K tensor: torch.float32
 Precision of the K tensor: 32 bits
 Data Type of the K tensor: torch.float32 
 BERT normalized Q and K dot product::: bsi: 130841.65075683594, normal: 131863.75, percentage error: 0.775119423866272%
-Time taken for BSI operation: 0.001239
- Time taken for torch operation: 0.00011878013610839843
+Time taken for BSI operation: 0.0011870000000000001
+ Time taken for torch operation: 0.00011668205261230468
 
 Layer 12 - Q shape: torch.Size([1, 512, 1024]), K shape: torch.Size([1, 512, 1024]), V shape: torch.Size([1, 512, 1024])
 Q size: 2097296 bytes
@@ -151,8 +151,8 @@ Data Type of the K tensor: torch.float32
 Precision of the K tensor: 32 bits
 Data Type of the K tensor: torch.float32 
 BERT normalized Q and K dot product::: bsi: 115830.52819824219, normal: 116794.53125, percentage error: 0.8253811001777649%
-Time taken for BSI operation: 0.0012435999999999999
- Time taken for torch operation: 0.00010528564453125
+Time taken for BSI operation: 0.0011944
+ Time taken for torch operation: 0.00013256072998046875
 
 Layer 13 - Q shape: torch.Size([1, 512, 1024]), K shape: torch.Size([1, 512, 1024]), V shape: torch.Size([1, 512, 1024])
 Q size: 2097296 bytes
@@ -164,8 +164,8 @@ Data Type of the K tensor: torch.float32
 Precision of the K tensor: 32 bits
 Data Type of the K tensor: torch.float32 
 BERT normalized Q and K dot product::: bsi: 133980.3716430664, normal: 135015.9375, percentage error: 0.7669928073883057%
-Time taken for BSI operation: 0.0012121999999999999
- Time taken for torch operation: 0.00010781288146972656
+Time taken for BSI operation: 0.0012083999999999999
+ Time taken for torch operation: 0.0001441478729248047
 
 Layer 14 - Q shape: torch.Size([1, 512, 1024]), K shape: torch.Size([1, 512, 1024]), V shape: torch.Size([1, 512, 1024])
 Q size: 2097296 bytes
@@ -177,8 +177,8 @@ Data Type of the K tensor: torch.float32
 Precision of the K tensor: 32 bits
 Data Type of the K tensor: torch.float32 
 BERT normalized Q and K dot product::: bsi: 126413.68934631348, normal: 127417.4921875, percentage error: 0.7878076434135437%
-Time taken for BSI operation: 0.0012926
- Time taken for torch operation: 0.00010852813720703125
+Time taken for BSI operation: 0.0012206
+ Time taken for torch operation: 0.00011510848999023438
 
 Layer 15 - Q shape: torch.Size([1, 512, 1024]), K shape: torch.Size([1, 512, 1024]), V shape: torch.Size([1, 512, 1024])
 Q size: 2097296 bytes
@@ -190,8 +190,8 @@ Data Type of the K tensor: torch.float32
 Precision of the K tensor: 32 bits
 Data Type of the K tensor: torch.float32 
 BERT normalized Q and K dot product::: bsi: 139589.54064941406, normal: 140644.25, percentage error: 0.749908447265625%
-Time taken for BSI operation: 0.0012331999999999998
- Time taken for torch operation: 0.00010800361633300781
+Time taken for BSI operation: 0.001209
+ Time taken for torch operation: 0.00010547637939453124
 
 Layer 16 - Q shape: torch.Size([1, 512, 1024]), K shape: torch.Size([1, 512, 1024]), V shape: torch.Size([1, 512, 1024])
 Q size: 2097296 bytes
@@ -203,8 +203,8 @@ Data Type of the K tensor: torch.float32
 Precision of the K tensor: 32 bits
 Data Type of the K tensor: torch.float32 
 BERT normalized Q and K dot product::: bsi: 114326.98020935059, normal: 115284.046875, percentage error: 0.8301844596862793%
-Time taken for BSI operation: 0.001271
- Time taken for torch operation: 0.00011205673217773438
+Time taken for BSI operation: 0.0012644000000000002
+ Time taken for torch operation: 0.00010952949523925781
 
 Layer 17 - Q shape: torch.Size([1, 512, 1024]), K shape: torch.Size([1, 512, 1024]), V shape: torch.Size([1, 512, 1024])
 Q size: 2097296 bytes
@@ -216,8 +216,8 @@ Data Type of the K tensor: torch.float32
 Precision of the K tensor: 32 bits
 Data Type of the K tensor: torch.float32 
 BERT normalized Q and K dot product::: bsi: 127505.65190124512, normal: 128514.9453125, percentage error: 0.7853536605834961%
-Time taken for BSI operation: 0.0012369999999999998
- Time taken for torch operation: 0.00012555122375488282
+Time taken for BSI operation: 0.0012392
+ Time taken for torch operation: 0.00011830329895019531
 
 Layer 18 - Q shape: torch.Size([1, 512, 1024]), K shape: torch.Size([1, 512, 1024]), V shape: torch.Size([1, 512, 1024])
 Q size: 2097296 bytes
@@ -229,8 +229,8 @@ Data Type of the K tensor: torch.float32
 Precision of the K tensor: 32 bits
 Data Type of the K tensor: torch.float32 
 BERT normalized Q and K dot product::: bsi: 127049.24284362793, normal: 128056.109375, percentage error: 0.7862703204154968%
-Time taken for BSI operation: 0.0012656
- Time taken for torch operation: 0.00011696815490722657
+Time taken for BSI operation: 0.0013261999999999998
+ Time taken for torch operation: 0.00012407302856445312
 
 Layer 19 - Q shape: torch.Size([1, 512, 1024]), K shape: torch.Size([1, 512, 1024]), V shape: torch.Size([1, 512, 1024])
 Q size: 2097296 bytes
@@ -242,8 +242,8 @@ Data Type of the K tensor: torch.float32
 Precision of the K tensor: 32 bits
 Data Type of the K tensor: torch.float32 
 BERT normalized Q and K dot product::: bsi: 122468.44952392578, normal: 123459.7265625, percentage error: 0.8029123544692993%
-Time taken for BSI operation: 0.0012309999999999999
- Time taken for torch operation: 0.00010485649108886719
+Time taken for BSI operation: 0.0012692
+ Time taken for torch operation: 0.0001041412353515625
 
 Layer 20 - Q shape: torch.Size([1, 512, 1024]), K shape: torch.Size([1, 512, 1024]), V shape: torch.Size([1, 512, 1024])
 Q size: 2097296 bytes
@@ -255,8 +255,8 @@ Data Type of the K tensor: torch.float32
 Precision of the K tensor: 32 bits
 Data Type of the K tensor: torch.float32 
 BERT normalized Q and K dot product::: bsi: 134157.89862060547, normal: 135199.25, percentage error: 0.7702289819717407%
-Time taken for BSI operation: 0.0012640000000000001
- Time taken for torch operation: 0.00012755393981933594
+Time taken for BSI operation: 0.0012258
+ Time taken for torch operation: 0.00012764930725097656
 
 Layer 21 - Q shape: torch.Size([1, 512, 1024]), K shape: torch.Size([1, 512, 1024]), V shape: torch.Size([1, 512, 1024])
 Q size: 2097296 bytes
@@ -268,8 +268,8 @@ Data Type of the K tensor: torch.float32
 Precision of the K tensor: 32 bits
 Data Type of the K tensor: torch.float32 
 BERT normalized Q and K dot product::: bsi: 137019.60667419434, normal: 138070.1875, percentage error: 0.7609015107154846%
-Time taken for BSI operation: 0.0011912
- Time taken for torch operation: 0.00011758804321289062
+Time taken for BSI operation: 0.001267
+ Time taken for torch operation: 0.00012598037719726562
 
 Layer 22 - Q shape: torch.Size([1, 512, 1024]), K shape: torch.Size([1, 512, 1024]), V shape: torch.Size([1, 512, 1024])
 Q size: 2097296 bytes
@@ -281,8 +281,8 @@ Data Type of the K tensor: torch.float32
 Precision of the K tensor: 32 bits
 Data Type of the K tensor: torch.float32 
 BERT normalized Q and K dot product::: bsi: 122094.08337402344, normal: 123089.734375, percentage error: 0.8088802099227905%
-Time taken for BSI operation: 0.0013666
- Time taken for torch operation: 0.00013060569763183593
+Time taken for BSI operation: 0.0013582
+ Time taken for torch operation: 0.00011639595031738281
 
 Layer 23 - Q shape: torch.Size([1, 512, 1024]), K shape: torch.Size([1, 512, 1024]), V shape: torch.Size([1, 512, 1024])
 Q size: 2097296 bytes
@@ -294,8 +294,8 @@ Data Type of the K tensor: torch.float32
 Precision of the K tensor: 32 bits
 Data Type of the K tensor: torch.float32 
 BERT normalized Q and K dot product::: bsi: 123569.71673583984, normal: 124567.421875, percentage error: 0.8009342551231384%
-Time taken for BSI operation: 0.0012394
- Time taken for torch operation: 0.00011134147644042969
+Time taken for BSI operation: 0.0012622000000000002
+ Time taken for torch operation: 0.00010457038879394532
 
 Layer 24 - Q shape: torch.Size([1, 512, 1024]), K shape: torch.Size([1, 512, 1024]), V shape: torch.Size([1, 512, 1024])
 Q size: 2097296 bytes
@@ -307,6 +307,6 @@ Data Type of the K tensor: torch.float32
 Precision of the K tensor: 32 bits
 Data Type of the K tensor: torch.float32 
 BERT normalized Q and K dot product::: bsi: 130233.46821594238, normal: 131258.4375, percentage error: 0.7808783650398254%
-Time taken for BSI operation: 0.0012514000000000002
- Time taken for torch operation: 0.00010614395141601562
+Time taken for BSI operation: 0.0012576
+ Time taken for torch operation: 0.00012836456298828124
 
