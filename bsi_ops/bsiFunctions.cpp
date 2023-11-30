@@ -16,7 +16,6 @@ uint64_t timeSinceEpoch() {
     using namespace std::chrono;
     return duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
 }
-
 torch::Tensor topKMax(torch::Tensor m, int k) {
     BsiSigned<uint64_t> bsi;
     BsiAttribute<uint64_t>* bsi_1;
@@ -25,16 +24,9 @@ torch::Tensor topKMax(torch::Tensor m, int k) {
     long CONVERSION_FACTOR = 10;
     std::vector<long> v = {};
     auto a = m.accessor<float, 1>();
-    int count = 10;
     //std::cout<<a.size(0)<<"\n";
     for(auto i=0; i<a.size(0); i++) {
         v.push_back(static_cast<long>(a[i]*CONVERSION_FACTOR));
-        //std::cout<<count<<"\n";
-        count --;
-        if (count <= 0) {
-            //std::cout<<"break"<<"\n";
-            break;
-        }
     }
     bsi_1 = bsi.buildBsiAttributeFromVector(v, 1);
 
