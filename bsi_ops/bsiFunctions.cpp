@@ -28,7 +28,7 @@ torch::Tensor topKMax(torch::Tensor m, int k) {
     for(auto i=0; i<a.size(0); i++) {
         v.push_back(static_cast<long>(a[i]*CONVERSION_FACTOR));
     }
-    bsi_1 = bsi.buildBsiAttributeFromVector(v, 1);
+    bsi_1 = bsi.buildBsiAttributeFromVector(v, 0.5);
 
     // build bsi from tensor
     //bsi_1 = buildBsiAttributeFromTensor(bsi_1, m, 1);
@@ -38,6 +38,43 @@ torch::Tensor topKMax(torch::Tensor m, int k) {
     delete bsi_1;
 
     return torch::tensor(res.positionsToVector());
+
+}
+torch::Tensor topKMin(torch::Tensor m, int k) {
+    BsiSigned<uint64_t> bsi;
+    BsiAttribute<uint64_t>* bsi_1;
+
+    // build bsi from vector
+    long CONVERSION_FACTOR = 10;
+    std::vector<long> v = {};
+    auto a = m.accessor<float, 1>();
+    //std::cout<<a.size(0)<<"\n";
+    for(auto i=0; i<a.size(0); i++) {
+        v.push_back(static_cast<long>(a[i]*CONVERSION_FACTOR));
+    }
+    bsi_1 = bsi.buildBsiAttributeFromVector(v, 0.5);
+
+    // build bsi from tensor
+    //bsi_1 = buildBsiAttributeFromTensor(bsi_1, m, 1);
+    HybridBitmap<uint64_t> res = bsi_1->topKMin(k);
+    delete bsi_1;
+
+    return torch::tensor(res.positionsToVector());
+
+}
+torch::Tensor convertTensor(torch::Tensor m, long CONVERSION_FACTOR) {
+    BsiSigned<uint64_t> bsi;
+    BsiAttribute<uint64_t>* bsi_1;
+
+    // build bsi from vector
+    std::vector<int> v = {};
+    auto a = m.accessor<float, 1>();
+    //std::cout<<a.size(0)<<"\n";
+    for(auto i=0; i<a.size(0); i++) {
+        v.push_back(static_cast<int>(a[i]*CONVERSION_FACTOR));
+    }
+
+    return torch::tensor(v);
 
 }
 
@@ -104,6 +141,8 @@ torch::Tensor dot_product(torch::Tensor m, torch::Tensor n) {
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
    m.def("dot_product", &dot_product, "Dot product using BSI (Non-CUDA)");
    m.def("topKMax", &topKMax, "Top K Max using BSI (Non-CUDA)");
+   m.def("topKMin", &topKMin, "Top K Min using BSI (Non-CUDA)");
+   m.def("convertTensor", &convertTensor, "Convert tensor of float into tensor of int using conversion_factor");
 }
 
 

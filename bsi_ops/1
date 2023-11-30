@@ -1,4 +1,3 @@
-running install
 /Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/setuptools/_distutils/cmd.py:66: SetuptoolsDeprecationWarning: setup.py install is deprecated.
 !!
 
@@ -25,20 +24,8 @@ running install
 
 !!
   self.initialize_options()
-running bdist_egg
-running egg_info
-writing bsi_ops.egg-info/PKG-INFO
-writing dependency_links to bsi_ops.egg-info/dependency_links.txt
-writing top-level names to bsi_ops.egg-info/top_level.txt
 /Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/utils/cpp_extension.py:502: UserWarning: Attempted to use ninja as the BuildExtension backend but we could not find ninja.. Falling back to using the slow distutils backend.
   warnings.warn(msg.format('we could not find ninja.'))
-reading manifest file 'bsi_ops.egg-info/SOURCES.txt'
-writing manifest file 'bsi_ops.egg-info/SOURCES.txt'
-installing library code to build/bdist.macosx-10.9-universal2/egg
-running install_lib
-running build_ext
-building 'bsi_ops' extension
-clang -Wno-unused-result -Wsign-compare -Wunreachable-code -fno-common -dynamic -DNDEBUG -g -fwrapv -O3 -Wall -arch arm64 -arch x86_64 -g -I/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include -I/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include -I/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/TH -I/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/THC -I/Library/Frameworks/Python.framework/Versions/3.10/include/python3.10 -c bsiFunctions.cpp -o build/temp.macosx-10.9-universal2-cpython-310/bsiFunctions.o -DTORCH_API_INCLUDE_EXTENSION_H -DPYBIND11_COMPILER_TYPE=\"_clang\" -DPYBIND11_STDLIB=\"_libcpp\" -DPYBIND11_BUILD_ABI=\"_cxxabi1002\" -DTORCH_EXTENSION_NAME=bsi_ops -D_GLIBCXX_USE_CXX11_ABI=0 -std=c++17
 In file included from bsiFunctions.cpp:1:
 In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3637:24: warning: unused variable 'lastrlwa' [-Wunused-variable]
@@ -110,13 +97,292 @@ In file included from bsiFunctions.cpp:3:
 ./../bsiCPP/bsi/BsiSigned.hpp:1889:13: warning: variable 'i' set but not used [-Wunused-but-set-variable]
         int i = 0;
             ^
-bsiFunctions.cpp:67:29: warning: unused variable 'bsi_1' [-Wunused-variable]
-    BsiAttribute<uint64_t>* bsi_1;
-                            ^
-bsiFunctions.cpp:85:14: warning: unused variable 'start' [-Wunused-variable]
+bsiFunctions.cpp:21:2: error: expected ';' after class
+}
+ ^
+bsiFunctions.cpp:52:69: error: no viable conversion from 'std::vector<long>' to 'detail::TensorDataContainer'
+    return new topKMaxOutput(torch::tensor(positions),torch::tensor(values));
+                                                                    ^~~~~~
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:118:8: note: candidate constructor (the implicit copy constructor) not viable: no known conversion from 'std::vector<long>' to 'const torch::detail::TensorDataContainer &' for 1st argument
+struct TensorDataContainer {
+       ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:118:8: note: candidate constructor (the implicit move constructor) not viable: no known conversion from 'std::vector<long>' to 'torch::detail::TensorDataContainer &&' for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:138:53: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'uint8_t' (aka 'unsigned char') for 1st argument
+  AT_FORALL_SCALAR_TYPES_AND3(Bool, Half, BFloat16, TENSOR)
+                                                    ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:195:3: note: expanded from macro 'AT_FORALL_SCALAR_TYPES_AND3'
+  _(uint8_t, Byte)                                                            \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:132:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(T value)                  \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:138:53: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'int8_t' (aka 'signed char') for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:196:3: note: expanded from macro 'AT_FORALL_SCALAR_TYPES_AND3'
+  _(int8_t, Char)                                                             \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:132:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(T value)                  \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:138:53: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'int16_t' (aka 'short') for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:197:3: note: expanded from macro 'AT_FORALL_SCALAR_TYPES_AND3'
+  _(int16_t, Short)                                                           \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:132:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(T value)                  \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:138:53: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'int' for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:198:3: note: expanded from macro 'AT_FORALL_SCALAR_TYPES_AND3'
+  _(int, Int)                                                                 \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:132:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(T value)                  \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:138:53: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'int64_t' (aka 'long long') for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:199:3: note: expanded from macro 'AT_FORALL_SCALAR_TYPES_AND3'
+  _(int64_t, Long)                                                            \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:132:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(T value)                  \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:138:53: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'float' for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:200:3: note: expanded from macro 'AT_FORALL_SCALAR_TYPES_AND3'
+  _(float, Float)                                                             \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:132:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(T value)                  \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:138:53: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'double' for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:201:3: note: expanded from macro 'AT_FORALL_SCALAR_TYPES_AND3'
+  _(double, Double)                                                           \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:132:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(T value)                  \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:138:53: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'decltype(::c10::impl::ScalarTypeToCPPType< ::c10::ScalarType::Bool>::t)' (aka 'bool') for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:202:3: note: expanded from macro 'AT_FORALL_SCALAR_TYPES_AND3'
+  _(decltype(::c10::impl::ScalarTypeToCPPType<                                \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:132:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(T value)                  \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:138:53: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'decltype(::c10::impl::ScalarTypeToCPPType< ::c10::ScalarType::Half>::t)' (aka 'c10::Half') for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:205:3: note: expanded from macro 'AT_FORALL_SCALAR_TYPES_AND3'
+  _(decltype(::c10::impl::ScalarTypeToCPPType<                                \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:132:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(T value)                  \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:138:53: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'decltype(::c10::impl::ScalarTypeToCPPType< ::c10::ScalarType::BFloat16>::t)' (aka 'c10::BFloat16') for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:208:3: note: expanded from macro 'AT_FORALL_SCALAR_TYPES_AND3'
+  _(decltype(::c10::impl::ScalarTypeToCPPType<                                \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:132:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(T value)                  \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:140:27: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'c10::complex<float>' for 1st argument
+  AT_FORALL_COMPLEX_TYPES(TENSOR)
+                          ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:267:3: note: expanded from macro 'AT_FORALL_COMPLEX_TYPES'
+  _(c10::complex<float>, ComplexFloat) \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:132:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(T value)                  \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:140:27: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'c10::complex<double>' for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:268:3: note: expanded from macro 'AT_FORALL_COMPLEX_TYPES'
+  _(c10::complex<double>, ComplexDouble)
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:132:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(T value)                  \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:143:3: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'std::initializer_list<TensorDataContainer>' for 1st argument
+  TensorDataContainer(std::initializer_list<TensorDataContainer> init_list)
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:187:53: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'at::ArrayRef<uint8_t>' (aka 'ArrayRef<unsigned char>') for 1st argument
+  AT_FORALL_SCALAR_TYPES_AND3(Bool, Half, BFloat16, TENSOR)
+                                                    ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:195:3: note: expanded from macro 'AT_FORALL_SCALAR_TYPES_AND3'
+  _(uint8_t, Byte)                                                            \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:175:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(at::ArrayRef<T> values)                                 \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:187:53: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'at::ArrayRef<int8_t>' (aka 'ArrayRef<signed char>') for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:196:3: note: expanded from macro 'AT_FORALL_SCALAR_TYPES_AND3'
+  _(int8_t, Char)                                                             \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:175:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(at::ArrayRef<T> values)                                 \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:187:53: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'at::ArrayRef<int16_t>' (aka 'ArrayRef<short>') for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:197:3: note: expanded from macro 'AT_FORALL_SCALAR_TYPES_AND3'
+  _(int16_t, Short)                                                           \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:175:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(at::ArrayRef<T> values)                                 \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:187:53: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'at::ArrayRef<int>' for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:198:3: note: expanded from macro 'AT_FORALL_SCALAR_TYPES_AND3'
+  _(int, Int)                                                                 \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:175:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(at::ArrayRef<T> values)                                 \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:187:53: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'at::ArrayRef<int64_t>' (aka 'ArrayRef<long long>') for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:199:3: note: expanded from macro 'AT_FORALL_SCALAR_TYPES_AND3'
+  _(int64_t, Long)                                                            \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:175:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(at::ArrayRef<T> values)                                 \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:187:53: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'at::ArrayRef<float>' for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:200:3: note: expanded from macro 'AT_FORALL_SCALAR_TYPES_AND3'
+  _(float, Float)                                                             \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:175:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(at::ArrayRef<T> values)                                 \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:187:53: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'at::ArrayRef<double>' for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:201:3: note: expanded from macro 'AT_FORALL_SCALAR_TYPES_AND3'
+  _(double, Double)                                                           \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:175:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(at::ArrayRef<T> values)                                 \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:187:53: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'at::ArrayRef<decltype(::c10::impl::ScalarTypeToCPPType< ::c10::ScalarType::Bool>::t)>' (aka 'ArrayRef<bool>') for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:202:3: note: expanded from macro 'AT_FORALL_SCALAR_TYPES_AND3'
+  _(decltype(::c10::impl::ScalarTypeToCPPType<                                \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:175:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(at::ArrayRef<T> values)                                 \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:187:53: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'at::ArrayRef<decltype(::c10::impl::ScalarTypeToCPPType< ::c10::ScalarType::Half>::t)>' (aka 'ArrayRef<c10::Half>') for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:205:3: note: expanded from macro 'AT_FORALL_SCALAR_TYPES_AND3'
+  _(decltype(::c10::impl::ScalarTypeToCPPType<                                \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:175:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(at::ArrayRef<T> values)                                 \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:187:53: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'at::ArrayRef<decltype(::c10::impl::ScalarTypeToCPPType< ::c10::ScalarType::BFloat16>::t)>' (aka 'ArrayRef<c10::BFloat16>') for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:208:3: note: expanded from macro 'AT_FORALL_SCALAR_TYPES_AND3'
+  _(decltype(::c10::impl::ScalarTypeToCPPType<                                \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:175:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(at::ArrayRef<T> values)                                 \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:189:27: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'at::ArrayRef<c10::complex<float>>' for 1st argument
+  AT_FORALL_COMPLEX_TYPES(TENSOR)
+                          ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:267:3: note: expanded from macro 'AT_FORALL_COMPLEX_TYPES'
+  _(c10::complex<float>, ComplexFloat) \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:175:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(at::ArrayRef<T> values)                                 \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:189:27: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'at::ArrayRef<c10::complex<double>>' for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:268:3: note: expanded from macro 'AT_FORALL_COMPLEX_TYPES'
+  _(c10::complex<double>, ComplexDouble)
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:175:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(at::ArrayRef<T> values)                                 \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:207:47: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'const std::vector<uint8_t> &' (aka 'const vector<unsigned char> &') for 1st argument
+  AT_FORALL_SCALAR_TYPES_AND2(Half, BFloat16, TENSOR)
+                                              ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:180:3: note: expanded from macro 'AT_FORALL_SCALAR_TYPES_AND2'
+  _(uint8_t, Byte)                                               \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:204:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(const std::vector<T>& values) \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:207:47: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'const std::vector<int8_t> &' (aka 'const vector<signed char> &') for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:181:3: note: expanded from macro 'AT_FORALL_SCALAR_TYPES_AND2'
+  _(int8_t, Char)                                                \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:204:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(const std::vector<T>& values) \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:207:47: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'const std::vector<int16_t> &' (aka 'const vector<short> &') for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:182:3: note: expanded from macro 'AT_FORALL_SCALAR_TYPES_AND2'
+  _(int16_t, Short)                                              \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:204:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(const std::vector<T>& values) \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:207:47: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'const std::vector<int> &' for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:183:3: note: expanded from macro 'AT_FORALL_SCALAR_TYPES_AND2'
+  _(int, Int)                                                    \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:204:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(const std::vector<T>& values) \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:207:47: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'const std::vector<int64_t> &' (aka 'const vector<long long> &') for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:184:3: note: expanded from macro 'AT_FORALL_SCALAR_TYPES_AND2'
+  _(int64_t, Long)                                               \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:204:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(const std::vector<T>& values) \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:207:47: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'const std::vector<float> &' for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:185:3: note: expanded from macro 'AT_FORALL_SCALAR_TYPES_AND2'
+  _(float, Float)                                                \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:204:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(const std::vector<T>& values) \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:207:47: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'const std::vector<double> &' for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:186:3: note: expanded from macro 'AT_FORALL_SCALAR_TYPES_AND2'
+  _(double, Double)                                              \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:204:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(const std::vector<T>& values) \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:207:47: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'const std::vector<decltype(::c10::impl::ScalarTypeToCPPType< ::c10::ScalarType::Half>::t)> &' (aka 'const vector<c10::Half> &') for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:187:3: note: expanded from macro 'AT_FORALL_SCALAR_TYPES_AND2'
+  _(decltype(::c10::impl::ScalarTypeToCPPType<                   \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:204:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(const std::vector<T>& values) \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:207:47: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'const std::vector<decltype(::c10::impl::ScalarTypeToCPPType< ::c10::ScalarType::BFloat16>::t)> &' (aka 'const vector<c10::BFloat16> &') for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:190:3: note: expanded from macro 'AT_FORALL_SCALAR_TYPES_AND2'
+  _(decltype(::c10::impl::ScalarTypeToCPPType<                   \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:204:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(const std::vector<T>& values) \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:209:27: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'const std::vector<c10::complex<float>> &' for 1st argument
+  AT_FORALL_COMPLEX_TYPES(TENSOR)
+                          ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:267:3: note: expanded from macro 'AT_FORALL_COMPLEX_TYPES'
+  _(c10::complex<float>, ComplexFloat) \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:204:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(const std::vector<T>& values) \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:209:27: note: candidate constructor not viable: no known conversion from 'std::vector<long>' to 'const std::vector<c10::complex<double>> &' for 1st argument
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/c10/core/ScalarType.h:268:3: note: expanded from macro 'AT_FORALL_COMPLEX_TYPES'
+  _(c10::complex<double>, ComplexDouble)
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include/torch/detail/TensorDataContainer.h:204:3: note: expanded from macro 'TENSOR'
+  TensorDataContainer(const std::vector<T>& values) \
+  ^
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/autograd/generated/variable_factories.h:133:54: note: passing argument to parameter 'tensor_data_container' here
+inline at::Tensor tensor(detail::TensorDataContainer tensor_data_container, const at::TensorOptions& options = {}) {
+                                                     ^
+bsiFunctions.cpp:52:12: error: no viable conversion from returned value of type 'topKMaxOutput *' to function return type 'topKMaxOutput'
+    return new topKMaxOutput(torch::tensor(positions),torch::tensor(values));
+           ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+bsiFunctions.cpp:19:7: note: candidate constructor (the implicit copy constructor) not viable: no known conversion from 'topKMaxOutput *' to 'const topKMaxOutput &' for 1st argument; dereference the argument with *
+class topKMaxOutput {
+      ^
+bsiFunctions.cpp:19:7: note: candidate constructor (the implicit move constructor) not viable: no known conversion from 'topKMaxOutput *' to 'topKMaxOutput &&' for 1st argument
+class topKMaxOutput {
+      ^
+bsiFunctions.cpp:60:14: warning: unused variable 'start' [-Wunused-variable]
     uint64_t start = timeSinceEpoch();
              ^
-bsiFunctions.cpp:105:15: warning: unused variable 'end' [-Wunused-variable]
+bsiFunctions.cpp:80:15: warning: unused variable 'end' [-Wunused-variable]
     u_int64_t end = timeSinceEpoch();
               ^
 In file included from bsiFunctions.cpp:1:
@@ -143,7 +409,7 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/BsiSigned.hpp:113:15: note: in instantiation of member function 'std::vector<HybridBitmap<unsigned long long>>::reserve' requested here
     this->bsi.reserve(BsiAttribute<uword>::bits);
               ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 ./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:64:5: note: field 'lastRLW' will be initialized after field 'verbatim'
@@ -167,7 +433,7 @@ bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:1:
@@ -187,7 +453,7 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:1:
@@ -207,7 +473,7 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 ./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4147:43: note: incremented here
@@ -252,7 +518,7 @@ bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:1:
@@ -272,7 +538,7 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:1:
@@ -292,7 +558,7 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:1:
@@ -327,7 +593,7 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:1:
@@ -347,7 +613,7 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:1:
@@ -367,7 +633,7 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 ./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3963:43: note: incremented here
@@ -418,7 +684,7 @@ bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:1:
@@ -453,7 +719,7 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:1:
@@ -482,7 +748,7 @@ In file included from ./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:10:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:1:
@@ -502,7 +768,7 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:1:
@@ -517,7 +783,7 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 ./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:73:5: note: field 'lastRLW' will be initialized after field 'verbatim'
@@ -536,7 +802,7 @@ In file included from bsiFunctions.cpp:3:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:557:73: note: 'operator[]' returns a reference
@@ -562,7 +828,7 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:1:
@@ -579,7 +845,7 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:1:
@@ -602,7 +868,7 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:1:
@@ -634,7 +900,7 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:1:
@@ -666,7 +932,7 @@ In file included from ./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:10:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:1:
@@ -684,7 +950,7 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:3:
@@ -697,7 +963,7 @@ In file included from bsiFunctions.cpp:3:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:557:73: note: 'operator[]' returns a reference
@@ -727,7 +993,7 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:2:
@@ -746,7 +1012,7 @@ In file included from bsiFunctions.cpp:2:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:557:73: note: 'operator[]' returns a reference
@@ -775,7 +1041,7 @@ In file included from bsiFunctions.cpp:2:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:2:
@@ -805,7 +1071,7 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:1:
@@ -831,7 +1097,7 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:1:
@@ -858,7 +1124,7 @@ In file included from bsiFunctions.cpp:2:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:2:
@@ -886,7 +1152,7 @@ In file included from bsiFunctions.cpp:2:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:2:
@@ -911,7 +1177,7 @@ In file included from bsiFunctions.cpp:2:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:2:
@@ -944,7 +1210,7 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:1:
@@ -967,7 +1233,7 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:1:
@@ -999,7 +1265,7 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:1:
@@ -1022,7 +1288,7 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:1:
@@ -1045,7 +1311,7 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:1:
@@ -1081,7 +1347,7 @@ In file included from bsiFunctions.cpp:2:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:2:
@@ -1118,7 +1384,7 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:2:
@@ -1134,7 +1400,7 @@ In file included from bsiFunctions.cpp:2:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:2:
@@ -1150,7 +1416,7 @@ In file included from bsiFunctions.cpp:2:
 ./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
     BsiSigned();
     ^
-bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:23:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 In file included from bsiFunctions.cpp:2:
@@ -1164,8 +1430,8 @@ In file included from bsiFunctions.cpp:1:
 ./../bsiCPP/bsi/BsiAttribute.hpp:482:20: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
     for (int i=0; i<nums.size(); i++){
                   ~^~~~~~~~~~~~
-bsiFunctions.cpp:31:17: note: in instantiation of member function 'BsiAttribute<unsigned long long>::buildBsiAttributeFromVector' requested here
-    bsi_1 = bsi.buildBsiAttributeFromVector(v, 0.5);
+bsiFunctions.cpp:41:17: note: in instantiation of member function 'BsiAttribute<unsigned long long>::buildBsiAttributeFromVector' requested here
+    bsi_1 = bsi.buildBsiAttributeFromVector(v, 1);
                 ^
 In file included from bsiFunctions.cpp:1:
 ./../bsiCPP/bsi/BsiAttribute.hpp:493:20: warning: comparison of integers of different signs: 'value_type' (aka 'long') and 'unsigned long long' [-Wsign-compare]
@@ -1185,9 +1451,9 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:383:31: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
             for (int i = 0; i < this->sizeInWords(); i++) {
                             ~ ^ ~~~~~~~~~~~~~~~~~~~
-bsiFunctions.cpp:40:30: note: in instantiation of member function 'HybridBitmap<unsigned long long>::positionsToVector' requested here
-    return torch::tensor(res.positionsToVector());
-                             ^
+bsiFunctions.cpp:49:26: note: in instantiation of member function 'HybridBitmap<unsigned long long>::positionsToVector' requested here
+    auto positions = res.positionsToVector();
+                         ^
 In file included from bsiFunctions.cpp:1:
 In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:400:39: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
@@ -1196,75 +1462,5 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:408:35: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
                 for (int j = 0; j < localrlw.getNumberOfLiteralWords(); ++j) {
                                 ~ ^ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-130 warnings generated.
-In file included from bsiFunctions.cpp:1:
-In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
-./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3637:24: warning: unused variable 'lastrlwa' [-Wunused-variable]
-                size_t lastrlwa = a.lastRLW;
-                       ^
-./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3965:21: warning: variable 'i' is incremented both in the loop header and in the loop body [-Wfor-loop-analysis]
-                    i++;
-                    ^
-./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3963:43: note: incremented here
-                for (; i < buffer.size(); i++) {
-                                          ^
-./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3997:21: warning: variable 'i' is incremented both in the loop header and in the loop body [-Wfor-loop-analysis]
-                    i++;
-                    ^
-./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3995:44: note: incremented here
-                for (; i < a.bufferSize(); i++) {
-                                           ^
-./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4149:21: warning: variable 'i' is incremented both in the loop header and in the loop body [-Wfor-loop-analysis]
-                    i++;
-                    ^
-./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4147:43: note: incremented here
-                for (; i < buffer.size(); i++) {
-                                          ^
-./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4353:21: warning: variable 'i' is incremented both in the loop header and in the loop body [-Wfor-loop-analysis]
-                    i++;
-                    ^
-./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4351:51: note: incremented here
-                for (int i = 0; i < bufferSize(); i++) {
-                                                  ^
-./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4395:21: warning: variable 'i' is incremented both in the loop header and in the loop body [-Wfor-loop-analysis]
-                    i++;
-                    ^
-./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4393:53: note: incremented here
-                for (int i = 0; i < a.bufferSize(); i++) {
-                                                    ^
-In file included from bsiFunctions.cpp:1:
-./../bsiCPP/bsi/BsiAttribute.hpp:577:15: warning: unused variable 'MAXLONGLENGTH' [-Wunused-variable]
-    const int MAXLONGLENGTH = 64;
-              ^
-./../bsiCPP/bsi/BsiAttribute.hpp:1044:16: warning: unused variable 'compressRatio' [-Wunused-variable]
-        double compressRatio = 1-pow((1-bitDensity), (2*bits))-pow(bitDensity, (2*bits));
-               ^
-In file included from bsiFunctions.cpp:2:
-./../bsiCPP/bsi/BsiUnsigned.hpp:935:17: warning: unused variable 'minSP' [-Wunused-variable]
-            int minSP = std::min(this->size, intSize);
-                ^
-./../bsiCPP/bsi/BsiUnsigned.hpp:1078:32: warning: unused variable 'buffersize' [-Wunused-variable]
-                        size_t buffersize = this->bsi[0].bufferSize();                       
-                               ^
-./../bsiCPP/bsi/BsiUnsigned.hpp:1810:9: warning: unused variable 'startPosition' [-Wunused-variable]
-    int startPosition = b.size() + a.size() - ans.size();
-        ^
-./../bsiCPP/bsi/BsiUnsigned.hpp:1933:9: warning: unused variable 'precisionInBits' [-Wunused-variable]
-    int precisionInBits = 3*precision +1;
-        ^
-./../bsiCPP/bsi/BsiUnsigned.hpp:2176:9: warning: unused variable 'offset' [-Wunused-variable]
-    int offset =0;
-        ^
-./../bsiCPP/bsi/BsiUnsigned.hpp:2177:9: warning: unused variable 'decimals' [-Wunused-variable]
-    int decimals = 0;
-        ^
-In file included from bsiFunctions.cpp:3:
-./../bsiCPP/bsi/BsiSigned.hpp:654:9: warning: variable 'resSize' set but not used [-Wunused-but-set-variable]
-    int resSize=0;
-        ^
-./../bsiCPP/bsi/BsiSigned.hpp:1857:13: warning: variable 'i' set but not used [-Wunused-but-set-variable]
-        int i = 0;
-            ^
-./../bsiCPP/bsi/BsiSigned.hpp:1889:13: warning: variable 'i' set but not used [-Wunused-but-set-variable]
-        int i = 0;
-            ^
+129 warnings and 3 errors generated.
+error: command '/usr/bin/clang' failed with exit code 1
