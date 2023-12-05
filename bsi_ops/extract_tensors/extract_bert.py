@@ -78,3 +78,4 @@ with open(output_file, 'wb') as f:
     pickle.dump(triplets, f)
 
 print(f"Flattened triplets saved to {output_file}")
+

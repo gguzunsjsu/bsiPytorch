@@ -8,7 +8,7 @@ import sys
 print('import works')  # just to verify against import errors
 
 # Load the triplets from the saved pickle file
-with open('extract_tensors/bert_tensors/bert_large_triplets.pkl', 'rb') as f:
+with open('extract_tensors/extract_BERTClassifierTokens/bert_large_triplets.pkl', 'rb') as f:
     triplets = pickle.load(f)
 print("BERT triplets loaded from the pickle file")
 # List to store dot products for each layer
@@ -25,7 +25,7 @@ k_flat_histograms = []
 num_runs = 5
 
 # Create a text file for saving the results
-output_text_file = 'extract_tensors/bert_tensors/4_bit/dot_product_results.txt'
+output_text_file = 'extract_tensors/extract_BERTClassifierTokens/10_bit/dot_product_results.txt'
 bsi_values = []
 normal_values = []
 percentage_error_values = []
@@ -54,7 +54,7 @@ with open(output_text_file, 'w') as text_file:
         K_size_kb = K_size / 1024
         V_size_kb = V_size / 1024
 
-        conversion_factor = 16.0;
+        conversion_factor = 1023.0;
         custom_exec_times = []
         torch_exec_times = []
         for _ in range(num_runs):
@@ -129,7 +129,7 @@ fig.text(0.5, 0.04, 'Layer', ha='center')
 plt.tight_layout()
 
 # Save the plot as an image (e.g., PNG)
-plt.savefig('extract_tensors/bert_tensors/4_bit/bert_visualization.png')
+plt.savefig('extract_tensors/extract_BERTClassifierTokens/10_bit/bert_visualization.png')
 
 # Show the plot (optional)
 plt.show()
@@ -144,7 +144,7 @@ plt.ylabel('Average Execution Time (milliseconds)')
 plt.legend()
 plt.title('Average Execution Time Comparison (5 Runs)')
 plt.grid(True)
-plt.savefig('extract_tensors/bert_tensors/4_bit/bert_time_visualization.png')
+plt.savefig('extract_tensors/extract_BERTClassifierTokens/10_bit/bert_time_visualization.png')
 plt.show()
 # Plot histograms for Q_flat and K_flat
 plt.figure(figsize=(12, 12))
@@ -164,5 +164,5 @@ plt.ylabel('Frequency')
 plt.legend()
 
 plt.tight_layout()
-plt.savefig('extract_tensors/bert_tensors/4_bit/bert_tensor_distribution.png')
+plt.savefig('extract_tensors/extract_BERTClassifierTokens/10_bit/bert_tensor_distribution.png')
 plt.show()
