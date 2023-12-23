@@ -27,6 +27,7 @@ sbatch train_bash.sh
 
 ### To check status in queue
 squeue
+
 squeue -u <user_id>
 
 
