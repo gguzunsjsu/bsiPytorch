@@ -34,11 +34,11 @@ num_runs = 5
 output_text_file = 'topKMax_results.txt'
 with open(output_text_file, 'w') as text_file:
     # Iterate through each layer's triplets
-    count = 1
+    #count = 2
     for i,d in enumerate(data,1):
-        if count != 1:
-            count -= 1
-            continue
+        #if count != 1:
+        #    count -= 1
+        #    continue
         # Flatten the tensors to 1D using reshape
         d = torch.tensor(d)
         '''print("flattening vector")
@@ -50,25 +50,25 @@ with open(output_text_file, 'w') as text_file:
         # Print the shape of the flattened tensors
         print(f"Layer {i} - Q shape: {d_flat.shape}")
 
-        '''bsi_topkmax_times = []
-        bsi_topkmin_times = []'''
+        bsi_topkmax_times = []
+        bsi_topkmin_times = []
         torch_topkmax_times = []
         torch_topkmin_times = []
         for _ in range(num_runs):
-            '''start_time = time.time()
+            start_time = time.time()
             res = bsi_ops.topKMax(d_flat, 100)
             custom_exec_time = time.time() - start_time
-            torch_topkmax_times.append(custom_exec_time)'''
+            bsi_topkmax_times.append(custom_exec_time)
 
             start_time = time.time()
             torch_res = torch.topk(d_flat, 100)
             torch_exec_time = time.time() - start_time
             torch_topkmax_times.append(torch_exec_time)
 
-            '''start_time = time.time()
+            start_time = time.time()
             res = bsi_ops.topKMin(d_flat, 100)
             custom_exec_time = time.time() - start_time
-            custom_exec_times.append(custom_exec_time)'''
+            bsi_topkmax_times.append(custom_exec_time)
 
             start_time = time.time()
             torch_res = torch.topk(d_flat, 100, largest=False)
@@ -85,12 +85,15 @@ with open(output_text_file, 'w') as text_file:
         '''custom_avg_time = sum(custom_exec_times) / num_runs'''
         torch_topkmax_avg_time = sum(torch_topkmax_times) / num_runs
         torch_topkmin_avg_time = sum(torch_topkmin_times) / num_runs
+        bsi_topkmax_avg_time = sum(bsi_topkmax_times) / num_runs
+        bsi_topkmin_avg_time = sum(bsi_topkmin_times) / num_runs
 
         '''custom_times.append(custom_avg_time)
         torch_times.append(torch_avg_time)'''
 
-        text_file.write(f"Time taken for topkmax operation: {torch_topkmax_avg_time*10**6}\n Time taken for topkmin operation: {torch_topkmin_avg_time*10**6}\n\n")
-        break
+        text_file.write(f"Time taken for torch topkmax operation: {torch_topkmax_avg_time*10**6}\n Time taken for torch topkmin operation: {torch_topkmin_avg_time*10**6}\n\n")
+        text_file.write(f"Time taken for bsi topkmax operation: {bsi_topkmax_avg_time*10**6}\n Time taken for bsi topkmin operation: {bsi_topkmin_avg_time*10**6}\n\n")
+        #break
 '''
 #Create visualization
 layer_numbers = list(range(1, 13))
