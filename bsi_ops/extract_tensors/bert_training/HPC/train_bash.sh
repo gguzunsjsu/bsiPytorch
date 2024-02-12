@@ -25,4 +25,5 @@ source /home/016690830/venv/bin/activate
 
 #nvidia-smi
 
-python3 train.py
+# python3 train.py
+python3 train_extract_vector.py
