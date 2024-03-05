@@ -68,7 +68,7 @@ with open(output_text_file, 'w') as text_file:
             start_time = time.time()
             res = bsi_ops.topKMin(d_flat, 100)
             custom_exec_time = time.time() - start_time
-            bsi_topkmax_times.append(custom_exec_time)
+            bsi_topkmin_times.append(custom_exec_time)
 
             start_time = time.time()
             torch_res = torch.topk(d_flat, 100, largest=False)
@@ -76,13 +76,12 @@ with open(output_text_file, 'w') as text_file:
             torch_topkmin_times.append(torch_exec_time)
 
             # write testcase to file
-            input_vector = bsi_ops.convertTensor(d_flat, 10000)
+            '''input_vector = bsi_ops.convertTensor(d_flat, 10000)
             string = ""
             for i in range(len(input_vector)):
                 string += str(input_vector[i].item())+"\n"
             with open("testcase.txt","w") as t:
-                t.write(string)
-        '''custom_avg_time = sum(custom_exec_times) / num_runs'''
+                t.write(string)'''
         torch_topkmax_avg_time = sum(torch_topkmax_times) / num_runs
         torch_topkmin_avg_time = sum(torch_topkmin_times) / num_runs
         bsi_topkmax_avg_time = sum(bsi_topkmax_times) / num_runs

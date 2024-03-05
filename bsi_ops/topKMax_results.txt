@@ -1,0 +1,48 @@
+Time taken for torch topkmax operation: 5632.925033569336
+ Time taken for torch topkmin operation: 5172.634124755859
+
+Time taken for bsi topkmax operation: 33758.7833404541
+ Time taken for bsi topkmin operation: 34547.47200012207
+
+Time taken for torch topkmax operation: 4024.028778076172
+ Time taken for torch topkmin operation: 4354.667663574219
+
+Time taken for bsi topkmax operation: 24339.008331298828
+ Time taken for bsi topkmin operation: 31004.09507751465
+
+Time taken for torch topkmax operation: 4336.1663818359375
+ Time taken for torch topkmin operation: 5307.960510253906
+
+Time taken for bsi topkmax operation: 27595.949172973633
+ Time taken for bsi topkmin operation: 33209.800720214844
+
+Time taken for torch topkmax operation: 1744.6041107177734
+ Time taken for torch topkmin operation: 1704.9789428710938
+
+Time taken for bsi topkmax operation: 8017.11082458496
+ Time taken for bsi topkmin operation: 8369.827270507812
+
+Time taken for torch topkmax operation: 4378.986358642578
+ Time taken for torch topkmin operation: 4583.168029785156
+
+Time taken for bsi topkmax operation: 22486.82975769043
+ Time taken for bsi topkmin operation: 28708.744049072266
+
+Time taken for torch topkmax operation: 3018.9037322998047
+ Time taken for torch topkmin operation: 3424.501419067383
+
+Time taken for bsi topkmax operation: 13065.433502197266
+ Time taken for bsi topkmin operation: 18428.993225097656
+
+Time taken for torch topkmax operation: 2115.154266357422
+ Time taken for torch topkmin operation: 1561.2125396728516
+
+Time taken for bsi topkmax operation: 5788.469314575195
+ Time taken for bsi topkmin operation: 9775.972366333008
+
+Time taken for torch topkmax operation: 1013.3743286132811
+ Time taken for torch topkmin operation: 809.7648620605469
+
+Time taken for bsi topkmax operation: 3741.2166595458984
+ Time taken for bsi topkmin operation: 5365.133285522461
+

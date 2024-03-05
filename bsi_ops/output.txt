@@ -1,5 +1,5 @@
 running install
-/Applications/anaconda3/envs/pytorch_env/lib/python3.11/site-packages/setuptools/_distutils/cmd.py:66: SetuptoolsDeprecationWarning: setup.py install is deprecated.
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/setuptools/_distutils/cmd.py:66: SetuptoolsDeprecationWarning: setup.py install is deprecated.
 !!
 
         ********************************************************************************
@@ -12,7 +12,7 @@ running install
 
 !!
   self.initialize_options()
-/Applications/anaconda3/envs/pytorch_env/lib/python3.11/site-packages/setuptools/_distutils/cmd.py:66: EasyInstallDeprecationWarning: easy_install command is deprecated.
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/setuptools/_distutils/cmd.py:66: EasyInstallDeprecationWarning: easy_install command is deprecated.
 !!
 
         ********************************************************************************
@@ -30,99 +30,128 @@ running egg_info
 writing bsi_ops.egg-info/PKG-INFO
 writing dependency_links to bsi_ops.egg-info/dependency_links.txt
 writing top-level names to bsi_ops.egg-info/top_level.txt
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/utils/cpp_extension.py:502: UserWarning: Attempted to use ninja as the BuildExtension backend but we could not find ninja.. Falling back to using the slow distutils backend.
+  warnings.warn(msg.format('we could not find ninja.'))
 reading manifest file 'bsi_ops.egg-info/SOURCES.txt'
 writing manifest file 'bsi_ops.egg-info/SOURCES.txt'
-installing library code to build/bdist.macosx-10.9-x86_64/egg
+installing library code to build/bdist.macosx-10.9-universal2/egg
 running install_lib
 running build_ext
 building 'bsi_ops' extension
-Emitting ninja build file /Users/zhang/bsiPytorch/bsi_ops/build/temp.macosx-10.9-x86_64-cpython-311/build.ninja...
-Compiling objects...
-Allowing ninja to set a default number of workers... (overridable by setting the environment variable MAX_JOBS=N)
-[1/1] c++ -MMD -MF /Users/zhang/bsiPytorch/bsi_ops/build/temp.macosx-10.9-x86_64-cpython-311/bsiFunctions.o.d -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /Applications/anaconda3/envs/pytorch_env/include -fPIC -O2 -isystem /Applications/anaconda3/envs/pytorch_env/include -I/Applications/anaconda3/envs/pytorch_env/lib/python3.11/site-packages/torch/include -I/Applications/anaconda3/envs/pytorch_env/lib/python3.11/site-packages/torch/include/torch/csrc/api/include -I/Applications/anaconda3/envs/pytorch_env/lib/python3.11/site-packages/torch/include/TH -I/Applications/anaconda3/envs/pytorch_env/lib/python3.11/site-packages/torch/include/THC -I/Applications/anaconda3/envs/pytorch_env/include/python3.11 -c -c /Users/zhang/bsiPytorch/bsi_ops/bsiFunctions.cpp -o /Users/zhang/bsiPytorch/bsi_ops/build/temp.macosx-10.9-x86_64-cpython-311/bsiFunctions.o -DTORCH_API_INCLUDE_EXTENSION_H '-DPYBIND11_COMPILER_TYPE="_clang"' '-DPYBIND11_STDLIB="_libcpp"' '-DPYBIND11_BUILD_ABI="_cxxabi1002"' -DTORCH_EXTENSION_NAME=bsi_ops -D_GLIBCXX_USE_CXX11_ABI=0 -std=c++17
-In file included from /Users/zhang/bsiPytorch/bsi_ops/bsiFunctions.cpp:1:
-In file included from /Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiAttribute.hpp:11:
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3637:24: warning: unused variable 'lastrlwa' [-Wunused-variable]
+clang -Wno-unused-result -Wsign-compare -Wunreachable-code -fno-common -dynamic -DNDEBUG -g -fwrapv -O3 -Wall -arch arm64 -arch x86_64 -g -I/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include -I/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/torch/csrc/api/include -I/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/TH -I/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/include/THC -I/Library/Frameworks/Python.framework/Versions/3.10/include/python3.10 -c bsiFunctions.cpp -o build/temp.macosx-10.9-universal2-cpython-310/bsiFunctions.o -DTORCH_API_INCLUDE_EXTENSION_H -DPYBIND11_COMPILER_TYPE=\"_clang\" -DPYBIND11_STDLIB=\"_libcpp\" -DPYBIND11_BUILD_ABI=\"_cxxabi1002\" -DTORCH_EXTENSION_NAME=bsi_ops -D_GLIBCXX_USE_CXX11_ABI=0 -std=c++17
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+In file included from ./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:10:
+./../bsiCPP/bsi/hybridBitmap/runninglengthword.h:413:16: warning: unused variable 'timeDischarge' [-Wunused-variable]
+        double timeDischarge = duration.count();
+               ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:2629:10: warning: unused variable 'start' [-Wunused-variable]
+    auto start = std::chrono::high_resolution_clock::now();
+         ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:2728:24: warning: unused variable 'timeOR' [-Wunused-variable]
+                double timeOR = duration.count();
+                       ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3650:24: warning: unused variable 'lastrlwa' [-Wunused-variable]
                 size_t lastrlwa = a.lastRLW;
                        ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3965:21: warning: variable 'i' is incremented both in the loop header and in the loop body [-Wfor-loop-analysis]
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4012:21: warning: variable 'i' is incremented both in the loop header and in the loop body [-Wfor-loop-analysis]
                     i++;
                     ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3963:43: note: incremented here
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4010:43: note: incremented here
                 for (; i < buffer.size(); i++) {
                                           ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3997:21: warning: variable 'i' is incremented both in the loop header and in the loop body [-Wfor-loop-analysis]
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4044:21: warning: variable 'i' is incremented both in the loop header and in the loop body [-Wfor-loop-analysis]
                     i++;
                     ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3995:44: note: incremented here
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4042:44: note: incremented here
                 for (; i < a.bufferSize(); i++) {
                                            ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4149:21: warning: variable 'i' is incremented both in the loop header and in the loop body [-Wfor-loop-analysis]
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4131:14: warning: unused variable 'op1' [-Wunused-variable]
+        auto op1 = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1);
+             ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4132:14: warning: unused variable 'op2' [-Wunused-variable]
+        auto op2 = std::chrono::duration_cast<std::chrono::microseconds>(t3 - t2);
+             ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4133:14: warning: unused variable 'op3' [-Wunused-variable]
+        auto op3 = std::chrono::duration_cast<std::chrono::microseconds>(t4 - t1);
+             ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4203:21: warning: variable 'i' is incremented both in the loop header and in the loop body [-Wfor-loop-analysis]
                     i++;
                     ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4147:43: note: incremented here
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4201:43: note: incremented here
                 for (; i < buffer.size(); i++) {
                                           ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4353:21: warning: variable 'i' is incremented both in the loop header and in the loop body [-Wfor-loop-analysis]
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4407:21: warning: variable 'i' is incremented both in the loop header and in the loop body [-Wfor-loop-analysis]
                     i++;
                     ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4351:51: note: incremented here
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4405:51: note: incremented here
                 for (int i = 0; i < bufferSize(); i++) {
                                                   ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4395:21: warning: variable 'i' is incremented both in the loop header and in the loop body [-Wfor-loop-analysis]
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4449:21: warning: variable 'i' is incremented both in the loop header and in the loop body [-Wfor-loop-analysis]
                     i++;
                     ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4393:53: note: incremented here
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4447:53: note: incremented here
                 for (int i = 0; i < a.bufferSize(); i++) {
                                                     ^
-In file included from /Users/zhang/bsiPytorch/bsi_ops/bsiFunctions.cpp:1:
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiAttribute.hpp:577:15: warning: unused variable 'MAXLONGLENGTH' [-Wunused-variable]
+In file included from bsiFunctions.cpp:1:
+./../bsiCPP/bsi/BsiAttribute.hpp:575:15: warning: unused variable 'MAXLONGLENGTH' [-Wunused-variable]
     const int MAXLONGLENGTH = 64;
               ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiAttribute.hpp:1044:16: warning: unused variable 'compressRatio' [-Wunused-variable]
+./../bsiCPP/bsi/BsiAttribute.hpp:1043:16: warning: unused variable 'compressRatio' [-Wunused-variable]
         double compressRatio = 1-pow((1-bitDensity), (2*bits))-pow(bitDensity, (2*bits));
                ^
-In file included from /Users/zhang/bsiPytorch/bsi_ops/bsiFunctions.cpp:2:
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:935:17: warning: unused variable 'minSP' [-Wunused-variable]
+In file included from bsiFunctions.cpp:2:
+./../bsiCPP/bsi/BsiUnsigned.hpp:930:17: warning: unused variable 'minSP' [-Wunused-variable]
             int minSP = std::min(this->size, intSize);
                 ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1078:32: warning: unused variable 'buffersize' [-Wunused-variable]
+./../bsiCPP/bsi/BsiUnsigned.hpp:1073:32: warning: unused variable 'buffersize' [-Wunused-variable]
                         size_t buffersize = this->bsi[0].bufferSize();                       
                                ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1810:9: warning: unused variable 'startPosition' [-Wunused-variable]
+./../bsiCPP/bsi/BsiUnsigned.hpp:1662:9: warning: unused variable 'startPosition' [-Wunused-variable]
     int startPosition = b.size() + a.size() - ans.size();
         ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1933:9: warning: unused variable 'precisionInBits' [-Wunused-variable]
+./../bsiCPP/bsi/BsiUnsigned.hpp:1785:9: warning: unused variable 'precisionInBits' [-Wunused-variable]
     int precisionInBits = 3*precision +1;
         ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:2176:9: warning: unused variable 'offset' [-Wunused-variable]
+./../bsiCPP/bsi/BsiUnsigned.hpp:1981:9: warning: unused variable 'offset' [-Wunused-variable]
     int offset =0;
         ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:2177:9: warning: unused variable 'decimals' [-Wunused-variable]
+./../bsiCPP/bsi/BsiUnsigned.hpp:1982:9: warning: unused variable 'decimals' [-Wunused-variable]
     int decimals = 0;
         ^
-In file included from /Users/zhang/bsiPytorch/bsi_ops/bsiFunctions.cpp:3:
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:654:9: warning: variable 'resSize' set but not used [-Wunused-but-set-variable]
+In file included from bsiFunctions.cpp:3:
+./../bsiCPP/bsi/BsiSigned.hpp:258:14: warning: unused variable 'AND' [-Wunused-variable]
+        auto AND = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1);
+             ^
+./../bsiCPP/bsi/BsiSigned.hpp:259:14: warning: unused variable 'OR' [-Wunused-variable]
+        auto OR = std::chrono::duration_cast<std::chrono::microseconds>(t3 - t2);
+             ^
+./../bsiCPP/bsi/BsiSigned.hpp:260:14: warning: unused variable 'NOO' [-Wunused-variable]
+        auto NOO = std::chrono::duration_cast<std::chrono::microseconds>(t4 - t3);
+             ^
+./../bsiCPP/bsi/BsiSigned.hpp:261:14: warning: unused variable 'ANDN' [-Wunused-variable]
+        auto ANDN = std::chrono::duration_cast<std::chrono::microseconds>(t5 - t4);
+             ^
+./../bsiCPP/bsi/BsiSigned.hpp:687:9: warning: variable 'resSize' set but not used [-Wunused-but-set-variable]
     int resSize=0;
         ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:1857:13: warning: variable 'i' set but not used [-Wunused-but-set-variable]
+./../bsiCPP/bsi/BsiSigned.hpp:1890:13: warning: variable 'i' set but not used [-Wunused-but-set-variable]
         int i = 0;
             ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:1889:13: warning: variable 'i' set but not used [-Wunused-but-set-variable]
+./../bsiCPP/bsi/BsiSigned.hpp:1922:13: warning: variable 'i' set but not used [-Wunused-but-set-variable]
         int i = 0;
             ^
-/Users/zhang/bsiPytorch/bsi_ops/bsiFunctions.cpp:67:29: warning: unused variable 'bsi_1' [-Wunused-variable]
+bsiFunctions.cpp:129:5: warning: '/*' within block comment [-Wcomment]
+    /*
+    ^
+bsiFunctions.cpp:75:29: warning: unused variable 'bsi_1' [-Wunused-variable]
     BsiAttribute<uint64_t>* bsi_1;
                             ^
-/Users/zhang/bsiPytorch/bsi_ops/bsiFunctions.cpp:85:14: warning: unused variable 'start' [-Wunused-variable]
-    uint64_t start = timeSinceEpoch();
-             ^
-/Users/zhang/bsiPytorch/bsi_ops/bsiFunctions.cpp:105:15: warning: unused variable 'end' [-Wunused-variable]
-    u_int64_t end = timeSinceEpoch();
-              ^
-In file included from /Users/zhang/bsiPytorch/bsi_ops/bsiFunctions.cpp:1:
-In file included from /Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiAttribute.hpp:11:
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:64:5: warning: initializer order does not match the declaration order [-Wreorder-ctor]
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:64:5: warning: initializer order does not match the declaration order [-Wreorder-ctor]
     lastRLW(other.lastRLW),verbatim(other.verbatim), density(other.density) {
     ^~~~~~~~~~~~~~~~~~~~~~ ~~~~~~~~~~~~~~~~~~~~~~~~  ~~~~~~~~~~~~~~~~~~~~~~
     buffer(other.buffer)   sizeinbits(other.sizeinbits) lastRLW(other.lastRLW)
@@ -141,252 +170,2346 @@ In file included from /Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiAttribute
 /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:1504:9: note: in instantiation of member function 'std::vector<HybridBitmap<unsigned long long>>::__swap_out_circular_buffer' requested here
         __swap_out_circular_buffer(__v);
         ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:113:15: note: in instantiation of member function 'std::vector<HybridBitmap<unsigned long long>>::reserve' requested here
+./../bsiCPP/bsi/BsiSigned.hpp:112:15: note: in instantiation of member function 'std::vector<HybridBitmap<unsigned long long>>::reserve' requested here
     this->bsi.reserve(BsiAttribute<uword>::bits);
               ^
-/Users/zhang/bsiPytorch/bsi_ops/bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:64:5: note: field 'lastRLW' will be initialized after field 'verbatim'
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:64:5: note: field 'lastRLW' will be initialized after field 'verbatim'
     lastRLW(other.lastRLW),verbatim(other.verbatim), density(other.density) {
     ^~~~~~~~~~~~~~~~~~~~~~
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:64:28: note: field 'verbatim' will be initialized after field 'density'
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:64:28: note: field 'verbatim' will be initialized after field 'density'
     lastRLW(other.lastRLW),verbatim(other.verbatim), density(other.density) {
                            ^~~~~~~~~~~~~~~~~~~~~~~~
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4149:21: warning: variable 'i' is incremented both in the loop header and in the loop body [-Wfor-loop-analysis]
-                    i++;
-                    ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3500:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andNotHybridCompress' requested here
-            andNotHybridCompress(a, container);}
-            ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:825:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andNot' requested here
-        andNot(a, answer);
-        ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:215:51: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andNot' requested here
-    HybridBitmap<uword> E = this->existenceBitmap.andNot(this->sign); //considers only positive values
-                                                  ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+In file included from bsiFunctions.cpp:3:
+./../bsiCPP/bsi/BsiSigned.hpp:187:32: warning: comparison of integers of different signs: 'size_t' (aka 'unsigned long') and 'int' [-Wsign-compare]
+        if (res.numberOfOnes() < k) {
+            ~~~~~~~~~~~~~~~~~~ ^ ~
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
     BsiSigned();
     ^
-/Users/zhang/bsiPytorch/bsi_ops/bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4147:43: note: incremented here
-                for (; i < buffer.size(); i++) {
-                                          ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3965:21: warning: variable 'i' is incremented both in the loop header and in the loop body [-Wfor-loop-analysis]
+In file included from bsiFunctions.cpp:3:
+./../bsiCPP/bsi/BsiSigned.hpp:193:32: warning: comparison of integers of different signs: 'size_t' (aka 'unsigned long') and 'int' [-Wsign-compare]
+        if (res.numberOfOnes() < k) {
+            ~~~~~~~~~~~~~~~~~~ ^ ~
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3766:23: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for (int i = 0; i < buffer.size(); i++) {
+                    ~ ^ ~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3736:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::orVerbatimCompress' requested here
+            orVerbatimCompress(a,container);
+            ^
+./../bsiCPP/bsi/BsiSigned.hpp:245:14: note: in instantiation of member function 'HybridBitmap<unsigned long long>::OrWithoutDecompress' requested here
+        topK.OrWithoutDecompress(SE, X);
+             ^
+./../bsiCPP/bsi/BsiSigned.hpp:186:15: note: in instantiation of member function 'BsiSigned<>::topKMaxAbs' requested here
+        res = topKMaxAbs(k,res.andNot(this->bsi[this->size-1]));
+              ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3972:23: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for (int i = 0; i < buffer.size(); i++) {
+                    ~ ^ ~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3738:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::orVerbatim' requested here
+            orVerbatim(a, container);
+            ^
+./../bsiCPP/bsi/BsiSigned.hpp:245:14: note: in instantiation of member function 'HybridBitmap<unsigned long long>::OrWithoutDecompress' requested here
+        topK.OrWithoutDecompress(SE, X);
+             ^
+./../bsiCPP/bsi/BsiSigned.hpp:186:15: note: in instantiation of member function 'BsiSigned<>::topKMaxAbs' requested here
+        res = topKMaxAbs(k,res.andNot(this->bsi[this->size-1]));
+              ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4012:21: warning: variable 'i' is incremented both in the loop header and in the loop body [-Wfor-loop-analysis]
                     i++;
                     ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3693:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::orHybridCompress' requested here
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3743:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::orHybridCompress' requested here
             orHybridCompress(a,container);
             ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:581:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::Or' requested here
-        Or(a, answer);
-        ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:226:18: note: in instantiation of member function 'HybridBitmap<unsigned long long>::Or' requested here
-        X = topK.Or(SE);
-                 ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+./../bsiCPP/bsi/BsiSigned.hpp:245:14: note: in instantiation of member function 'HybridBitmap<unsigned long long>::OrWithoutDecompress' requested here
+        topK.OrWithoutDecompress(SE, X);
+             ^
+./../bsiCPP/bsi/BsiSigned.hpp:186:15: note: in instantiation of member function 'BsiSigned<>::topKMaxAbs' requested here
+        res = topKMaxAbs(k,res.andNot(this->bsi[this->size-1]));
+              ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
     BsiSigned();
     ^
-/Users/zhang/bsiPytorch/bsi_ops/bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3963:43: note: incremented here
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4010:43: note: incremented here
                 for (; i < buffer.size(); i++) {
                                           ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3997:21: warning: variable 'i' is incremented both in the loop header and in the loop body [-Wfor-loop-analysis]
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4044:21: warning: variable 'i' is incremented both in the loop header and in the loop body [-Wfor-loop-analysis]
                     i++;
                     ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3995:44: note: incremented here
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4042:44: note: incremented here
                 for (; i < a.bufferSize(); i++) {
                                            ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:73:5: warning: initializer order does not match the declaration order [-Wreorder-ctor]
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3991:18: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+        while (i <buffer.size()) {
+               ~ ^~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3997:31: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for (j = 0; j < rlwa.getRunningLength(); j++) {
+                            ~ ^ ~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4003:27: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for (j = 0; j < rlwa.getNumberOfLiteralWords(); j++) {
+                        ~ ^ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4010:26: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+                for (; i < buffer.size(); i++) {
+                       ~ ^ ~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4023:18: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+        while (i < a.bufferSize()) {
+               ~ ^ ~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4029:31: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for (j = 0; j < rlw.getRunningLength(); j++) {
+                            ~ ^ ~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4035:27: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for (j = 0; j < rlw.getNumberOfLiteralWords(); j++) {
+                        ~ ^ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4042:26: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+                for (; i < a.bufferSize(); i++) {
+                       ~ ^ ~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4507:18: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+        while (i < bufferSize()) {
+               ~ ^ ~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3745:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::orHybrid' requested here
+            orHybrid(a, container);
+            ^
+./../bsiCPP/bsi/BsiSigned.hpp:245:14: note: in instantiation of member function 'HybridBitmap<unsigned long long>::OrWithoutDecompress' requested here
+        topK.OrWithoutDecompress(SE, X);
+             ^
+./../bsiCPP/bsi/BsiSigned.hpp:186:15: note: in instantiation of member function 'BsiSigned<>::topKMaxAbs' requested here
+        res = topKMaxAbs(k,res.andNot(this->bsi[this->size-1]));
+              ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4517:27: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+                    if (i >= bufferSize()) {
+                        ~ ^  ~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4524:24: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for( j=0; j<rlwa.getNumberOfLiteralWords(); j++){
+                      ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4539:18: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+        while (i < a.bufferSize()) {
+               ~ ^ ~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4549:27: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+                    if (i >= a.bufferSize()) {
+                        ~ ^  ~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4557:24: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for( j=0; j<rlw.getNumberOfLiteralWords(); j++){
+                      ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3478:23: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+    for (int i = 0; i < bufferSize(); i++) {
+                    ~ ^ ~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3499:17: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andNotVerbatimCompress' requested here
+                andNotVerbatimCompress(a, container);    }
+                ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:826:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andNot' requested here
+        andNot(a, answer);
+        ^
+./../bsiCPP/bsi/BsiSigned.hpp:186:32: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andNot' requested here
+        res = topKMaxAbs(k,res.andNot(this->bsi[this->size-1]));
+                               ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4380:23: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+    for (int i = 0; i < bufferSize(); i++) {
+                    ~ ^ ~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3503:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andNotVerbatim' requested here
+            andNotVerbatim(a, container);
+            ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:826:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andNot' requested here
+        andNot(a, answer);
+        ^
+./../bsiCPP/bsi/BsiSigned.hpp:186:32: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andNot' requested here
+        res = topKMaxAbs(k,res.andNot(this->bsi[this->size-1]));
+                               ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4203:21: warning: variable 'i' is incremented both in the loop header and in the loop body [-Wfor-loop-analysis]
+                    i++;
+                    ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3513:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andNotHybridCompress' requested here
+            andNotHybridCompress(a, container);}
+            ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:826:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andNot' requested here
+        andNot(a, answer);
+        ^
+./../bsiCPP/bsi/BsiSigned.hpp:186:32: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andNot' requested here
+        res = topKMaxAbs(k,res.andNot(this->bsi[this->size-1]));
+                               ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4201:43: note: incremented here
+                for (; i < buffer.size(); i++) {
+                                          ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4179:18: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+        while (i < buffer.size()) {
+               ~ ^ ~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4183:31: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for (j = 0; j < rlwa.getRunningLength(); j++) {
+                            ~ ^ ~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4189:31: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for (j = 0; j < rlwa.getRunningLength(); j++) {
+                            ~ ^ ~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4195:24: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for( j=0; j<rlwa.getNumberOfLiteralWords(); j++){
+                      ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4201:26: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+                for (; i < buffer.size(); i++) {
+                       ~ ^ ~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4214:18: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+        while (i < a.bufferSize()) {
+               ~ ^ ~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4216:31: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for (j = 0; j < rlw.getRunningLength(); j++) {
+                            ~ ^ ~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4224:24: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for( j=0; j<rlw.getNumberOfLiteralWords(); j++){
+                      ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:1912:27: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+        for (int i = 0; i < bufferSize(); i++) {
+                        ~ ^ ~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiSigned.hpp:187:17: note: in instantiation of member function 'HybridBitmap<unsigned long long>::numberOfOnes' requested here
+        if (res.numberOfOnes() < k) {
+                ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3684:23: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for (int i = 0; i < buffer.size(); i++) {
+                    ~ ^ ~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3298:17: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andVerbatimCompress' requested here
+                andVerbatimCompress(a, container);
+                ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:576:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::And' requested here
+        And(a, answer);
+        ^
+./../bsiCPP/bsi/BsiSigned.hpp:188:61: note: in instantiation of member function 'HybridBitmap<unsigned long long>::And' requested here
+            res = res.Or(topKMaxAbs(k,this->existenceBitmap.And(this->bsi[this->size-1])));
+                                                            ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3957:19: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for(int i=0; i<buffer.size();i++){
+                 ~^~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3301:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andVerbatim' requested here
+            andVerbatim(a, container);
+            ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:576:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::And' requested here
+        And(a, answer);
+        ^
+./../bsiCPP/bsi/BsiSigned.hpp:188:61: note: in instantiation of member function 'HybridBitmap<unsigned long long>::And' requested here
+            res = res.Or(topKMaxAbs(k,this->existenceBitmap.And(this->bsi[this->size-1])));
+                                                            ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4068:18: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+        while (i < buffer.size()) {
+               ~ ^ ~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3308:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andHybridCompress' requested here
+            andHybridCompress(a, container);
+            ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:576:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::And' requested here
+        And(a, answer);
+        ^
+./../bsiCPP/bsi/BsiSigned.hpp:188:61: note: in instantiation of member function 'HybridBitmap<unsigned long long>::And' requested here
+            res = res.Or(topKMaxAbs(k,this->existenceBitmap.And(this->bsi[this->size-1])));
+                                                            ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4070:31: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for (j = 0; j < rlwa.getRunningLength(); j++) {
+                            ~ ^ ~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4081:24: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for( j=0; j<rlwa.getNumberOfLiteralWords(); j++){
+                      ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4104:18: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+        while (i < a.buffer.size()) {
+               ~ ^ ~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4106:31: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for (j = 0; j < rlw.getRunningLength(); j++) {
+                            ~ ^ ~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4116:23: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for(j=0; j<rlw.getNumberOfLiteralWords(); j++){
+                     ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:2710:33: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for(int i = 0; i< predator.getRunningLength(); i++){
+                               ~^ ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3713:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::logicalorDecompress' requested here
+            logicalorDecompress(a, container);
+            ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:582:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::Or' requested here
+        Or(a, answer);
+        ^
+./../bsiCPP/bsi/BsiSigned.hpp:188:23: note: in instantiation of member function 'HybridBitmap<unsigned long long>::Or' requested here
+            res = res.Or(topKMaxAbs(k,this->existenceBitmap.And(this->bsi[this->size-1])));
+                      ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:2729:49: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for(int i = actualsizeinwords; i< actualsizeinwords+predator.getRunningLength() - index; i++){
+                                               ~^ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+In file included from ./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:10:
+./../bsiCPP/bsi/hybridBitmap/runninglengthword.h:386:29: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+            for(int i = 0; i< pl; i++){
+                           ~^ ~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:2722:30: note: in instantiation of member function 'BufferedRunningLengthWord<unsigned long long>::dischargeDecompressed' requested here
+                        prey.dischargeDecompressed(container, predator.getRunningLength());
+                             ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3713:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::logicalorDecompress' requested here
+            logicalorDecompress(a, container);
+            ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:582:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::Or' requested here
+        Or(a, answer);
+        ^
+./../bsiCPP/bsi/BsiSigned.hpp:188:23: note: in instantiation of member function 'HybridBitmap<unsigned long long>::Or' requested here
+            res = res.Or(topKMaxAbs(k,this->existenceBitmap.And(this->bsi[this->size-1])));
+                      ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+In file included from ./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:10:
+./../bsiCPP/bsi/hybridBitmap/runninglengthword.h:390:29: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+            for(int i = 0; i< pl; i++){
+                           ~^ ~~
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:73:5: warning: initializer order does not match the declaration order [-Wreorder-ctor]
     lastRLW(other.lastRLW),verbatim(other.verbatim), density(other.density)  {
     ^~~~~~~~~~~~~~~~~~~~~~ ~~~~~~~~~~~~~~~~~~~~~~~~  ~~~~~~~~~~~~~~~~~~~~~~
     buffer(other.buffer)   sizeinbits(other.sizeinbits) lastRLW(other.lastRLW)
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:258:12: note: in instantiation of member function 'HybridBitmap<unsigned long long>::HybridBitmap' requested here
-    return topK;
-           ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+./../bsiCPP/bsi/BsiSigned.hpp:190:16: note: in instantiation of member function 'HybridBitmap<unsigned long long>::HybridBitmap' requested here
+        return res;
+               ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
     BsiSigned();
     ^
-/Users/zhang/bsiPytorch/bsi_ops/bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:73:5: note: field 'lastRLW' will be initialized after field 'verbatim'
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:73:5: note: field 'lastRLW' will be initialized after field 'verbatim'
     lastRLW(other.lastRLW),verbatim(other.verbatim), density(other.density)  {
     ^~~~~~~~~~~~~~~~~~~~~~
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:73:28: note: field 'verbatim' will be initialized after field 'density'
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:73:28: note: field 'verbatim' will be initialized after field 'density'
     lastRLW(other.lastRLW),verbatim(other.verbatim), density(other.density)  {
                            ^~~~~~~~~~~~~~~~~~~~~~~~
-In file included from /Users/zhang/bsiPytorch/bsi_ops/bsiFunctions.cpp:3:
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:918:22: warning: reference cannot be bound to dereferenced null pointer in well-defined C++ code; pointer may be assumed to always convert to true [-Wundefined-bool-conversion]
-        res->sign = &res->bsi[res->size-1];
-                    ~^~~~~~~~~~~~~~~~~~~~~
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:396:22: note: in instantiation of member function 'BsiSigned<>::SUMsigned' requested here
-        return this->SUMsigned(a);
-                     ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
+In file included from bsiFunctions.cpp:3:
+./../bsiCPP/bsi/BsiSigned.hpp:209:32: warning: comparison of integers of different signs: 'size_t' (aka 'unsigned long') and 'int' [-Wsign-compare]
+        if (res.numberOfOnes() < k) {
+            ~~~~~~~~~~~~~~~~~~ ^ ~
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMin' requested here
     BsiSigned();
     ^
-/Users/zhang/bsiPytorch/bsi_ops/bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:3:
+./../bsiCPP/bsi/BsiSigned.hpp:215:32: warning: comparison of integers of different signs: 'size_t' (aka 'unsigned long') and 'int' [-Wsign-compare]
+        if (res.numberOfOnes() < k) {
+            ~~~~~~~~~~~~~~~~~~ ^ ~
+./../bsiCPP/bsi/BsiSigned.hpp:951:22: warning: reference cannot be bound to dereferenced null pointer in well-defined C++ code; pointer may be assumed to always convert to true [-Wundefined-bool-conversion]
+        res->sign = &res->bsi[res->size-1];
+                    ~^~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiSigned.hpp:429:22: note: in instantiation of member function 'BsiSigned<>::SUMsigned' requested here
+        return this->SUMsigned(a);
+                     ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:557:73: note: 'operator[]' returns a reference
     _LIBCPP_CONSTEXPR_SINCE_CXX20 _LIBCPP_HIDE_FROM_ABI reference       operator[](size_type __n) _NOEXCEPT;
                                                                         ^
-In file included from /Users/zhang/bsiPytorch/bsi_ops/bsiFunctions.cpp:1:
-In file included from /Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiAttribute.hpp:11:
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:592:48: warning: 'this' pointer cannot be null in well-defined C++ code; pointer may be assumed to always convert to true [-Wundefined-bool-conversion]
-        HybridBitmap answer = new HybridBitmap(this);
-                                  ~~~~~~~~~~~~ ^~~~
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:902:54: note: in instantiation of member function 'HybridBitmap<unsigned long long>::Xor' requested here
-                    res->bsi[res->size]=this->bsi[j].Xor(a->sign);
-                                                     ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:396:22: note: in instantiation of member function 'BsiSigned<>::SUMsigned' requested here
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3194:23: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for (int i = 0; i < buffer.size(); i++) {
+                    ~ ^ ~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:540:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::maj' requested here
+        maj(a, b, answer);
+        ^
+./../bsiCPP/bsi/BsiAttribute.hpp:768:18: note: in instantiation of member function 'HybridBitmap<unsigned long long>::maj' requested here
+        return a.maj(b, c);
+                 ^
+./../bsiCPP/bsi/BsiSigned.hpp:924:30: note: in instantiation of member function 'BsiAttribute<unsigned long long>::maj' requested here
+                    CC=this->maj(a->bsi[j],this->sign,CC);
+                             ^
+./../bsiCPP/bsi/BsiSigned.hpp:429:22: note: in instantiation of member function 'BsiSigned<>::SUMsigned' requested here
         return this->SUMsigned(a);
                      ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
     BsiSigned();
     ^
-/Users/zhang/bsiPytorch/bsi_ops/bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
-In file included from /Users/zhang/bsiPytorch/bsi_ops/bsiFunctions.cpp:1:
-In file included from /Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiAttribute.hpp:11:
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:51:64: warning: field 'lastRLW' will be initialized after field 'verbatim' [-Wreorder-ctor]
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:593:48: warning: 'this' pointer cannot be null in well-defined C++ code; pointer may be assumed to always convert to true [-Wundefined-bool-conversion]
+        HybridBitmap answer = new HybridBitmap(this);
+                                  ~~~~~~~~~~~~ ^~~~
+./../bsiCPP/bsi/BsiSigned.hpp:935:54: note: in instantiation of member function 'HybridBitmap<unsigned long long>::Xor' requested here
+                    res->bsi[res->size]=this->bsi[j].Xor(a->sign);
+                                                     ^
+./../bsiCPP/bsi/BsiSigned.hpp:429:22: note: in instantiation of member function 'BsiSigned<>::SUMsigned' requested here
+        return this->SUMsigned(a);
+                     ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4688:18: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+        while (i < bufferSize()) {
+               ~ ^ ~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3783:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::xorHybrid' requested here
+        xorHybrid(a, container);
+        ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:594:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::Xor' requested here
+        Xor(a, answer);
+        ^
+./../bsiCPP/bsi/BsiSigned.hpp:935:54: note: in instantiation of member function 'HybridBitmap<unsigned long long>::Xor' requested here
+                    res->bsi[res->size]=this->bsi[j].Xor(a->sign);
+                                                     ^
+./../bsiCPP/bsi/BsiSigned.hpp:429:22: note: in instantiation of member function 'BsiSigned<>::SUMsigned' requested here
+        return this->SUMsigned(a);
+                     ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4702:24: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for( j=0; j<rlwa.getNumberOfLiteralWords(); j++){
+                      ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4721:18: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+        while (i < a.bufferSize()) {
+               ~ ^ ~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4735:24: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for( j=0; j<rlw.getNumberOfLiteralWords(); j++){
+                      ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4926:33: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for(int i = 0; i< predator.getRunningLength() - index; i++){
+                               ~^ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3787:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::logicalxorDecompress' requested here
+            logicalxorDecompress(a, container);
+            ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:594:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::Xor' requested here
+        Xor(a, answer);
+        ^
+./../bsiCPP/bsi/BsiSigned.hpp:935:54: note: in instantiation of member function 'HybridBitmap<unsigned long long>::Xor' requested here
+                    res->bsi[res->size]=this->bsi[j].Xor(a->sign);
+                                                     ^
+./../bsiCPP/bsi/BsiSigned.hpp:429:22: note: in instantiation of member function 'BsiSigned<>::SUMsigned' requested here
+        return this->SUMsigned(a);
+                     ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4934:33: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for(int i = 0; i< predator.getRunningLength() - index; i++){
+                               ~^ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+In file included from ./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:10:
+./../bsiCPP/bsi/hybridBitmap/runninglengthword.h:428:29: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+            for(int i = 0; i< pl; i++){
+                           ~^ ~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4931:44: note: in instantiation of member function 'BufferedRunningLengthWord<unsigned long long>::dischargeNegatedDecompressed' requested here
+                 const size_t index = prey.dischargeNegatedDecompressed(container, predator.getRunningLength());
+                                           ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3787:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::logicalxorDecompress' requested here
+            logicalxorDecompress(a, container);
+            ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:594:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::Xor' requested here
+        Xor(a, answer);
+        ^
+./../bsiCPP/bsi/BsiSigned.hpp:935:54: note: in instantiation of member function 'HybridBitmap<unsigned long long>::Xor' requested here
+                    res->bsi[res->size]=this->bsi[j].Xor(a->sign);
+                                                     ^
+./../bsiCPP/bsi/BsiSigned.hpp:429:22: note: in instantiation of member function 'BsiSigned<>::SUMsigned' requested here
+        return this->SUMsigned(a);
+                     ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:51:64: warning: field 'lastRLW' will be initialized after field 'verbatim' [-Wreorder-ctor]
     HybridBitmap(bool verbatim) : buffer(1, 0), sizeinbits(0), lastRLW(0), verbatim(verbatim) { 
                                   ~~~~~~~~~~~~  ~~~~~~~~~~~~   ^~~~~~~~~   ~~~~~~~~~~~~~~~~~
                                   verbatim(verbatim buffer(1, 0) sizeinbits(0 lastRLW(0
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:918:21: note: in instantiation of member function 'HybridBitmap<unsigned long long>::HybridBitmap' requested here
+./../bsiCPP/bsi/BsiSigned.hpp:951:21: note: in instantiation of member function 'HybridBitmap<unsigned long long>::HybridBitmap' requested here
         res->sign = &res->bsi[res->size-1];
                     ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:396:22: note: in instantiation of member function 'BsiSigned<>::SUMsigned' requested here
+./../bsiCPP/bsi/BsiSigned.hpp:429:22: note: in instantiation of member function 'BsiSigned<>::SUMsigned' requested here
         return this->SUMsigned(a);
                      ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
     BsiSigned();
     ^
-/Users/zhang/bsiPytorch/bsi_ops/bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
-In file included from /Users/zhang/bsiPytorch/bsi_ops/bsiFunctions.cpp:3:
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:778:22: warning: reference cannot be bound to dereferenced null pointer in well-defined C++ code; pointer may be assumed to always convert to true [-Wundefined-bool-conversion]
+In file included from bsiFunctions.cpp:3:
+./../bsiCPP/bsi/BsiSigned.hpp:811:22: warning: reference cannot be bound to dereferenced null pointer in well-defined C++ code; pointer may be assumed to always convert to true [-Wundefined-bool-conversion]
         res->sign = &res->bsi[res->size-1];
                     ~^~~~~~~~~~~~~~~~~~~~~
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:399:22: note: in instantiation of member function 'BsiSigned<>::SUMunsigned' requested here
+./../bsiCPP/bsi/BsiSigned.hpp:432:22: note: in instantiation of member function 'BsiSigned<>::SUMunsigned' requested here
         return this->SUMunsigned(a);
                      ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
     BsiSigned();
     ^
-/Users/zhang/bsiPytorch/bsi_ops/bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:557:73: note: 'operator[]' returns a reference
     _LIBCPP_CONSTEXPR_SINCE_CXX20 _LIBCPP_HIDE_FROM_ABI reference       operator[](size_type __n) _NOEXCEPT;
                                                                         ^
-In file included from /Users/zhang/bsiPytorch/bsi_ops/bsiFunctions.cpp:3:
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:826:22: warning: reference cannot be bound to dereferenced null pointer in well-defined C++ code; pointer may be assumed to always convert to true [-Wundefined-bool-conversion]
+In file included from bsiFunctions.cpp:3:
+./../bsiCPP/bsi/BsiSigned.hpp:859:22: warning: reference cannot be bound to dereferenced null pointer in well-defined C++ code; pointer may be assumed to always convert to true [-Wundefined-bool-conversion]
         res->sign = &res->bsi[res->size-1];
                     ~^~~~~~~~~~~~~~~~~~~~~
 /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:557:73: note: 'operator[]' returns a reference
     _LIBCPP_CONSTEXPR_SINCE_CXX20 _LIBCPP_HIDE_FROM_ABI reference       operator[](size_type __n) _NOEXCEPT;
                                                                         ^
-In file included from /Users/zhang/bsiPytorch/bsi_ops/bsiFunctions.cpp:2:
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:825:22: warning: reference cannot be bound to dereferenced null pointer in well-defined C++ code; pointer may be assumed to always convert to true [-Wundefined-bool-conversion]
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:1972:24: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+        for(int i=0; i < bufferSize(); i++){
+                     ~ ^ ~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:1311:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::logicalnot' requested here
+        logicalnot(answer);
+        ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:747:21: note: in instantiation of member function 'HybridBitmap<unsigned long long>::logicalnot' requested here
+        container = logicalnot();
+                    ^
+./../bsiCPP/bsi/BsiSigned.hpp:463:36: note: in instantiation of member function 'HybridBitmap<unsigned long long>::Not' requested here
+        res->addSlice(this->bsi[0].Not());
+                                   ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:2:
+./../bsiCPP/bsi/BsiUnsigned.hpp:820:22: warning: reference cannot be bound to dereferenced null pointer in well-defined C++ code; pointer may be assumed to always convert to true [-Wundefined-bool-conversion]
         res->sign = &res->bsi[res->size-1];
                     ~^~~~~~~~~~~~~~~~~~~~~
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:381:16: note: in instantiation of member function 'BsiUnsigned<>::SUMsigned' requested here
+./../bsiCPP/bsi/BsiUnsigned.hpp:376:16: note: in instantiation of member function 'BsiUnsigned<>::SUMsigned' requested here
         return SUMsigned(a);
                ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:22:5: note: in instantiation of member function 'BsiUnsigned<>::SUM' requested here
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::SUM' requested here
     BsiUnsigned(int maxSize);
     ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:598:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
     BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
                                   ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
     BsiSigned();
     ^
-/Users/zhang/bsiPytorch/bsi_ops/bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
 /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:557:73: note: 'operator[]' returns a reference
     _LIBCPP_CONSTEXPR_SINCE_CXX20 _LIBCPP_HIDE_FROM_ABI reference       operator[](size_type __n) _NOEXCEPT;
                                                                         ^
-In file included from /Users/zhang/bsiPytorch/bsi_ops/bsiFunctions.cpp:2:
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:882:22: warning: reference cannot be bound to dereferenced null pointer in well-defined C++ code; pointer may be assumed to always convert to true [-Wundefined-bool-conversion]
+In file included from bsiFunctions.cpp:2:
+./../bsiCPP/bsi/BsiUnsigned.hpp:877:22: warning: reference cannot be bound to dereferenced null pointer in well-defined C++ code; pointer may be assumed to always convert to true [-Wundefined-bool-conversion]
         res->sign = &res->bsi[res->size-1];
                     ~^~~~~~~~~~~~~~~~~~~~~
 /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:557:73: note: 'operator[]' returns a reference
     _LIBCPP_CONSTEXPR_SINCE_CXX20 _LIBCPP_HIDE_FROM_ABI reference       operator[](size_type __n) _NOEXCEPT;
                                                                         ^
-In file included from /Users/zhang/bsiPytorch/bsi_ops/bsiFunctions.cpp:2:
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:395:15: warning: unused variable 'ai' [-Wunused-variable]
+In file included from bsiFunctions.cpp:2:
+./../bsiCPP/bsi/BsiUnsigned.hpp:390:15: warning: unused variable 'ai' [-Wunused-variable]
         uword ai = (static_cast<uword>(1) << i);
               ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:406:23: note: in instantiation of member function 'BsiUnsigned<>::sliceLengthFinder' requested here
+./../bsiCPP/bsi/BsiUnsigned.hpp:401:23: note: in instantiation of member function 'BsiUnsigned<>::sliceLengthFinder' requested here
         int intSize = sliceLengthFinder(a);
                       ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:22:5: note: in instantiation of member function 'BsiUnsigned<>::SUM' requested here
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::SUM' requested here
     BsiUnsigned(int maxSize);
     ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:598:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
     BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
                                   ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
     BsiSigned();
     ^
-/Users/zhang/bsiPytorch/bsi_ops/bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
-In file included from /Users/zhang/bsiPytorch/bsi_ops/bsiFunctions.cpp:1:
-In file included from /Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiAttribute.hpp:11:
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:58:112: warning: field 'lastRLW' will be initialized after field 'verbatim' [-Wreorder-ctor]
+In file included from bsiFunctions.cpp:2:
+./../bsiCPP/bsi/BsiUnsigned.hpp:388:22: warning: comparison of integers of different signs: 'int' and 'unsigned long' [-Wsign-compare]
+    for(int i = 0; i < sizeof(uword) * 8; i++)
+                   ~ ^ ~~~~~~~~~~~~~~~~~
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4592:23: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+    for (int i = 0; i < bufferSize(); i++) {
+                    ~ ^ ~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3890:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::xorNotVerbatim' requested here
+        xorNotVerbatim(a, container);
+        ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:600:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::xorNot' requested here
+        xorNot(a, answer);
+        ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:422:35: note: in instantiation of member function 'HybridBitmap<unsigned long long>::xorNot' requested here
+                    res->bsi[i]=C.xorNot(this->bsi[i]);
+                                  ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::SUM' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4832:18: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+        while (i < bufferSize()) {
+               ~ ^ ~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3892:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::xorNotHybrid' requested here
+        xorNotHybrid(a, container);
+        ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:600:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::xorNot' requested here
+        xorNot(a, answer);
+        ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:422:35: note: in instantiation of member function 'HybridBitmap<unsigned long long>::xorNot' requested here
+                    res->bsi[i]=C.xorNot(this->bsi[i]);
+                                  ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::SUM' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4845:24: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for( j=0; j<rlwa.getNumberOfLiteralWords(); j++){
+                      ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4859:18: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+        while (i < a.bufferSize()) {
+               ~ ^ ~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4873:24: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for( j=0; j<rlw.getNumberOfLiteralWords(); j++){
+                      ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+In file included from bsiFunctions.cpp:2:
+./../bsiCPP/bsi/BsiUnsigned.hpp:1058:26: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+                while (k >= res->bsi.size()) {                    
+                       ~ ^  ~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::multiplyByConstantNew' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:2:
+./../bsiCPP/bsi/BsiUnsigned.hpp:1070:31: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+                for (i = 1; i < this->bsi.size(); i++) {
+                            ~ ^ ~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiUnsigned.hpp:1072:36: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+                    while ((i + k) >= res->bsi.size()) {
+                            ~~~~~  ^  ~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiUnsigned.hpp:1085:48: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+                for (int j = this->size + k; j < res->bsi.size(); j++) {
+                                             ~ ^ ~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiUnsigned.hpp:1800:19: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+    for(int i=0; i< this->bsi[0].bufferSize(); i++){
+                 ~^ ~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiUnsigned.hpp:1842:31: note: in instantiation of member function 'BsiUnsigned<>::multiplyWithBsiHorizontal' requested here
+   BsiAttribute<uword>* res = multiplyWithBsiHorizontal(a,3);
+                              ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::multiplication' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:2:
+./../bsiCPP/bsi/BsiUnsigned.hpp:1808:23: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+        for(int j=0; j< answer.size() ; j++){
+                     ~^ ~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiUnsigned.hpp:1666:19: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for(int i=0; i<a.size(); i++){
+                 ~^~~~~~~~~
+./../bsiCPP/bsi/BsiUnsigned.hpp:1807:15: note: in instantiation of member function 'BsiUnsigned<>::multiply' requested here
+        this->multiply(a,b,answer);         //perform multiplication on one word
+              ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:1842:31: note: in instantiation of member function 'BsiUnsigned<>::multiplyWithBsiHorizontal' requested here
+   BsiAttribute<uword>* res = multiplyWithBsiHorizontal(a,3);
+                              ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::multiplication' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:2:
+./../bsiCPP/bsi/BsiUnsigned.hpp:1669:28: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for(int i = a.size(); i< b.size() + a.size(); i++){
+                          ~^ ~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiUnsigned.hpp:1674:21: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for(int it=1; it<b.size(); it++){
+                  ~~^~~~~~~~~
+./../bsiCPP/bsi/BsiUnsigned.hpp:1684:23: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+        for(int i=1; i<a.size(); i++){
+                     ~^~~~~~~~~
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4159:23: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for (int i = 0; i < buffer.size(); i++) {
+                    ~ ^ ~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3813:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::inPlaceXorVerbatim' requested here
+        inPlaceXorVerbatim(a);
+        ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:1464:11: note: in instantiation of member function 'HybridBitmap<unsigned long long>::XorInPlace' requested here
+        S.XorInPlace(this->bsi[0]);
+          ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::multiplyBSI' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4764:18: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+        while (i < bufferSize()) {
+               ~ ^ ~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3815:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::inPlaceXorHybrid' requested here
+        inPlaceXorHybrid(a);
+        ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:1464:11: note: in instantiation of member function 'HybridBitmap<unsigned long long>::XorInPlace' requested here
+        S.XorInPlace(this->bsi[0]);
+          ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::multiplyBSI' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4775:24: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for( j=0; j<rlwa.getNumberOfLiteralWords(); j++){
+                      ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4789:18: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+        while (i < a.bufferSize()) {
+               ~ ^ ~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4803:24: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for( j=0; j<rlw.getNumberOfLiteralWords(); j++){
+                      ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3237:23: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for (int i = 0; i < buffer.size(); i++) {
+                    ~ ^ ~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiUnsigned.hpp:1468:21: note: in instantiation of member function 'HybridBitmap<unsigned long long>::selectMultiplicationInPlace' requested here
+        res->bsi[k].selectMultiplicationInPlace(unbsi->bsi[it],FS);
+                    ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::multiplyBSI' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3214:23: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for (int i = 0; i < buffer.size(); i++) {
+                    ~ ^ ~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiUnsigned.hpp:1479:19: note: in instantiation of member function 'HybridBitmap<unsigned long long>::majInPlace' requested here
+                C.majInPlace(res->bsi[i + k],this->bsi[i]);
+                  ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::multiplyBSI' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3366:23: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for (int i = 0; i < buffer.size(); i++) {
+                    ~ ^ ~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3338:17: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andVerbatimCompressInPlace' requested here
+                andVerbatimCompressInPlace(a);
+                ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:1485:19: note: in instantiation of member function 'HybridBitmap<unsigned long long>::AndInPlace' requested here
+                C.AndInPlace(this->bsi[i]);
+                  ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::multiplyBSI' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3376:19: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for(int i=0; i<buffer.size();i++){
+                 ~^~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3341:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andVerbatimInPlace' requested here
+            andVerbatimInPlace(a);
+            ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:1485:19: note: in instantiation of member function 'HybridBitmap<unsigned long long>::AndInPlace' requested here
+                C.AndInPlace(this->bsi[i]);
+                  ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::multiplyBSI' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3393:18: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+        while (i < buffer.size()) {
+               ~ ^ ~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3348:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andHybridCompressInPlace' requested here
+            andHybridCompressInPlace(a);
+            ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:1485:19: note: in instantiation of member function 'HybridBitmap<unsigned long long>::AndInPlace' requested here
+                C.AndInPlace(this->bsi[i]);
+                  ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::multiplyBSI' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3403:31: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for (j = 0; j < rlwa.getRunningLength(); j++) {
+                            ~ ^ ~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3413:24: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for( j=0; j<rlwa.getNumberOfLiteralWords(); j++){
+                      ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3431:18: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+        while (i < a.buffer.size()) {
+               ~ ^ ~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3433:31: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for (j = 0; j < rlw.getRunningLength(); j++) {
+                            ~ ^ ~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3440:31: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for (j = 0; j < rlw.getRunningLength(); j++) {
+                            ~ ^ ~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3450:24: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for( j=0; j<rlw.getNumberOfLiteralWords(); j++){
+                      ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:58:112: warning: field 'lastRLW' will be initialized after field 'verbatim' [-Wreorder-ctor]
     HybridBitmap(bool verbatim, size_t buffersize) : buffer(buffersize, 0), sizeinbits(buffersize*wordinbits), lastRLW(0), verbatim(verbatim) {
                                                      ~~~~~~~~~~~~~~~~~~~~~  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~  ^~~~~~~~~   ~~~~~~~~~~~~~~~~~
                                                      verbatim(verbatim      buffer(buffersize, 0)              sizeinbits(buffersize*wordinbits) lastRLW(0
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:2190:21: note: in instantiation of member function 'HybridBitmap<unsigned long long>::HybridBitmap' requested here
+./../bsiCPP/bsi/BsiUnsigned.hpp:1995:21: note: in instantiation of member function 'HybridBitmap<unsigned long long>::HybridBitmap' requested here
     res->sign = new HybridBitmap<uword>(this->getNumberOfRows(),true);
                     ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:22:5: note: in instantiation of member function 'BsiUnsigned<>::negate' requested here
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::negate' requested here
     BsiUnsigned(int maxSize);
     ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:598:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
     BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
                                   ^
-/Users/zhang/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
     BsiSigned();
     ^
-/Users/zhang/bsiPytorch/bsi_ops/bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
-34 warnings generated.
-clang++ -bundle -undefined dynamic_lookup -Wl,-rpath,/Applications/anaconda3/envs/pytorch_env/lib -L/Applications/anaconda3/envs/pytorch_env/lib -Wl,-rpath,/Applications/anaconda3/envs/pytorch_env/lib -L/Applications/anaconda3/envs/pytorch_env/lib /Users/zhang/bsiPytorch/bsi_ops/build/temp.macosx-10.9-x86_64-cpython-311/bsiFunctions.o -L/Applications/anaconda3/envs/pytorch_env/lib/python3.11/site-packages/torch/lib -lc10 -ltorch -ltorch_cpu -ltorch_python -o build/lib.macosx-10.9-x86_64-cpython-311/bsi_ops.cpython-311-darwin.so
-ld: warning: duplicate -rpath '/Applications/anaconda3/envs/pytorch_env/lib' ignored
-ld: warning: object file (/Users/zhang/bsiPytorch/bsi_ops/build/temp.macosx-10.9-x86_64-cpython-311/bsiFunctions.o) was built for newer 'macOS' version (14.0) than being linked (10.9)
-creating build/bdist.macosx-10.9-x86_64/egg
-copying build/lib.macosx-10.9-x86_64-cpython-311/bsi_ops.cpython-311-darwin.so -> build/bdist.macosx-10.9-x86_64/egg
-creating stub loader for bsi_ops.cpython-311-darwin.so
-byte-compiling build/bdist.macosx-10.9-x86_64/egg/bsi_ops.py to bsi_ops.cpython-311.pyc
-creating build/bdist.macosx-10.9-x86_64/egg/EGG-INFO
-copying bsi_ops.egg-info/PKG-INFO -> build/bdist.macosx-10.9-x86_64/egg/EGG-INFO
-copying bsi_ops.egg-info/SOURCES.txt -> build/bdist.macosx-10.9-x86_64/egg/EGG-INFO
-copying bsi_ops.egg-info/dependency_links.txt -> build/bdist.macosx-10.9-x86_64/egg/EGG-INFO
-copying bsi_ops.egg-info/top_level.txt -> build/bdist.macosx-10.9-x86_64/egg/EGG-INFO
-writing build/bdist.macosx-10.9-x86_64/egg/EGG-INFO/native_libs.txt
+In file included from bsiFunctions.cpp:2:
+./../bsiCPP/bsi/BsiUnsigned.hpp:1940:20: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for (int i=0; i< this->bsi.size(); i++){
+                  ~^ ~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::sumOfBsi' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:2:
+./../bsiCPP/bsi/BsiUnsigned.hpp:2021:19: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for (int i=0;i<this->bsi.size(); i++){
+                 ~^~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::append' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:2:
+./../bsiCPP/bsi/BsiUnsigned.hpp:2028:23: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+        for(int i=0; i<this->bsi.size(); i++){
+                     ~^~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiUnsigned.hpp:2033:23: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+        for(int i=0; i<this->bsi.size(); i++){
+                     ~^~~~~~~~~~~~~~~~~
+In file included from bsiFunctions.cpp:1:
+./../bsiCPP/bsi/BsiAttribute.hpp:480:20: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for (int i=0; i<nums.size(); i++){
+                  ~^~~~~~~~~~~~
+bsiFunctions.cpp:35:17: note: in instantiation of member function 'BsiAttribute<unsigned long long>::buildBsiAttributeFromVector' requested here
+    bsi_1 = bsi.buildBsiAttributeFromVector(v, 0.5);
+                ^
+In file included from bsiFunctions.cpp:1:
+./../bsiCPP/bsi/BsiAttribute.hpp:491:20: warning: comparison of integers of different signs: 'value_type' (aka 'long') and 'unsigned long long' [-Wsign-compare]
+        if(nums[i] > max){
+           ~~~~~~~ ^ ~~~
+./../bsiCPP/bsi/BsiAttribute.hpp:511:23: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+        for(int j=0; j<existBits.size(); j++){
+                     ~^~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiAttribute.hpp:519:23: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+        for(int j=0; j<existBits.size(); j++){
+                     ~^~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiAttribute.hpp:536:27: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+            for(int j=1; j<bitSlices[i].size(); j++){
+                         ~^~~~~~~~~~~~~~~~~~~~
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:383:31: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+            for (int i = 0; i < this->sizeInWords(); i++) {
+                            ~ ^ ~~~~~~~~~~~~~~~~~~~
+bsiFunctions.cpp:44:30: note: in instantiation of member function 'HybridBitmap<unsigned long long>::positionsToVector' requested here
+    return torch::tensor(res.positionsToVector());
+                             ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:400:39: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                    for (int j = 0; j < localrlw.getRunningLength(); ++j) {
+                                    ~ ^ ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:408:35: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for (int j = 0; j < localrlw.getNumberOfLiteralWords(); ++j) {
+                                ~ ^ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+139 warnings generated.
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+In file included from ./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:10:
+./../bsiCPP/bsi/hybridBitmap/runninglengthword.h:413:16: warning: unused variable 'timeDischarge' [-Wunused-variable]
+        double timeDischarge = duration.count();
+               ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:2629:10: warning: unused variable 'start' [-Wunused-variable]
+    auto start = std::chrono::high_resolution_clock::now();
+         ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:2728:24: warning: unused variable 'timeOR' [-Wunused-variable]
+                double timeOR = duration.count();
+                       ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3650:24: warning: unused variable 'lastrlwa' [-Wunused-variable]
+                size_t lastrlwa = a.lastRLW;
+                       ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4012:21: warning: variable 'i' is incremented both in the loop header and in the loop body [-Wfor-loop-analysis]
+                    i++;
+                    ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4010:43: note: incremented here
+                for (; i < buffer.size(); i++) {
+                                          ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4044:21: warning: variable 'i' is incremented both in the loop header and in the loop body [-Wfor-loop-analysis]
+                    i++;
+                    ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4042:44: note: incremented here
+                for (; i < a.bufferSize(); i++) {
+                                           ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4131:14: warning: unused variable 'op1' [-Wunused-variable]
+        auto op1 = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1);
+             ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4132:14: warning: unused variable 'op2' [-Wunused-variable]
+        auto op2 = std::chrono::duration_cast<std::chrono::microseconds>(t3 - t2);
+             ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4133:14: warning: unused variable 'op3' [-Wunused-variable]
+        auto op3 = std::chrono::duration_cast<std::chrono::microseconds>(t4 - t1);
+             ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4203:21: warning: variable 'i' is incremented both in the loop header and in the loop body [-Wfor-loop-analysis]
+                    i++;
+                    ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4201:43: note: incremented here
+                for (; i < buffer.size(); i++) {
+                                          ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4407:21: warning: variable 'i' is incremented both in the loop header and in the loop body [-Wfor-loop-analysis]
+                    i++;
+                    ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4405:51: note: incremented here
+                for (int i = 0; i < bufferSize(); i++) {
+                                                  ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4449:21: warning: variable 'i' is incremented both in the loop header and in the loop body [-Wfor-loop-analysis]
+                    i++;
+                    ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4447:53: note: incremented here
+                for (int i = 0; i < a.bufferSize(); i++) {
+                                                    ^
+In file included from bsiFunctions.cpp:1:
+./../bsiCPP/bsi/BsiAttribute.hpp:575:15: warning: unused variable 'MAXLONGLENGTH' [-Wunused-variable]
+    const int MAXLONGLENGTH = 64;
+              ^
+./../bsiCPP/bsi/BsiAttribute.hpp:1043:16: warning: unused variable 'compressRatio' [-Wunused-variable]
+        double compressRatio = 1-pow((1-bitDensity), (2*bits))-pow(bitDensity, (2*bits));
+               ^
+In file included from bsiFunctions.cpp:2:
+./../bsiCPP/bsi/BsiUnsigned.hpp:930:17: warning: unused variable 'minSP' [-Wunused-variable]
+            int minSP = std::min(this->size, intSize);
+                ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:1073:32: warning: unused variable 'buffersize' [-Wunused-variable]
+                        size_t buffersize = this->bsi[0].bufferSize();                       
+                               ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:1662:9: warning: unused variable 'startPosition' [-Wunused-variable]
+    int startPosition = b.size() + a.size() - ans.size();
+        ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:1785:9: warning: unused variable 'precisionInBits' [-Wunused-variable]
+    int precisionInBits = 3*precision +1;
+        ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:1981:9: warning: unused variable 'offset' [-Wunused-variable]
+    int offset =0;
+        ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:1982:9: warning: unused variable 'decimals' [-Wunused-variable]
+    int decimals = 0;
+        ^
+In file included from bsiFunctions.cpp:3:
+./../bsiCPP/bsi/BsiSigned.hpp:258:14: warning: unused variable 'AND' [-Wunused-variable]
+        auto AND = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1);
+             ^
+./../bsiCPP/bsi/BsiSigned.hpp:259:14: warning: unused variable 'OR' [-Wunused-variable]
+        auto OR = std::chrono::duration_cast<std::chrono::microseconds>(t3 - t2);
+             ^
+./../bsiCPP/bsi/BsiSigned.hpp:260:14: warning: unused variable 'NOO' [-Wunused-variable]
+        auto NOO = std::chrono::duration_cast<std::chrono::microseconds>(t4 - t3);
+             ^
+./../bsiCPP/bsi/BsiSigned.hpp:261:14: warning: unused variable 'ANDN' [-Wunused-variable]
+        auto ANDN = std::chrono::duration_cast<std::chrono::microseconds>(t5 - t4);
+             ^
+./../bsiCPP/bsi/BsiSigned.hpp:687:9: warning: variable 'resSize' set but not used [-Wunused-but-set-variable]
+    int resSize=0;
+        ^
+./../bsiCPP/bsi/BsiSigned.hpp:1890:13: warning: variable 'i' set but not used [-Wunused-but-set-variable]
+        int i = 0;
+            ^
+./../bsiCPP/bsi/BsiSigned.hpp:1922:13: warning: variable 'i' set but not used [-Wunused-but-set-variable]
+        int i = 0;
+            ^
+bsiFunctions.cpp:129:5: warning: '/*' within block comment [-Wcomment]
+    /*
+    ^
+bsiFunctions.cpp:75:29: warning: unused variable 'bsi_1' [-Wunused-variable]
+    BsiAttribute<uint64_t>* bsi_1;
+                            ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:64:5: warning: initializer order does not match the declaration order [-Wreorder-ctor]
+    lastRLW(other.lastRLW),verbatim(other.verbatim), density(other.density) {
+    ^~~~~~~~~~~~~~~~~~~~~~ ~~~~~~~~~~~~~~~~~~~~~~~~  ~~~~~~~~~~~~~~~~~~~~~~
+    buffer(other.buffer)   sizeinbits(other.sizeinbits) lastRLW(other.lastRLW)
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/__memory/allocator.h:168:28: note: in instantiation of member function 'HybridBitmap<unsigned long long>::HybridBitmap' requested here
+        ::new ((void*)__p) _Up(_VSTD::forward<_Args>(__args)...);
+                           ^
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/__memory/allocator_traits.h:296:13: note: in instantiation of function template specialization 'std::allocator<HybridBitmap<unsigned long long>>::construct<HybridBitmap<unsigned long long>, const HybridBitmap<unsigned long long> &>' requested here
+        __a.construct(__p, _VSTD::forward<_Args>(__args)...);
+            ^
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/__memory/uninitialized_algorithms.h:604:31: note: in instantiation of function template specialization 'std::allocator_traits<std::allocator<HybridBitmap<unsigned long long>>>::construct<HybridBitmap<unsigned long long>, const HybridBitmap<unsigned long long> &, void>' requested here
+    allocator_traits<_Alloc>::construct(__alloc, std::__to_address(__first2), std::move_if_noexcept(*__first1));
+                              ^
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:917:27: note: in instantiation of function template specialization 'std::__uninitialized_allocator_move_if_noexcept<std::allocator<HybridBitmap<unsigned long long>>, std::reverse_iterator<HybridBitmap<unsigned long long> *>, std::reverse_iterator<HybridBitmap<unsigned long long> *>, std::reverse_iterator<HybridBitmap<unsigned long long> *>>' requested here
+    __v.__begin_   = std::__uninitialized_allocator_move_if_noexcept(
+                          ^
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:1504:9: note: in instantiation of member function 'std::vector<HybridBitmap<unsigned long long>>::__swap_out_circular_buffer' requested here
+        __swap_out_circular_buffer(__v);
+        ^
+./../bsiCPP/bsi/BsiSigned.hpp:112:15: note: in instantiation of member function 'std::vector<HybridBitmap<unsigned long long>>::reserve' requested here
+    this->bsi.reserve(BsiAttribute<uword>::bits);
+              ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:64:5: note: field 'lastRLW' will be initialized after field 'verbatim'
+    lastRLW(other.lastRLW),verbatim(other.verbatim), density(other.density) {
+    ^~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:64:28: note: field 'verbatim' will be initialized after field 'density'
+    lastRLW(other.lastRLW),verbatim(other.verbatim), density(other.density) {
+                           ^~~~~~~~~~~~~~~~~~~~~~~~
+In file included from bsiFunctions.cpp:3:
+./../bsiCPP/bsi/BsiSigned.hpp:187:32: warning: comparison of integers of different signs: 'size_t' (aka 'unsigned long') and 'int' [-Wsign-compare]
+        if (res.numberOfOnes() < k) {
+            ~~~~~~~~~~~~~~~~~~ ^ ~
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:3:
+./../bsiCPP/bsi/BsiSigned.hpp:193:32: warning: comparison of integers of different signs: 'size_t' (aka 'unsigned long') and 'int' [-Wsign-compare]
+        if (res.numberOfOnes() < k) {
+            ~~~~~~~~~~~~~~~~~~ ^ ~
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3766:23: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for (int i = 0; i < buffer.size(); i++) {
+                    ~ ^ ~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3736:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::orVerbatimCompress' requested here
+            orVerbatimCompress(a,container);
+            ^
+./../bsiCPP/bsi/BsiSigned.hpp:245:14: note: in instantiation of member function 'HybridBitmap<unsigned long long>::OrWithoutDecompress' requested here
+        topK.OrWithoutDecompress(SE, X);
+             ^
+./../bsiCPP/bsi/BsiSigned.hpp:186:15: note: in instantiation of member function 'BsiSigned<>::topKMaxAbs' requested here
+        res = topKMaxAbs(k,res.andNot(this->bsi[this->size-1]));
+              ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3972:23: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for (int i = 0; i < buffer.size(); i++) {
+                    ~ ^ ~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3738:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::orVerbatim' requested here
+            orVerbatim(a, container);
+            ^
+./../bsiCPP/bsi/BsiSigned.hpp:245:14: note: in instantiation of member function 'HybridBitmap<unsigned long long>::OrWithoutDecompress' requested here
+        topK.OrWithoutDecompress(SE, X);
+             ^
+./../bsiCPP/bsi/BsiSigned.hpp:186:15: note: in instantiation of member function 'BsiSigned<>::topKMaxAbs' requested here
+        res = topKMaxAbs(k,res.andNot(this->bsi[this->size-1]));
+              ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4012:21: warning: variable 'i' is incremented both in the loop header and in the loop body [-Wfor-loop-analysis]
+                    i++;
+                    ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3743:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::orHybridCompress' requested here
+            orHybridCompress(a,container);
+            ^
+./../bsiCPP/bsi/BsiSigned.hpp:245:14: note: in instantiation of member function 'HybridBitmap<unsigned long long>::OrWithoutDecompress' requested here
+        topK.OrWithoutDecompress(SE, X);
+             ^
+./../bsiCPP/bsi/BsiSigned.hpp:186:15: note: in instantiation of member function 'BsiSigned<>::topKMaxAbs' requested here
+        res = topKMaxAbs(k,res.andNot(this->bsi[this->size-1]));
+              ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4010:43: note: incremented here
+                for (; i < buffer.size(); i++) {
+                                          ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4044:21: warning: variable 'i' is incremented both in the loop header and in the loop body [-Wfor-loop-analysis]
+                    i++;
+                    ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4042:44: note: incremented here
+                for (; i < a.bufferSize(); i++) {
+                                           ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3991:18: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+        while (i <buffer.size()) {
+               ~ ^~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3997:31: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for (j = 0; j < rlwa.getRunningLength(); j++) {
+                            ~ ^ ~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4003:27: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for (j = 0; j < rlwa.getNumberOfLiteralWords(); j++) {
+                        ~ ^ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4010:26: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+                for (; i < buffer.size(); i++) {
+                       ~ ^ ~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4023:18: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+        while (i < a.bufferSize()) {
+               ~ ^ ~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4029:31: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for (j = 0; j < rlw.getRunningLength(); j++) {
+                            ~ ^ ~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4035:27: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for (j = 0; j < rlw.getNumberOfLiteralWords(); j++) {
+                        ~ ^ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4042:26: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+                for (; i < a.bufferSize(); i++) {
+                       ~ ^ ~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4507:18: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+        while (i < bufferSize()) {
+               ~ ^ ~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3745:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::orHybrid' requested here
+            orHybrid(a, container);
+            ^
+./../bsiCPP/bsi/BsiSigned.hpp:245:14: note: in instantiation of member function 'HybridBitmap<unsigned long long>::OrWithoutDecompress' requested here
+        topK.OrWithoutDecompress(SE, X);
+             ^
+./../bsiCPP/bsi/BsiSigned.hpp:186:15: note: in instantiation of member function 'BsiSigned<>::topKMaxAbs' requested here
+        res = topKMaxAbs(k,res.andNot(this->bsi[this->size-1]));
+              ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4517:27: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+                    if (i >= bufferSize()) {
+                        ~ ^  ~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4524:24: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for( j=0; j<rlwa.getNumberOfLiteralWords(); j++){
+                      ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4539:18: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+        while (i < a.bufferSize()) {
+               ~ ^ ~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4549:27: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+                    if (i >= a.bufferSize()) {
+                        ~ ^  ~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4557:24: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for( j=0; j<rlw.getNumberOfLiteralWords(); j++){
+                      ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3478:23: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+    for (int i = 0; i < bufferSize(); i++) {
+                    ~ ^ ~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3499:17: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andNotVerbatimCompress' requested here
+                andNotVerbatimCompress(a, container);    }
+                ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:826:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andNot' requested here
+        andNot(a, answer);
+        ^
+./../bsiCPP/bsi/BsiSigned.hpp:186:32: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andNot' requested here
+        res = topKMaxAbs(k,res.andNot(this->bsi[this->size-1]));
+                               ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4380:23: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+    for (int i = 0; i < bufferSize(); i++) {
+                    ~ ^ ~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3503:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andNotVerbatim' requested here
+            andNotVerbatim(a, container);
+            ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:826:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andNot' requested here
+        andNot(a, answer);
+        ^
+./../bsiCPP/bsi/BsiSigned.hpp:186:32: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andNot' requested here
+        res = topKMaxAbs(k,res.andNot(this->bsi[this->size-1]));
+                               ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4203:21: warning: variable 'i' is incremented both in the loop header and in the loop body [-Wfor-loop-analysis]
+                    i++;
+                    ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3513:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andNotHybridCompress' requested here
+            andNotHybridCompress(a, container);}
+            ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:826:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andNot' requested here
+        andNot(a, answer);
+        ^
+./../bsiCPP/bsi/BsiSigned.hpp:186:32: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andNot' requested here
+        res = topKMaxAbs(k,res.andNot(this->bsi[this->size-1]));
+                               ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4201:43: note: incremented here
+                for (; i < buffer.size(); i++) {
+                                          ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4179:18: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+        while (i < buffer.size()) {
+               ~ ^ ~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4183:31: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for (j = 0; j < rlwa.getRunningLength(); j++) {
+                            ~ ^ ~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4189:31: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for (j = 0; j < rlwa.getRunningLength(); j++) {
+                            ~ ^ ~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4195:24: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for( j=0; j<rlwa.getNumberOfLiteralWords(); j++){
+                      ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4201:26: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+                for (; i < buffer.size(); i++) {
+                       ~ ^ ~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4214:18: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+        while (i < a.bufferSize()) {
+               ~ ^ ~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4216:31: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for (j = 0; j < rlw.getRunningLength(); j++) {
+                            ~ ^ ~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4224:24: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for( j=0; j<rlw.getNumberOfLiteralWords(); j++){
+                      ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:1912:27: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+        for (int i = 0; i < bufferSize(); i++) {
+                        ~ ^ ~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiSigned.hpp:187:17: note: in instantiation of member function 'HybridBitmap<unsigned long long>::numberOfOnes' requested here
+        if (res.numberOfOnes() < k) {
+                ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3684:23: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for (int i = 0; i < buffer.size(); i++) {
+                    ~ ^ ~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3298:17: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andVerbatimCompress' requested here
+                andVerbatimCompress(a, container);
+                ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:576:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::And' requested here
+        And(a, answer);
+        ^
+./../bsiCPP/bsi/BsiSigned.hpp:188:61: note: in instantiation of member function 'HybridBitmap<unsigned long long>::And' requested here
+            res = res.Or(topKMaxAbs(k,this->existenceBitmap.And(this->bsi[this->size-1])));
+                                                            ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3957:19: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for(int i=0; i<buffer.size();i++){
+                 ~^~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3301:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andVerbatim' requested here
+            andVerbatim(a, container);
+            ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:576:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::And' requested here
+        And(a, answer);
+        ^
+./../bsiCPP/bsi/BsiSigned.hpp:188:61: note: in instantiation of member function 'HybridBitmap<unsigned long long>::And' requested here
+            res = res.Or(topKMaxAbs(k,this->existenceBitmap.And(this->bsi[this->size-1])));
+                                                            ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4068:18: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+        while (i < buffer.size()) {
+               ~ ^ ~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3308:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andHybridCompress' requested here
+            andHybridCompress(a, container);
+            ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:576:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::And' requested here
+        And(a, answer);
+        ^
+./../bsiCPP/bsi/BsiSigned.hpp:188:61: note: in instantiation of member function 'HybridBitmap<unsigned long long>::And' requested here
+            res = res.Or(topKMaxAbs(k,this->existenceBitmap.And(this->bsi[this->size-1])));
+                                                            ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4070:31: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for (j = 0; j < rlwa.getRunningLength(); j++) {
+                            ~ ^ ~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4081:24: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for( j=0; j<rlwa.getNumberOfLiteralWords(); j++){
+                      ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4104:18: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+        while (i < a.buffer.size()) {
+               ~ ^ ~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4106:31: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for (j = 0; j < rlw.getRunningLength(); j++) {
+                            ~ ^ ~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4116:23: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for(j=0; j<rlw.getNumberOfLiteralWords(); j++){
+                     ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:2710:33: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for(int i = 0; i< predator.getRunningLength(); i++){
+                               ~^ ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3713:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::logicalorDecompress' requested here
+            logicalorDecompress(a, container);
+            ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:582:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::Or' requested here
+        Or(a, answer);
+        ^
+./../bsiCPP/bsi/BsiSigned.hpp:188:23: note: in instantiation of member function 'HybridBitmap<unsigned long long>::Or' requested here
+            res = res.Or(topKMaxAbs(k,this->existenceBitmap.And(this->bsi[this->size-1])));
+                      ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:2729:49: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for(int i = actualsizeinwords; i< actualsizeinwords+predator.getRunningLength() - index; i++){
+                                               ~^ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+In file included from ./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:10:
+./../bsiCPP/bsi/hybridBitmap/runninglengthword.h:386:29: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+            for(int i = 0; i< pl; i++){
+                           ~^ ~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:2722:30: note: in instantiation of member function 'BufferedRunningLengthWord<unsigned long long>::dischargeDecompressed' requested here
+                        prey.dischargeDecompressed(container, predator.getRunningLength());
+                             ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3713:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::logicalorDecompress' requested here
+            logicalorDecompress(a, container);
+            ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:582:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::Or' requested here
+        Or(a, answer);
+        ^
+./../bsiCPP/bsi/BsiSigned.hpp:188:23: note: in instantiation of member function 'HybridBitmap<unsigned long long>::Or' requested here
+            res = res.Or(topKMaxAbs(k,this->existenceBitmap.And(this->bsi[this->size-1])));
+                      ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+In file included from ./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:10:
+./../bsiCPP/bsi/hybridBitmap/runninglengthword.h:390:29: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+            for(int i = 0; i< pl; i++){
+                           ~^ ~~
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:73:5: warning: initializer order does not match the declaration order [-Wreorder-ctor]
+    lastRLW(other.lastRLW),verbatim(other.verbatim), density(other.density)  {
+    ^~~~~~~~~~~~~~~~~~~~~~ ~~~~~~~~~~~~~~~~~~~~~~~~  ~~~~~~~~~~~~~~~~~~~~~~
+    buffer(other.buffer)   sizeinbits(other.sizeinbits) lastRLW(other.lastRLW)
+./../bsiCPP/bsi/BsiSigned.hpp:190:16: note: in instantiation of member function 'HybridBitmap<unsigned long long>::HybridBitmap' requested here
+        return res;
+               ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMax' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:73:5: note: field 'lastRLW' will be initialized after field 'verbatim'
+    lastRLW(other.lastRLW),verbatim(other.verbatim), density(other.density)  {
+    ^~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:73:28: note: field 'verbatim' will be initialized after field 'density'
+    lastRLW(other.lastRLW),verbatim(other.verbatim), density(other.density)  {
+                           ^~~~~~~~~~~~~~~~~~~~~~~~
+In file included from bsiFunctions.cpp:3:
+./../bsiCPP/bsi/BsiSigned.hpp:209:32: warning: comparison of integers of different signs: 'size_t' (aka 'unsigned long') and 'int' [-Wsign-compare]
+        if (res.numberOfOnes() < k) {
+            ~~~~~~~~~~~~~~~~~~ ^ ~
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::topKMin' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:3:
+./../bsiCPP/bsi/BsiSigned.hpp:215:32: warning: comparison of integers of different signs: 'size_t' (aka 'unsigned long') and 'int' [-Wsign-compare]
+        if (res.numberOfOnes() < k) {
+            ~~~~~~~~~~~~~~~~~~ ^ ~
+./../bsiCPP/bsi/BsiSigned.hpp:951:22: warning: reference cannot be bound to dereferenced null pointer in well-defined C++ code; pointer may be assumed to always convert to true [-Wundefined-bool-conversion]
+        res->sign = &res->bsi[res->size-1];
+                    ~^~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiSigned.hpp:429:22: note: in instantiation of member function 'BsiSigned<>::SUMsigned' requested here
+        return this->SUMsigned(a);
+                     ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:557:73: note: 'operator[]' returns a reference
+    _LIBCPP_CONSTEXPR_SINCE_CXX20 _LIBCPP_HIDE_FROM_ABI reference       operator[](size_type __n) _NOEXCEPT;
+                                                                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3194:23: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for (int i = 0; i < buffer.size(); i++) {
+                    ~ ^ ~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:540:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::maj' requested here
+        maj(a, b, answer);
+        ^
+./../bsiCPP/bsi/BsiAttribute.hpp:768:18: note: in instantiation of member function 'HybridBitmap<unsigned long long>::maj' requested here
+        return a.maj(b, c);
+                 ^
+./../bsiCPP/bsi/BsiSigned.hpp:924:30: note: in instantiation of member function 'BsiAttribute<unsigned long long>::maj' requested here
+                    CC=this->maj(a->bsi[j],this->sign,CC);
+                             ^
+./../bsiCPP/bsi/BsiSigned.hpp:429:22: note: in instantiation of member function 'BsiSigned<>::SUMsigned' requested here
+        return this->SUMsigned(a);
+                     ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:593:48: warning: 'this' pointer cannot be null in well-defined C++ code; pointer may be assumed to always convert to true [-Wundefined-bool-conversion]
+        HybridBitmap answer = new HybridBitmap(this);
+                                  ~~~~~~~~~~~~ ^~~~
+./../bsiCPP/bsi/BsiSigned.hpp:935:54: note: in instantiation of member function 'HybridBitmap<unsigned long long>::Xor' requested here
+                    res->bsi[res->size]=this->bsi[j].Xor(a->sign);
+                                                     ^
+./../bsiCPP/bsi/BsiSigned.hpp:429:22: note: in instantiation of member function 'BsiSigned<>::SUMsigned' requested here
+        return this->SUMsigned(a);
+                     ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4688:18: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+        while (i < bufferSize()) {
+               ~ ^ ~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3783:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::xorHybrid' requested here
+        xorHybrid(a, container);
+        ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:594:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::Xor' requested here
+        Xor(a, answer);
+        ^
+./../bsiCPP/bsi/BsiSigned.hpp:935:54: note: in instantiation of member function 'HybridBitmap<unsigned long long>::Xor' requested here
+                    res->bsi[res->size]=this->bsi[j].Xor(a->sign);
+                                                     ^
+./../bsiCPP/bsi/BsiSigned.hpp:429:22: note: in instantiation of member function 'BsiSigned<>::SUMsigned' requested here
+        return this->SUMsigned(a);
+                     ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4702:24: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for( j=0; j<rlwa.getNumberOfLiteralWords(); j++){
+                      ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4721:18: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+        while (i < a.bufferSize()) {
+               ~ ^ ~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4735:24: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for( j=0; j<rlw.getNumberOfLiteralWords(); j++){
+                      ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4926:33: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for(int i = 0; i< predator.getRunningLength() - index; i++){
+                               ~^ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3787:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::logicalxorDecompress' requested here
+            logicalxorDecompress(a, container);
+            ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:594:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::Xor' requested here
+        Xor(a, answer);
+        ^
+./../bsiCPP/bsi/BsiSigned.hpp:935:54: note: in instantiation of member function 'HybridBitmap<unsigned long long>::Xor' requested here
+                    res->bsi[res->size]=this->bsi[j].Xor(a->sign);
+                                                     ^
+./../bsiCPP/bsi/BsiSigned.hpp:429:22: note: in instantiation of member function 'BsiSigned<>::SUMsigned' requested here
+        return this->SUMsigned(a);
+                     ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4934:33: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for(int i = 0; i< predator.getRunningLength() - index; i++){
+                               ~^ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+In file included from ./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:10:
+./../bsiCPP/bsi/hybridBitmap/runninglengthword.h:428:29: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+            for(int i = 0; i< pl; i++){
+                           ~^ ~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4931:44: note: in instantiation of member function 'BufferedRunningLengthWord<unsigned long long>::dischargeNegatedDecompressed' requested here
+                 const size_t index = prey.dischargeNegatedDecompressed(container, predator.getRunningLength());
+                                           ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3787:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::logicalxorDecompress' requested here
+            logicalxorDecompress(a, container);
+            ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:594:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::Xor' requested here
+        Xor(a, answer);
+        ^
+./../bsiCPP/bsi/BsiSigned.hpp:935:54: note: in instantiation of member function 'HybridBitmap<unsigned long long>::Xor' requested here
+                    res->bsi[res->size]=this->bsi[j].Xor(a->sign);
+                                                     ^
+./../bsiCPP/bsi/BsiSigned.hpp:429:22: note: in instantiation of member function 'BsiSigned<>::SUMsigned' requested here
+        return this->SUMsigned(a);
+                     ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:51:64: warning: field 'lastRLW' will be initialized after field 'verbatim' [-Wreorder-ctor]
+    HybridBitmap(bool verbatim) : buffer(1, 0), sizeinbits(0), lastRLW(0), verbatim(verbatim) { 
+                                  ~~~~~~~~~~~~  ~~~~~~~~~~~~   ^~~~~~~~~   ~~~~~~~~~~~~~~~~~
+                                  verbatim(verbatim buffer(1, 0) sizeinbits(0 lastRLW(0
+./../bsiCPP/bsi/BsiSigned.hpp:951:21: note: in instantiation of member function 'HybridBitmap<unsigned long long>::HybridBitmap' requested here
+        res->sign = &res->bsi[res->size-1];
+                    ^
+./../bsiCPP/bsi/BsiSigned.hpp:429:22: note: in instantiation of member function 'BsiSigned<>::SUMsigned' requested here
+        return this->SUMsigned(a);
+                     ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:3:
+./../bsiCPP/bsi/BsiSigned.hpp:811:22: warning: reference cannot be bound to dereferenced null pointer in well-defined C++ code; pointer may be assumed to always convert to true [-Wundefined-bool-conversion]
+        res->sign = &res->bsi[res->size-1];
+                    ~^~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiSigned.hpp:432:22: note: in instantiation of member function 'BsiSigned<>::SUMunsigned' requested here
+        return this->SUMunsigned(a);
+                     ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:557:73: note: 'operator[]' returns a reference
+    _LIBCPP_CONSTEXPR_SINCE_CXX20 _LIBCPP_HIDE_FROM_ABI reference       operator[](size_type __n) _NOEXCEPT;
+                                                                        ^
+In file included from bsiFunctions.cpp:3:
+./../bsiCPP/bsi/BsiSigned.hpp:859:22: warning: reference cannot be bound to dereferenced null pointer in well-defined C++ code; pointer may be assumed to always convert to true [-Wundefined-bool-conversion]
+        res->sign = &res->bsi[res->size-1];
+                    ~^~~~~~~~~~~~~~~~~~~~~
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:557:73: note: 'operator[]' returns a reference
+    _LIBCPP_CONSTEXPR_SINCE_CXX20 _LIBCPP_HIDE_FROM_ABI reference       operator[](size_type __n) _NOEXCEPT;
+                                                                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:1972:24: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+        for(int i=0; i < bufferSize(); i++){
+                     ~ ^ ~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:1311:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::logicalnot' requested here
+        logicalnot(answer);
+        ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:747:21: note: in instantiation of member function 'HybridBitmap<unsigned long long>::logicalnot' requested here
+        container = logicalnot();
+                    ^
+./../bsiCPP/bsi/BsiSigned.hpp:463:36: note: in instantiation of member function 'HybridBitmap<unsigned long long>::Not' requested here
+        res->addSlice(this->bsi[0].Not());
+                                   ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::SUM' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:2:
+./../bsiCPP/bsi/BsiUnsigned.hpp:820:22: warning: reference cannot be bound to dereferenced null pointer in well-defined C++ code; pointer may be assumed to always convert to true [-Wundefined-bool-conversion]
+        res->sign = &res->bsi[res->size-1];
+                    ~^~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiUnsigned.hpp:376:16: note: in instantiation of member function 'BsiUnsigned<>::SUMsigned' requested here
+        return SUMsigned(a);
+               ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::SUM' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:557:73: note: 'operator[]' returns a reference
+    _LIBCPP_CONSTEXPR_SINCE_CXX20 _LIBCPP_HIDE_FROM_ABI reference       operator[](size_type __n) _NOEXCEPT;
+                                                                        ^
+In file included from bsiFunctions.cpp:2:
+./../bsiCPP/bsi/BsiUnsigned.hpp:877:22: warning: reference cannot be bound to dereferenced null pointer in well-defined C++ code; pointer may be assumed to always convert to true [-Wundefined-bool-conversion]
+        res->sign = &res->bsi[res->size-1];
+                    ~^~~~~~~~~~~~~~~~~~~~~
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:557:73: note: 'operator[]' returns a reference
+    _LIBCPP_CONSTEXPR_SINCE_CXX20 _LIBCPP_HIDE_FROM_ABI reference       operator[](size_type __n) _NOEXCEPT;
+                                                                        ^
+In file included from bsiFunctions.cpp:2:
+./../bsiCPP/bsi/BsiUnsigned.hpp:390:15: warning: unused variable 'ai' [-Wunused-variable]
+        uword ai = (static_cast<uword>(1) << i);
+              ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:401:23: note: in instantiation of member function 'BsiUnsigned<>::sliceLengthFinder' requested here
+        int intSize = sliceLengthFinder(a);
+                      ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::SUM' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:2:
+./../bsiCPP/bsi/BsiUnsigned.hpp:388:22: warning: comparison of integers of different signs: 'int' and 'unsigned long' [-Wsign-compare]
+    for(int i = 0; i < sizeof(uword) * 8; i++)
+                   ~ ^ ~~~~~~~~~~~~~~~~~
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4592:23: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+    for (int i = 0; i < bufferSize(); i++) {
+                    ~ ^ ~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3890:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::xorNotVerbatim' requested here
+        xorNotVerbatim(a, container);
+        ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:600:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::xorNot' requested here
+        xorNot(a, answer);
+        ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:422:35: note: in instantiation of member function 'HybridBitmap<unsigned long long>::xorNot' requested here
+                    res->bsi[i]=C.xorNot(this->bsi[i]);
+                                  ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::SUM' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4832:18: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+        while (i < bufferSize()) {
+               ~ ^ ~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3892:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::xorNotHybrid' requested here
+        xorNotHybrid(a, container);
+        ^
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:600:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::xorNot' requested here
+        xorNot(a, answer);
+        ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:422:35: note: in instantiation of member function 'HybridBitmap<unsigned long long>::xorNot' requested here
+                    res->bsi[i]=C.xorNot(this->bsi[i]);
+                                  ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::SUM' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4845:24: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for( j=0; j<rlwa.getNumberOfLiteralWords(); j++){
+                      ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4859:18: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+        while (i < a.bufferSize()) {
+               ~ ^ ~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4873:24: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for( j=0; j<rlw.getNumberOfLiteralWords(); j++){
+                      ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+In file included from bsiFunctions.cpp:2:
+./../bsiCPP/bsi/BsiUnsigned.hpp:1058:26: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+                while (k >= res->bsi.size()) {                    
+                       ~ ^  ~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::multiplyByConstantNew' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:2:
+./../bsiCPP/bsi/BsiUnsigned.hpp:1070:31: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+                for (i = 1; i < this->bsi.size(); i++) {
+                            ~ ^ ~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiUnsigned.hpp:1072:36: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+                    while ((i + k) >= res->bsi.size()) {
+                            ~~~~~  ^  ~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiUnsigned.hpp:1085:48: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+                for (int j = this->size + k; j < res->bsi.size(); j++) {
+                                             ~ ^ ~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiUnsigned.hpp:1800:19: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+    for(int i=0; i< this->bsi[0].bufferSize(); i++){
+                 ~^ ~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiUnsigned.hpp:1842:31: note: in instantiation of member function 'BsiUnsigned<>::multiplyWithBsiHorizontal' requested here
+   BsiAttribute<uword>* res = multiplyWithBsiHorizontal(a,3);
+                              ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::multiplication' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:2:
+./../bsiCPP/bsi/BsiUnsigned.hpp:1808:23: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+        for(int j=0; j< answer.size() ; j++){
+                     ~^ ~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiUnsigned.hpp:1666:19: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for(int i=0; i<a.size(); i++){
+                 ~^~~~~~~~~
+./../bsiCPP/bsi/BsiUnsigned.hpp:1807:15: note: in instantiation of member function 'BsiUnsigned<>::multiply' requested here
+        this->multiply(a,b,answer);         //perform multiplication on one word
+              ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:1842:31: note: in instantiation of member function 'BsiUnsigned<>::multiplyWithBsiHorizontal' requested here
+   BsiAttribute<uword>* res = multiplyWithBsiHorizontal(a,3);
+                              ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::multiplication' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:2:
+./../bsiCPP/bsi/BsiUnsigned.hpp:1669:28: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for(int i = a.size(); i< b.size() + a.size(); i++){
+                          ~^ ~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiUnsigned.hpp:1674:21: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for(int it=1; it<b.size(); it++){
+                  ~~^~~~~~~~~
+./../bsiCPP/bsi/BsiUnsigned.hpp:1684:23: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+        for(int i=1; i<a.size(); i++){
+                     ~^~~~~~~~~
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4159:23: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for (int i = 0; i < buffer.size(); i++) {
+                    ~ ^ ~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3813:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::inPlaceXorVerbatim' requested here
+        inPlaceXorVerbatim(a);
+        ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:1464:11: note: in instantiation of member function 'HybridBitmap<unsigned long long>::XorInPlace' requested here
+        S.XorInPlace(this->bsi[0]);
+          ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::multiplyBSI' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4764:18: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+        while (i < bufferSize()) {
+               ~ ^ ~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3815:9: note: in instantiation of member function 'HybridBitmap<unsigned long long>::inPlaceXorHybrid' requested here
+        inPlaceXorHybrid(a);
+        ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:1464:11: note: in instantiation of member function 'HybridBitmap<unsigned long long>::XorInPlace' requested here
+        S.XorInPlace(this->bsi[0]);
+          ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::multiplyBSI' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4775:24: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for( j=0; j<rlwa.getNumberOfLiteralWords(); j++){
+                      ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4789:18: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+        while (i < a.bufferSize()) {
+               ~ ^ ~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4803:24: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for( j=0; j<rlw.getNumberOfLiteralWords(); j++){
+                      ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3237:23: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for (int i = 0; i < buffer.size(); i++) {
+                    ~ ^ ~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiUnsigned.hpp:1468:21: note: in instantiation of member function 'HybridBitmap<unsigned long long>::selectMultiplicationInPlace' requested here
+        res->bsi[k].selectMultiplicationInPlace(unbsi->bsi[it],FS);
+                    ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::multiplyBSI' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3214:23: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for (int i = 0; i < buffer.size(); i++) {
+                    ~ ^ ~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiUnsigned.hpp:1479:19: note: in instantiation of member function 'HybridBitmap<unsigned long long>::majInPlace' requested here
+                C.majInPlace(res->bsi[i + k],this->bsi[i]);
+                  ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::multiplyBSI' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3366:23: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for (int i = 0; i < buffer.size(); i++) {
+                    ~ ^ ~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3338:17: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andVerbatimCompressInPlace' requested here
+                andVerbatimCompressInPlace(a);
+                ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:1485:19: note: in instantiation of member function 'HybridBitmap<unsigned long long>::AndInPlace' requested here
+                C.AndInPlace(this->bsi[i]);
+                  ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::multiplyBSI' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3376:19: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for(int i=0; i<buffer.size();i++){
+                 ~^~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3341:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andVerbatimInPlace' requested here
+            andVerbatimInPlace(a);
+            ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:1485:19: note: in instantiation of member function 'HybridBitmap<unsigned long long>::AndInPlace' requested here
+                C.AndInPlace(this->bsi[i]);
+                  ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::multiplyBSI' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3393:18: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+        while (i < buffer.size()) {
+               ~ ^ ~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3348:13: note: in instantiation of member function 'HybridBitmap<unsigned long long>::andHybridCompressInPlace' requested here
+            andHybridCompressInPlace(a);
+            ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:1485:19: note: in instantiation of member function 'HybridBitmap<unsigned long long>::AndInPlace' requested here
+                C.AndInPlace(this->bsi[i]);
+                  ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::multiplyBSI' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3403:31: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for (j = 0; j < rlwa.getRunningLength(); j++) {
+                            ~ ^ ~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3413:24: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for( j=0; j<rlwa.getNumberOfLiteralWords(); j++){
+                      ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3431:18: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+        while (i < a.buffer.size()) {
+               ~ ^ ~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3433:31: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for (j = 0; j < rlw.getRunningLength(); j++) {
+                            ~ ^ ~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3440:31: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for (j = 0; j < rlw.getRunningLength(); j++) {
+                            ~ ^ ~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3450:24: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+            for( j=0; j<rlw.getNumberOfLiteralWords(); j++){
+                      ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:58:112: warning: field 'lastRLW' will be initialized after field 'verbatim' [-Wreorder-ctor]
+    HybridBitmap(bool verbatim, size_t buffersize) : buffer(buffersize, 0), sizeinbits(buffersize*wordinbits), lastRLW(0), verbatim(verbatim) {
+                                                     ~~~~~~~~~~~~~~~~~~~~~  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~  ^~~~~~~~~   ~~~~~~~~~~~~~~~~~
+                                                     verbatim(verbatim      buffer(buffersize, 0)              sizeinbits(buffersize*wordinbits) lastRLW(0
+./../bsiCPP/bsi/BsiUnsigned.hpp:1995:21: note: in instantiation of member function 'HybridBitmap<unsigned long long>::HybridBitmap' requested here
+    res->sign = new HybridBitmap<uword>(this->getNumberOfRows(),true);
+                    ^
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::negate' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:2:
+./../bsiCPP/bsi/BsiUnsigned.hpp:1940:20: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for (int i=0; i< this->bsi.size(); i++){
+                  ~^ ~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::sumOfBsi' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:2:
+./../bsiCPP/bsi/BsiUnsigned.hpp:2021:19: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for (int i=0;i<this->bsi.size(); i++){
+                 ~^~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiUnsigned.hpp:19:5: note: in instantiation of member function 'BsiUnsigned<>::append' requested here
+    BsiUnsigned(int maxSize);
+    ^
+./../bsiCPP/bsi/BsiSigned.hpp:631:35: note: in instantiation of member function 'BsiUnsigned<>::BsiUnsigned' requested here
+    BsiUnsigned<uword>* res = new BsiUnsigned<uword>(this->size);
+                                  ^
+./../bsiCPP/bsi/BsiSigned.hpp:17:5: note: in instantiation of member function 'BsiSigned<>::abs' requested here
+    BsiSigned();
+    ^
+bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
+    BsiSigned<uint64_t> bsi;
+                        ^
+In file included from bsiFunctions.cpp:2:
+./../bsiCPP/bsi/BsiUnsigned.hpp:2028:23: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+        for(int i=0; i<this->bsi.size(); i++){
+                     ~^~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiUnsigned.hpp:2033:23: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+        for(int i=0; i<this->bsi.size(); i++){
+                     ~^~~~~~~~~~~~~~~~~
+In file included from bsiFunctions.cpp:1:
+./../bsiCPP/bsi/BsiAttribute.hpp:480:20: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+    for (int i=0; i<nums.size(); i++){
+                  ~^~~~~~~~~~~~
+bsiFunctions.cpp:35:17: note: in instantiation of member function 'BsiAttribute<unsigned long long>::buildBsiAttributeFromVector' requested here
+    bsi_1 = bsi.buildBsiAttributeFromVector(v, 0.5);
+                ^
+In file included from bsiFunctions.cpp:1:
+./../bsiCPP/bsi/BsiAttribute.hpp:491:20: warning: comparison of integers of different signs: 'value_type' (aka 'long') and 'unsigned long long' [-Wsign-compare]
+        if(nums[i] > max){
+           ~~~~~~~ ^ ~~~
+./../bsiCPP/bsi/BsiAttribute.hpp:511:23: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+        for(int j=0; j<existBits.size(); j++){
+                     ~^~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiAttribute.hpp:519:23: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+        for(int j=0; j<existBits.size(); j++){
+                     ~^~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/BsiAttribute.hpp:536:27: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+            for(int j=1; j<bitSlices[i].size(); j++){
+                         ~^~~~~~~~~~~~~~~~~~~~
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:383:31: warning: comparison of integers of different signs: 'int' and 'size_t' (aka 'unsigned long') [-Wsign-compare]
+            for (int i = 0; i < this->sizeInWords(); i++) {
+                            ~ ^ ~~~~~~~~~~~~~~~~~~~
+bsiFunctions.cpp:44:30: note: in instantiation of member function 'HybridBitmap<unsigned long long>::positionsToVector' requested here
+    return torch::tensor(res.positionsToVector());
+                             ^
+In file included from bsiFunctions.cpp:1:
+In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:400:39: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                    for (int j = 0; j < localrlw.getRunningLength(); ++j) {
+                                    ~ ^ ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:408:35: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
+                for (int j = 0; j < localrlw.getNumberOfLiteralWords(); ++j) {
+                                ~ ^ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+139 warnings generated.
+clang++ -bundle -undefined dynamic_lookup -arch arm64 -arch x86_64 -g build/temp.macosx-10.9-universal2-cpython-310/bsiFunctions.o -L/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/lib -lc10 -ltorch -ltorch_cpu -ltorch_python -o build/lib.macosx-10.9-universal2-cpython-310/bsi_ops.cpython-310-darwin.so
+ld: warning: ignoring file '/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/lib/libtorch.dylib': found architecture 'x86_64', required architecture 'arm64'
+ld: warning: ignoring file '/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/lib/libc10.dylib': found architecture 'x86_64', required architecture 'arm64'
+ld: warning: ignoring file '/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/lib/libtorch_cpu.dylib': found architecture 'x86_64', required architecture 'arm64'
+ld: warning: ignoring file '/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/lib/libtorch_python.dylib': found architecture 'x86_64', required architecture 'arm64'
+creating build/bdist.macosx-10.9-universal2/egg
+copying build/lib.macosx-10.9-universal2-cpython-310/bsi_ops.cpython-310-darwin.so -> build/bdist.macosx-10.9-universal2/egg
+creating stub loader for bsi_ops.cpython-310-darwin.so
+byte-compiling build/bdist.macosx-10.9-universal2/egg/bsi_ops.py to bsi_ops.cpython-310.pyc
+creating build/bdist.macosx-10.9-universal2/egg/EGG-INFO
+copying bsi_ops.egg-info/PKG-INFO -> build/bdist.macosx-10.9-universal2/egg/EGG-INFO
+copying bsi_ops.egg-info/SOURCES.txt -> build/bdist.macosx-10.9-universal2/egg/EGG-INFO
+copying bsi_ops.egg-info/dependency_links.txt -> build/bdist.macosx-10.9-universal2/egg/EGG-INFO
+copying bsi_ops.egg-info/top_level.txt -> build/bdist.macosx-10.9-universal2/egg/EGG-INFO
+writing build/bdist.macosx-10.9-universal2/egg/EGG-INFO/native_libs.txt
 zip_safe flag not set; analyzing archive contents...
-__pycache__.bsi_ops.cpython-311: module references __file__
-creating 'dist/bsi_ops-0.0.0-py3.11-macosx-10.9-x86_64.egg' and adding 'build/bdist.macosx-10.9-x86_64/egg' to it
-removing 'build/bdist.macosx-10.9-x86_64/egg' (and everything under it)
-Processing bsi_ops-0.0.0-py3.11-macosx-10.9-x86_64.egg
-removing '/Applications/anaconda3/envs/pytorch_env/lib/python3.11/site-packages/bsi_ops-0.0.0-py3.11-macosx-10.9-x86_64.egg' (and everything under it)
-creating /Applications/anaconda3/envs/pytorch_env/lib/python3.11/site-packages/bsi_ops-0.0.0-py3.11-macosx-10.9-x86_64.egg
-Extracting bsi_ops-0.0.0-py3.11-macosx-10.9-x86_64.egg to /Applications/anaconda3/envs/pytorch_env/lib/python3.11/site-packages
+__pycache__.bsi_ops.cpython-310: module references __file__
+creating 'dist/bsi_ops-0.0.0-py3.10-macosx-10.9-universal2.egg' and adding 'build/bdist.macosx-10.9-universal2/egg' to it
+removing 'build/bdist.macosx-10.9-universal2/egg' (and everything under it)
+Processing bsi_ops-0.0.0-py3.10-macosx-10.9-universal2.egg
+removing '/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/bsi_ops-0.0.0-py3.10-macosx-10.9-universal2.egg' (and everything under it)
+creating /Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/bsi_ops-0.0.0-py3.10-macosx-10.9-universal2.egg
+Extracting bsi_ops-0.0.0-py3.10-macosx-10.9-universal2.egg to /Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages
 Adding bsi-ops 0.0.0 to easy-install.pth file
 
-Installed /Applications/anaconda3/envs/pytorch_env/lib/python3.11/site-packages/bsi_ops-0.0.0-py3.11-macosx-10.9-x86_64.egg
+Installed /Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/bsi_ops-0.0.0-py3.10-macosx-10.9-universal2.egg
 Processing dependencies for bsi-ops==0.0.0
 Finished processing dependencies for bsi-ops==0.0.0

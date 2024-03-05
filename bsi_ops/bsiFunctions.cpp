@@ -21,6 +21,7 @@ torch::Tensor topKMax(torch::Tensor m, int k) {
     BsiAttribute<uint64_t>* bsi_1;
 
     // build bsi from vector
+    auto start = std::chrono::high_resolution_clock::now();
     long CONVERSION_FACTOR = 10;
     std::vector<long> v = {};
     auto a = m.accessor<float, 1>();
@@ -28,6 +29,9 @@ torch::Tensor topKMax(torch::Tensor m, int k) {
     for(auto i=0; i<a.size(0); i++) {
         v.push_back(static_cast<long>(a[i]*CONVERSION_FACTOR));
     }
+    auto stop = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+    std::cout << "topkmax torch conversion time: " << duration.count() << "\n";
     bsi_1 = bsi.buildBsiAttributeFromVector(v, 0.5);
 
     // build bsi from tensor
@@ -45,6 +49,7 @@ torch::Tensor topKMin(torch::Tensor m, int k) {
     BsiAttribute<uint64_t>* bsi_1;
 
     // build bsi from vector
+    auto start = std::chrono::high_resolution_clock::now();
     long CONVERSION_FACTOR = 10;
     std::vector<long> v = {};
     auto a = m.accessor<float, 1>();
@@ -52,6 +57,9 @@ torch::Tensor topKMin(torch::Tensor m, int k) {
     for(auto i=0; i<a.size(0); i++) {
         v.push_back(static_cast<long>(a[i]*CONVERSION_FACTOR));
     }
+    auto stop = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+    std::cout << "topkmin torch conversion time: " << duration.count() << "\n";
     bsi_1 = bsi.buildBsiAttributeFromVector(v, 0.5);
 
     // build bsi from tensor
@@ -78,7 +86,7 @@ torch::Tensor convertTensor(torch::Tensor m, long CONVERSION_FACTOR) {
 
 }
 
-torch::Tensor dot_product(torch::Tensor m, torch::Tensor n) {
+/*torch::Tensor dot_product(torch::Tensor m, torch::Tensor n) {
     long CONVERSION_FACTOR = 1000;  // 10^4
     //long CONVERSION_FACTOR = 100000000;  // 10^7
 
@@ -124,7 +132,7 @@ torch::Tensor dot_product(torch::Tensor m, torch::Tensor n) {
         std::cout << bsi_1->getValue(i) << " " << bsi_2->getValue(i) << std::endl;
     }
     std::cout << "Printing bsi vector done" << std::endl;
-    */
+    *
     // torch::Tensor result = torch::zeros({1}, torch::kFloat64);
     double res = bsi_1->dot(bsi_2);
     std::cout<<"res: "<<res<<std::endl;
@@ -136,10 +144,10 @@ torch::Tensor dot_product(torch::Tensor m, torch::Tensor n) {
 
     return torch::tensor(result);
 
-}
+}*/
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-   m.def("dot_product", &dot_product, "Dot product using BSI (Non-CUDA)");
+   //m.def("dot_product", &dot_product, "Dot product using BSI (Non-CUDA)");
    m.def("topKMax", &topKMax, "Top K Max using BSI (Non-CUDA)");
    m.def("topKMin", &topKMin, "Top K Min using BSI (Non-CUDA)");
    m.def("convertTensor", &convertTensor, "Convert tensor of float into tensor of int using conversion_factor");
