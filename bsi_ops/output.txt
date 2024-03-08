@@ -122,18 +122,6 @@ In file included from bsiFunctions.cpp:2:
     int decimals = 0;
         ^
 In file included from bsiFunctions.cpp:3:
-./../bsiCPP/bsi/BsiSigned.hpp:258:14: warning: unused variable 'AND' [-Wunused-variable]
-        auto AND = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1);
-             ^
-./../bsiCPP/bsi/BsiSigned.hpp:259:14: warning: unused variable 'OR' [-Wunused-variable]
-        auto OR = std::chrono::duration_cast<std::chrono::microseconds>(t3 - t2);
-             ^
-./../bsiCPP/bsi/BsiSigned.hpp:260:14: warning: unused variable 'NOO' [-Wunused-variable]
-        auto NOO = std::chrono::duration_cast<std::chrono::microseconds>(t4 - t3);
-             ^
-./../bsiCPP/bsi/BsiSigned.hpp:261:14: warning: unused variable 'ANDN' [-Wunused-variable]
-        auto ANDN = std::chrono::duration_cast<std::chrono::microseconds>(t5 - t4);
-             ^
 ./../bsiCPP/bsi/BsiSigned.hpp:687:9: warning: variable 'resSize' set but not used [-Wunused-but-set-variable]
     int resSize=0;
         ^
@@ -155,19 +143,19 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
     lastRLW(other.lastRLW),verbatim(other.verbatim), density(other.density) {
     ^~~~~~~~~~~~~~~~~~~~~~ ~~~~~~~~~~~~~~~~~~~~~~~~  ~~~~~~~~~~~~~~~~~~~~~~
     buffer(other.buffer)   sizeinbits(other.sizeinbits) lastRLW(other.lastRLW)
-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/__memory/allocator.h:168:28: note: in instantiation of member function 'HybridBitmap<unsigned long long>::HybridBitmap' requested here
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/__memory/allocator.h:167:28: note: in instantiation of member function 'HybridBitmap<unsigned long long>::HybridBitmap' requested here
         ::new ((void*)__p) _Up(_VSTD::forward<_Args>(__args)...);
                            ^
 /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/__memory/allocator_traits.h:296:13: note: in instantiation of function template specialization 'std::allocator<HybridBitmap<unsigned long long>>::construct<HybridBitmap<unsigned long long>, const HybridBitmap<unsigned long long> &>' requested here
         __a.construct(__p, _VSTD::forward<_Args>(__args)...);
             ^
-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/__memory/uninitialized_algorithms.h:604:31: note: in instantiation of function template specialization 'std::allocator_traits<std::allocator<HybridBitmap<unsigned long long>>>::construct<HybridBitmap<unsigned long long>, const HybridBitmap<unsigned long long> &, void>' requested here
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/__memory/uninitialized_algorithms.h:615:31: note: in instantiation of function template specialization 'std::allocator_traits<std::allocator<HybridBitmap<unsigned long long>>>::construct<HybridBitmap<unsigned long long>, const HybridBitmap<unsigned long long> &, void>' requested here
     allocator_traits<_Alloc>::construct(__alloc, std::__to_address(__first2), std::move_if_noexcept(*__first1));
                               ^
-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:917:27: note: in instantiation of function template specialization 'std::__uninitialized_allocator_move_if_noexcept<std::allocator<HybridBitmap<unsigned long long>>, std::reverse_iterator<HybridBitmap<unsigned long long> *>, std::reverse_iterator<HybridBitmap<unsigned long long> *>, std::reverse_iterator<HybridBitmap<unsigned long long> *>>' requested here
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:1035:27: note: in instantiation of function template specialization 'std::__uninitialized_allocator_move_if_noexcept<std::allocator<HybridBitmap<unsigned long long>>, std::reverse_iterator<HybridBitmap<unsigned long long> *>, std::reverse_iterator<HybridBitmap<unsigned long long> *>, std::reverse_iterator<HybridBitmap<unsigned long long> *>>' requested here
     __v.__begin_   = std::__uninitialized_allocator_move_if_noexcept(
                           ^
-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:1504:9: note: in instantiation of member function 'std::vector<HybridBitmap<unsigned long long>>::__swap_out_circular_buffer' requested here
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:1582:9: note: in instantiation of member function 'std::vector<HybridBitmap<unsigned long long>>::__swap_out_circular_buffer' requested here
         __swap_out_circular_buffer(__v);
         ^
 ./../bsiCPP/bsi/BsiSigned.hpp:112:15: note: in instantiation of member function 'std::vector<HybridBitmap<unsigned long long>>::reserve' requested here
@@ -598,7 +586,7 @@ In file included from bsiFunctions.cpp:3:
 bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:557:73: note: 'operator[]' returns a reference
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:615:73: note: 'operator[]' returns a reference
     _LIBCPP_CONSTEXPR_SINCE_CXX20 _LIBCPP_HIDE_FROM_ABI reference       operator[](size_type __n) _NOEXCEPT;
                                                                         ^
 In file included from bsiFunctions.cpp:1:
@@ -759,14 +747,14 @@ In file included from bsiFunctions.cpp:3:
 bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:557:73: note: 'operator[]' returns a reference
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:615:73: note: 'operator[]' returns a reference
     _LIBCPP_CONSTEXPR_SINCE_CXX20 _LIBCPP_HIDE_FROM_ABI reference       operator[](size_type __n) _NOEXCEPT;
                                                                         ^
 In file included from bsiFunctions.cpp:3:
 ./../bsiCPP/bsi/BsiSigned.hpp:859:22: warning: reference cannot be bound to dereferenced null pointer in well-defined C++ code; pointer may be assumed to always convert to true [-Wundefined-bool-conversion]
         res->sign = &res->bsi[res->size-1];
                     ~^~~~~~~~~~~~~~~~~~~~~
-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:557:73: note: 'operator[]' returns a reference
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:615:73: note: 'operator[]' returns a reference
     _LIBCPP_CONSTEXPR_SINCE_CXX20 _LIBCPP_HIDE_FROM_ABI reference       operator[](size_type __n) _NOEXCEPT;
                                                                         ^
 In file included from bsiFunctions.cpp:1:
@@ -808,14 +796,14 @@ In file included from bsiFunctions.cpp:2:
 bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:557:73: note: 'operator[]' returns a reference
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:615:73: note: 'operator[]' returns a reference
     _LIBCPP_CONSTEXPR_SINCE_CXX20 _LIBCPP_HIDE_FROM_ABI reference       operator[](size_type __n) _NOEXCEPT;
                                                                         ^
 In file included from bsiFunctions.cpp:2:
 ./../bsiCPP/bsi/BsiUnsigned.hpp:877:22: warning: reference cannot be bound to dereferenced null pointer in well-defined C++ code; pointer may be assumed to always convert to true [-Wundefined-bool-conversion]
         res->sign = &res->bsi[res->size-1];
                     ~^~~~~~~~~~~~~~~~~~~~~
-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:557:73: note: 'operator[]' returns a reference
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:615:73: note: 'operator[]' returns a reference
     _LIBCPP_CONSTEXPR_SINCE_CXX20 _LIBCPP_HIDE_FROM_ABI reference       operator[](size_type __n) _NOEXCEPT;
                                                                         ^
 In file included from bsiFunctions.cpp:2:
@@ -1229,7 +1217,7 @@ In file included from bsiFunctions.cpp:1:
 ./../bsiCPP/bsi/BsiAttribute.hpp:480:20: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
     for (int i=0; i<nums.size(); i++){
                   ~^~~~~~~~~~~~
-bsiFunctions.cpp:35:17: note: in instantiation of member function 'BsiAttribute<unsigned long long>::buildBsiAttributeFromVector' requested here
+bsiFunctions.cpp:32:17: note: in instantiation of member function 'BsiAttribute<unsigned long long>::buildBsiAttributeFromVector' requested here
     bsi_1 = bsi.buildBsiAttributeFromVector(v, 0.5);
                 ^
 In file included from bsiFunctions.cpp:1:
@@ -1261,7 +1249,7 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:408:35: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
                 for (int j = 0; j < localrlw.getNumberOfLiteralWords(); ++j) {
                                 ~ ^ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-139 warnings generated.
+135 warnings generated.
 In file included from bsiFunctions.cpp:1:
 In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 In file included from ./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:10:
@@ -1345,18 +1333,6 @@ In file included from bsiFunctions.cpp:2:
     int decimals = 0;
         ^
 In file included from bsiFunctions.cpp:3:
-./../bsiCPP/bsi/BsiSigned.hpp:258:14: warning: unused variable 'AND' [-Wunused-variable]
-        auto AND = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1);
-             ^
-./../bsiCPP/bsi/BsiSigned.hpp:259:14: warning: unused variable 'OR' [-Wunused-variable]
-        auto OR = std::chrono::duration_cast<std::chrono::microseconds>(t3 - t2);
-             ^
-./../bsiCPP/bsi/BsiSigned.hpp:260:14: warning: unused variable 'NOO' [-Wunused-variable]
-        auto NOO = std::chrono::duration_cast<std::chrono::microseconds>(t4 - t3);
-             ^
-./../bsiCPP/bsi/BsiSigned.hpp:261:14: warning: unused variable 'ANDN' [-Wunused-variable]
-        auto ANDN = std::chrono::duration_cast<std::chrono::microseconds>(t5 - t4);
-             ^
 ./../bsiCPP/bsi/BsiSigned.hpp:687:9: warning: variable 'resSize' set but not used [-Wunused-but-set-variable]
     int resSize=0;
         ^
@@ -1378,19 +1354,19 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
     lastRLW(other.lastRLW),verbatim(other.verbatim), density(other.density) {
     ^~~~~~~~~~~~~~~~~~~~~~ ~~~~~~~~~~~~~~~~~~~~~~~~  ~~~~~~~~~~~~~~~~~~~~~~
     buffer(other.buffer)   sizeinbits(other.sizeinbits) lastRLW(other.lastRLW)
-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/__memory/allocator.h:168:28: note: in instantiation of member function 'HybridBitmap<unsigned long long>::HybridBitmap' requested here
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/__memory/allocator.h:167:28: note: in instantiation of member function 'HybridBitmap<unsigned long long>::HybridBitmap' requested here
         ::new ((void*)__p) _Up(_VSTD::forward<_Args>(__args)...);
                            ^
 /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/__memory/allocator_traits.h:296:13: note: in instantiation of function template specialization 'std::allocator<HybridBitmap<unsigned long long>>::construct<HybridBitmap<unsigned long long>, const HybridBitmap<unsigned long long> &>' requested here
         __a.construct(__p, _VSTD::forward<_Args>(__args)...);
             ^
-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/__memory/uninitialized_algorithms.h:604:31: note: in instantiation of function template specialization 'std::allocator_traits<std::allocator<HybridBitmap<unsigned long long>>>::construct<HybridBitmap<unsigned long long>, const HybridBitmap<unsigned long long> &, void>' requested here
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/__memory/uninitialized_algorithms.h:615:31: note: in instantiation of function template specialization 'std::allocator_traits<std::allocator<HybridBitmap<unsigned long long>>>::construct<HybridBitmap<unsigned long long>, const HybridBitmap<unsigned long long> &, void>' requested here
     allocator_traits<_Alloc>::construct(__alloc, std::__to_address(__first2), std::move_if_noexcept(*__first1));
                               ^
-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:917:27: note: in instantiation of function template specialization 'std::__uninitialized_allocator_move_if_noexcept<std::allocator<HybridBitmap<unsigned long long>>, std::reverse_iterator<HybridBitmap<unsigned long long> *>, std::reverse_iterator<HybridBitmap<unsigned long long> *>, std::reverse_iterator<HybridBitmap<unsigned long long> *>>' requested here
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:1035:27: note: in instantiation of function template specialization 'std::__uninitialized_allocator_move_if_noexcept<std::allocator<HybridBitmap<unsigned long long>>, std::reverse_iterator<HybridBitmap<unsigned long long> *>, std::reverse_iterator<HybridBitmap<unsigned long long> *>, std::reverse_iterator<HybridBitmap<unsigned long long> *>>' requested here
     __v.__begin_   = std::__uninitialized_allocator_move_if_noexcept(
                           ^
-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:1504:9: note: in instantiation of member function 'std::vector<HybridBitmap<unsigned long long>>::__swap_out_circular_buffer' requested here
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:1582:9: note: in instantiation of member function 'std::vector<HybridBitmap<unsigned long long>>::__swap_out_circular_buffer' requested here
         __swap_out_circular_buffer(__v);
         ^
 ./../bsiCPP/bsi/BsiSigned.hpp:112:15: note: in instantiation of member function 'std::vector<HybridBitmap<unsigned long long>>::reserve' requested here
@@ -1821,7 +1797,7 @@ In file included from bsiFunctions.cpp:3:
 bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:557:73: note: 'operator[]' returns a reference
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:615:73: note: 'operator[]' returns a reference
     _LIBCPP_CONSTEXPR_SINCE_CXX20 _LIBCPP_HIDE_FROM_ABI reference       operator[](size_type __n) _NOEXCEPT;
                                                                         ^
 In file included from bsiFunctions.cpp:1:
@@ -1982,14 +1958,14 @@ In file included from bsiFunctions.cpp:3:
 bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:557:73: note: 'operator[]' returns a reference
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:615:73: note: 'operator[]' returns a reference
     _LIBCPP_CONSTEXPR_SINCE_CXX20 _LIBCPP_HIDE_FROM_ABI reference       operator[](size_type __n) _NOEXCEPT;
                                                                         ^
 In file included from bsiFunctions.cpp:3:
 ./../bsiCPP/bsi/BsiSigned.hpp:859:22: warning: reference cannot be bound to dereferenced null pointer in well-defined C++ code; pointer may be assumed to always convert to true [-Wundefined-bool-conversion]
         res->sign = &res->bsi[res->size-1];
                     ~^~~~~~~~~~~~~~~~~~~~~
-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:557:73: note: 'operator[]' returns a reference
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:615:73: note: 'operator[]' returns a reference
     _LIBCPP_CONSTEXPR_SINCE_CXX20 _LIBCPP_HIDE_FROM_ABI reference       operator[](size_type __n) _NOEXCEPT;
                                                                         ^
 In file included from bsiFunctions.cpp:1:
@@ -2031,14 +2007,14 @@ In file included from bsiFunctions.cpp:2:
 bsiFunctions.cpp:20:25: note: in instantiation of member function 'BsiSigned<>::BsiSigned' requested here
     BsiSigned<uint64_t> bsi;
                         ^
-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:557:73: note: 'operator[]' returns a reference
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:615:73: note: 'operator[]' returns a reference
     _LIBCPP_CONSTEXPR_SINCE_CXX20 _LIBCPP_HIDE_FROM_ABI reference       operator[](size_type __n) _NOEXCEPT;
                                                                         ^
 In file included from bsiFunctions.cpp:2:
 ./../bsiCPP/bsi/BsiUnsigned.hpp:877:22: warning: reference cannot be bound to dereferenced null pointer in well-defined C++ code; pointer may be assumed to always convert to true [-Wundefined-bool-conversion]
         res->sign = &res->bsi[res->size-1];
                     ~^~~~~~~~~~~~~~~~~~~~~
-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:557:73: note: 'operator[]' returns a reference
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/vector:615:73: note: 'operator[]' returns a reference
     _LIBCPP_CONSTEXPR_SINCE_CXX20 _LIBCPP_HIDE_FROM_ABI reference       operator[](size_type __n) _NOEXCEPT;
                                                                         ^
 In file included from bsiFunctions.cpp:2:
@@ -2452,7 +2428,7 @@ In file included from bsiFunctions.cpp:1:
 ./../bsiCPP/bsi/BsiAttribute.hpp:480:20: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
     for (int i=0; i<nums.size(); i++){
                   ~^~~~~~~~~~~~
-bsiFunctions.cpp:35:17: note: in instantiation of member function 'BsiAttribute<unsigned long long>::buildBsiAttributeFromVector' requested here
+bsiFunctions.cpp:32:17: note: in instantiation of member function 'BsiAttribute<unsigned long long>::buildBsiAttributeFromVector' requested here
     bsi_1 = bsi.buildBsiAttributeFromVector(v, 0.5);
                 ^
 In file included from bsiFunctions.cpp:1:
@@ -2484,12 +2460,12 @@ In file included from ./../bsiCPP/bsi/BsiAttribute.hpp:11:
 ./../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:408:35: warning: comparison of integers of different signs: 'int' and 'unsigned long long' [-Wsign-compare]
                 for (int j = 0; j < localrlw.getNumberOfLiteralWords(); ++j) {
                                 ~ ^ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-139 warnings generated.
+135 warnings generated.
 clang++ -bundle -undefined dynamic_lookup -arch arm64 -arch x86_64 -g build/temp.macosx-10.9-universal2-cpython-310/bsiFunctions.o -L/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/lib -lc10 -ltorch -ltorch_cpu -ltorch_python -o build/lib.macosx-10.9-universal2-cpython-310/bsi_ops.cpython-310-darwin.so
-ld: warning: ignoring file '/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/lib/libtorch.dylib': found architecture 'x86_64', required architecture 'arm64'
-ld: warning: ignoring file '/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/lib/libc10.dylib': found architecture 'x86_64', required architecture 'arm64'
-ld: warning: ignoring file '/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/lib/libtorch_cpu.dylib': found architecture 'x86_64', required architecture 'arm64'
 ld: warning: ignoring file '/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/lib/libtorch_python.dylib': found architecture 'x86_64', required architecture 'arm64'
+ld: warning: ignoring file '/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/lib/libc10.dylib': found architecture 'x86_64', required architecture 'arm64'
+ld: warning: ignoring file '/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/lib/libtorch.dylib': found architecture 'x86_64', required architecture 'arm64'
+ld: warning: ignoring file '/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/torch/lib/libtorch_cpu.dylib': found architecture 'x86_64', required architecture 'arm64'
 creating build/bdist.macosx-10.9-universal2/egg
 copying build/lib.macosx-10.9-universal2-cpython-310/bsi_ops.cpython-310-darwin.so -> build/bdist.macosx-10.9-universal2/egg
 creating stub loader for bsi_ops.cpython-310-darwin.so

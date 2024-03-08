@@ -29,10 +29,10 @@ torch::Tensor topKMax(torch::Tensor m, int k) {
     for(auto i=0; i<a.size(0); i++) {
         v.push_back(static_cast<long>(a[i]*CONVERSION_FACTOR));
     }
+    bsi_1 = bsi.buildBsiAttributeFromVector(v, 0.5);
     auto stop = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
     std::cout << "topkmax torch conversion time: " << duration.count() << "\n";
-    bsi_1 = bsi.buildBsiAttributeFromVector(v, 0.5);
 
     // build bsi from tensor
     //bsi_1 = buildBsiAttributeFromTensor(bsi_1, m, 1);
@@ -57,10 +57,10 @@ torch::Tensor topKMin(torch::Tensor m, int k) {
     for(auto i=0; i<a.size(0); i++) {
         v.push_back(static_cast<long>(a[i]*CONVERSION_FACTOR));
     }
+    bsi_1 = bsi.buildBsiAttributeFromVector(v, 0.5);
     auto stop = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
     std::cout << "topkmin torch conversion time: " << duration.count() << "\n";
-    bsi_1 = bsi.buildBsiAttributeFromVector(v, 0.5);
 
     // build bsi from tensor
     //bsi_1 = buildBsiAttributeFromTensor(bsi_1, m, 1);
