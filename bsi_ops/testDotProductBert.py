@@ -5,10 +5,11 @@ import matplotlib.pyplot as plt
 import time
 import sys
 
+
 print('import works')  # just to verify against import errors
 
 # Load the triplets from the saved pickle file
-with open('extract_tensors/extract_BERTClassifierTokens/bert_large_triplets.pkl', 'rb') as f:
+with open('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/bertVectors_9.pkl', 'rb') as f:
     triplets = pickle.load(f)
 print("BERT triplets loaded from the pickle file")
 # List to store dot products for each layer
@@ -25,7 +26,7 @@ k_flat_histograms = []
 num_runs = 5
 
 # Create a text file for saving the results
-output_text_file = 'extract_tensors/extract_BERTClassifierTokens/10_bit/dot_product_results.txt'
+output_text_file = './hpcBERTTrainDataDotProduct/output_39882/bertVectors/5_bit/epoch9/dot_product_results.txt'
 bsi_values = []
 normal_values = []
 percentage_error_values = []
@@ -37,6 +38,10 @@ with open(output_text_file, 'w') as text_file:
         Q_flat = Q.reshape(-1)
         K_flat = K.reshape(-1)
         V_flat = V.reshape(-1)
+        # Convert the NumPy array to a PyTorch tensor
+        Q_flat = torch.tensor(Q_flat)
+        K_flat = torch.tensor(K_flat)
+        V_flat = torch.tensor(V_flat)
         # Store histogram data
         q_flat_histograms.append(Q_flat.detach().numpy())
         k_flat_histograms.append(K_flat.detach().numpy())
@@ -54,12 +59,12 @@ with open(output_text_file, 'w') as text_file:
         K_size_kb = K_size / 1024
         V_size_kb = V_size / 1024
 
-        conversion_factor = 1023.0;
+        conversion_factor = 31.0;
         custom_exec_times = []
         torch_exec_times = []
         for _ in range(num_runs):
             #res, time_taken, bsiQ, bsiK = bsi_ops.dot_product(Q_flat, K_flat, conversion_factor)
-            res, time_taken, bsiSizeQ, bsiSizeK = bsi_ops.dot_product(Q_flat, K_flat, conversion_factor)
+            res, time_taken, bsiSizeQ, bsiSizeK     = bsi_ops.dot_product(Q_flat, K_flat, conversion_factor)
             custom_exec_times.append(time_taken/1e9)
             start_time = time.time()
             torch_res = torch.dot(Q_flat, K_flat)
@@ -100,9 +105,9 @@ with open(output_text_file, 'w') as text_file:
 print(f"Results saved to {output_text_file}")
 
 #Create visualization
-layer_numbers = list(range(1, 25))
+layer_numbers = list(range(1, 7))
 # Create subplots for bsi, normal, and percentage error
-fig, ax = plt.subplots(3, 1, figsize=(10, 24))
+fig, ax = plt.subplots(3, 1, figsize=(10, 6))
 
 # Plot BSI values
 ax[0].plot(layer_numbers, bsi_values, marker='o', linestyle='-', color='b')
@@ -129,14 +134,14 @@ fig.text(0.5, 0.04, 'Layer', ha='center')
 plt.tight_layout()
 
 # Save the plot as an image (e.g., PNG)
-plt.savefig('extract_tensors/extract_BERTClassifierTokens/10_bit/bert_visualization.png')
+plt.savefig('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/5_bit/epoch9/bert_visualization.png')
 
 # Show the plot (optional)
 plt.show()
 
 
 # Plot the time results
-plt.figure(figsize=(10, 12))
+plt.figure(figsize=(10, 6))
 plt.plot(layer_numbers, custom_times, marker='o', label='BSI Dot Product')
 plt.plot(layer_numbers, torch_times, marker='o', label='Torch Dot Product')
 plt.xlabel('Layer Number')
@@ -144,10 +149,10 @@ plt.ylabel('Average Execution Time (milliseconds)')
 plt.legend()
 plt.title('Average Execution Time Comparison (5 Runs)')
 plt.grid(True)
-plt.savefig('extract_tensors/extract_BERTClassifierTokens/10_bit/bert_time_visualization.png')
+plt.savefig('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/5_bit/epoch9/bert_time_visualization.png')
 plt.show()
 # Plot histograms for Q_flat and K_flat
-plt.figure(figsize=(12, 12))
+plt.figure(figsize=(12, 6))
 
 plt.subplot(1, 2, 1)
 plt.hist(q_flat_histograms, bins=50, alpha=0.7, label='Query Tensors')
@@ -164,5 +169,5 @@ plt.ylabel('Frequency')
 plt.legend()
 
 plt.tight_layout()
-plt.savefig('extract_tensors/extract_BERTClassifierTokens/10_bit/bert_tensor_distribution.png')
+plt.savefig('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/5_bit/epoch9/bert_tensor_distribution.png')
 plt.show()
