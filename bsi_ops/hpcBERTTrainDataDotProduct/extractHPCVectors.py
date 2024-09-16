@@ -25,6 +25,7 @@ def extract(output_dir, num_hidden_layers, analysis_dir):
                     epoch_str = f"epoch_{int(epoch)}_layer_{layer_idx + 1}_results.pkl"
 
                 pickle_file_path = os.path.join(output_dir, epoch_str)
+                # print(f"Printing pickle file path: {pickle_file_path}") included to check the file path
                 logging.info(f"Analysis started for {pickle_file_path}")
                 if os.path.exists(pickle_file_path):
                     with open(pickle_file_path, 'rb') as pickle_file:
@@ -54,6 +55,7 @@ def extract(output_dir, num_hidden_layers, analysis_dir):
                     triplets.append(triplet)
             #Save the triplet for each epoch
             # Specify the path to save the pickle file
+            # print(f"triplets: \n {triplets}")
             output_file = os.path.join(analysis_dir, f'bertVectors_{epoch}.pkl')
             with open(output_file, 'wb') as f:
                 pickle.dump(triplets, f)

@@ -4,12 +4,14 @@ import pickle
 import matplotlib.pyplot as plt
 import time
 import sys
+import os
 
 
 print('import works')  # just to verify against import errors
 
 # Load the triplets from the saved pickle file
-with open('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/bertVectors_9.pkl', 'rb') as f:
+# pickle_file_weights_stored_path = './hpcBERTTrainDataDotProduct/output_39882/bertVectors/bertVectors_9.pkl'
+with open('./output_39882/bertVectors/qkv_weights-initial.pkl', 'rb') as f:
     triplets = pickle.load(f)
 print("BERT triplets loaded from the pickle file")
 # List to store dot products for each layer
@@ -17,6 +19,7 @@ dot_products = []
 # Lists to store execution times
 custom_times = []
 torch_times = []
+vector_dotProduct_times = []
 # Lists to store histogram data of the tensors
 q_flat_histograms = []
 k_flat_histograms = []
@@ -27,6 +30,7 @@ num_runs = 5
 
 # Create a text file for saving the results
 output_text_file = './hpcBERTTrainDataDotProduct/output_39882/bertVectors/5_bit/epoch9/dot_product_results.txt'
+os.makedirs(os.path.dirname(output_text_file), exist_ok=True)
 bsi_values = []
 normal_values = []
 percentage_error_values = []
@@ -50,35 +54,41 @@ with open(output_text_file, 'w') as text_file:
         # Print the shape and size of  of the flattened tensors
         print(f"Layer {i} - Q shape: {Q_flat.shape}, K shape: {K_flat.shape}, V shape: {V_flat.shape}")
         # Calculate the total size of each tensor in bytes using sys.getsizeof
-        Q_size = sys.getsizeof(Q_flat.storage()) + sys.getsizeof(Q_flat)
-        K_size = sys.getsizeof(K_flat.storage()) + sys.getsizeof(K_flat)
-        V_size = sys.getsizeof(V_flat.storage()) + sys.getsizeof(V_flat)
+        Q_size = sys.getsizeof(Q_flat.untyped_storage()) + sys.getsizeof(Q_flat) #storage() is being deprecated. so used untyped_storage()
+        K_size = sys.getsizeof(K_flat.untyped_storage()) + sys.getsizeof(K_flat)
+        V_size = sys.getsizeof(V_flat.untyped_storage()) + sys.getsizeof(V_flat)
 
         # Convert sizes to kilobytes (optional)
         Q_size_kb = Q_size / 1024
         K_size_kb = K_size / 1024
         V_size_kb = V_size / 1024
 
-        conversion_factor = 31.0;
+        precision_factor = 31; #changed name from conversion_factor to precision_factor. Changed value to 10^31
         custom_exec_times = []
         torch_exec_times = []
+        vector_exec_times = []
         for _ in range(num_runs):
-            #res, time_taken, bsiQ, bsiK = bsi_ops.dot_product(Q_flat, K_flat, conversion_factor)
-            res, time_taken, bsiSizeQ, bsiSizeK     = bsi_ops.dot_product(Q_flat, K_flat, conversion_factor)
+            #res, time_taken, bsiQ, bsiK = bsi_ops.dot_product(Q_flat, K_flat, precision_factor)
+            res, time_taken, bsiSizeQ, bsiSizeK     = bsi_ops.dot_product(Q_flat, K_flat, precision_factor)
             custom_exec_times.append(time_taken/1e9)
             start_time = time.time()
             torch_res = torch.dot(Q_flat, K_flat)
             torch_exec_time = time.time() - start_time
             torch_exec_times.append(torch_exec_time)
+            vector_result, vector_dot_product_timeTaken = bsi_ops.vector_dot_product(Q_flat, K_flat, precision_factor)
+            vector_exec_times.append(vector_dot_product_timeTaken/1e9)
         custom_avg_time = sum(custom_exec_times) / num_runs
         torch_avg_time = sum(torch_exec_times) / num_runs
+        vector_dot_product_avg_timeTaken = sum(vector_exec_times)/num_runs
 
         custom_times.append(custom_avg_time*1000)
         torch_times.append(torch_avg_time*1000)
+        vector_dotProduct_times.append(vector_dot_product_avg_timeTaken*1000)
         percentage_error = (abs(res - torch_res) / torch_res) * 100
         bsi_values.append(res)
         normal_values.append(torch_res.detach().numpy())
         percentage_error_values.append(percentage_error.detach().numpy())
+        print(f"Length of layer numbers {len(vector_exec_times)}")
         print('BERT normalized Q and K dot product::: bsi:', res, 'normal:',torch_res)
 
         text_file.write(f"Layer {i} - Q shape: {Q.shape}, K shape: {K.shape}, V shape: {V.shape}\n")
@@ -105,7 +115,8 @@ with open(output_text_file, 'w') as text_file:
 print(f"Results saved to {output_text_file}")
 
 #Create visualization
-layer_numbers = list(range(1, 7))
+# layer_numbers = list(range(1, 7))
+layer_numbers = list(range(1, len(triplets) + 1))
 # Create subplots for bsi, normal, and percentage error
 fig, ax = plt.subplots(3, 1, figsize=(10, 6))
 
@@ -141,9 +152,10 @@ plt.show()
 
 
 # Plot the time results
-plt.figure(figsize=(10, 6))
+plt.figure(figsize=(12, 6))
 plt.plot(layer_numbers, custom_times, marker='o', label='BSI Dot Product')
 plt.plot(layer_numbers, torch_times, marker='o', label='Torch Dot Product')
+plt.plot(layer_numbers, vector_dotProduct_times, marker='o', label='C++ vector Dot Product')
 plt.xlabel('Layer Number')
 plt.ylabel('Average Execution Time (milliseconds)')
 plt.legend()
@@ -152,7 +164,7 @@ plt.grid(True)
 plt.savefig('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/5_bit/epoch9/bert_time_visualization.png')
 plt.show()
 # Plot histograms for Q_flat and K_flat
-plt.figure(figsize=(12, 6))
+plt.figure(figsize=(10, 6))
 
 plt.subplot(1, 2, 1)
 plt.hist(q_flat_histograms, bins=50, alpha=0.7, label='Query Tensors')

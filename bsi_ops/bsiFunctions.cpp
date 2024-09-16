@@ -10,6 +10,9 @@
 #include <iostream>
 #include <chrono>
 
+using std::cout;
+using std::endl;
+
 // function to return time since epoch
 // for measuring how long certain tasks take
 uint64_t timeSinceEpoch() {
@@ -55,10 +58,45 @@ struct DotProductResult {
 
 };
 
-DotProductResult dot_product(torch::Tensor m, torch::Tensor n, float conversion_factor) {
-    //long CONVERSION_FACTOR = 10000;  // 10^4
-    //long CONVERSION_FACTOR = 100000000;  // 10^7
-    long CONVERSION_FACTOR = static_cast<long>(conversion_factor);
+struct VectorDotProductResult{
+    long result;
+    uint64_t timeTaken;
+};
+
+VectorDotProductResult dot_product_vector(torch::Tensor m, torch::Tensor n, float precision_factor){
+    VectorDotProductResult result;
+    long precision_factor_long = static_cast<long>(precision_factor);
+    std::vector<long> vec1 = {};
+    std::vector<long> vec2 = {};
+    auto m_a = m.accessor<float, 1>();
+    auto n_a = n.accessor<float, 1>();
+
+    //creating vectors
+    for(auto i=0; i<m_a.size(0); i++){
+        vec1.push_back(static_cast<long>(m_a[i]*precision_factor_long));
+    }
+    for(auto i=0; i<n_a.size(0); i++){
+        vec2.push_back(static_cast<long>(n_a[i]*precision_factor_long));
+    }
+    cout << "Size of vectors: vec1 size " << vec1.size() << " and vec2 size: " << vec2.size() << endl;
+    //doing dot product and logging time
+    uint64_t start = timeSinceEpoch();
+    long res = 0;
+    for(int i=0;i<vec1.size(); i++){
+        res += vec1[i]*vec2[i];
+    }
+    uint64_t end = timeSinceEpoch();
+
+    result.result = res;
+    result.timeTaken = end-start;
+    return result;
+    
+}
+
+DotProductResult dot_product(torch::Tensor m, torch::Tensor n, float precision_factor) {
+    //long precision_factor = 10000;  // 10^4
+    //long precision_factor = 100000000;  // 10^7
+    long precision_factor_long = static_cast<long>(precision_factor);
 
     uint64_t start = timeSinceEpoch();
 
@@ -75,10 +113,10 @@ DotProductResult dot_product(torch::Tensor m, torch::Tensor n, float conversion_
     std::cout << "[C++]" << "Got tensors of size " << m_a.size(0) << " and " << n_a.size(0) << std::endl;
 
     for(auto i=0; i<m_a.size(0); i++) {
-        m_v.push_back(static_cast<long>(m_a[i] * CONVERSION_FACTOR));
+        m_v.push_back(static_cast<long>(m_a[i] * precision_factor_long));
     }
     for(auto i=0; i<n_a.size(0); i++) {
-        n_v.push_back(static_cast<long>(n_a[i] * CONVERSION_FACTOR));
+        n_v.push_back(static_cast<long>(n_a[i] * precision_factor_long));
     }
     u_int64_t end = timeSinceEpoch();
 
@@ -116,7 +154,7 @@ DotProductResult dot_product(torch::Tensor m, torch::Tensor n, float conversion_
     uint64_t end_dot_product = timeSinceEpoch();
     std::cout<<"res: "<<res<<std::endl;
     // divide by conversion factor twice because mutiplication
-    double result = res/float(CONVERSION_FACTOR * CONVERSION_FACTOR);
+    double result = res/float(precision_factor * precision_factor);
     std::cout<<"result after division: "<<result<<std::endl;
 
     DotProductResult resultStruct;
@@ -132,13 +170,19 @@ DotProductResult dot_product(torch::Tensor m, torch::Tensor n, float conversion_
 
 }
 // Modify the PyTorch binding to specify the return type as a tuple
-pybind11::tuple dot_product_with_time(torch::Tensor m, torch::Tensor n, float conversion_factor) {
-    DotProductResult result = dot_product(m, n, conversion_factor);
+pybind11::tuple dot_product_with_time(torch::Tensor m, torch::Tensor n, float precision_factor) {
+    DotProductResult result = dot_product(m, n, precision_factor);
     return pybind11::make_tuple(result.result, result.timeTaken, result.sizeOfBsi1,result.sizeOfBsi2);
+}
+
+pybind11::tuple vector_dot_product(torch::Tensor m, torch::Tensor n, float precision_factor){
+    VectorDotProductResult result = dot_product_vector(m, n, precision_factor);
+    return pybind11::make_tuple(result.result, result.timeTaken);
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
    m.def("dot_product", &dot_product_with_time, "Dot product using BSI (Non-CUDA)");
+   m.def("vector_dot_product", &vector_dot_product, "Dot product using c++ vectors");
 }
 
 
