@@ -1438,3 +1438,7 @@ Number of BSI slices: 10, Number of verbatim slices: 7, Ratio: 0.7
 Number of BSI slices: 10, Number of verbatim slices: 7, Ratio: 0.7
 Number of BSI slices: 10, Number of verbatim slices: 7, Ratio: 0.7
 Number of BSI slices: 10, Number of verbatim slices: 7, Ratio: 0.7
+Number of BSI slices: 12, Number of verbatim slices: 12, Ratio: 1
+Number of BSI slices: 12, Number of verbatim slices: 12, Ratio: 1
+Number of BSI slices: 12, Number of verbatim slices: 12, Ratio: 1
+Number of BSI slices: 12, Number of verbatim slices: 12, Ratio: 1

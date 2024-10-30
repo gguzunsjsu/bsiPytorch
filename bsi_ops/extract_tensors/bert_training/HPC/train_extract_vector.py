@@ -15,6 +15,7 @@ from transformers import LineByLineTextDataset
 from transformers import DataCollatorForLanguageModeling
 from transformers import Trainer, TrainingArguments
 from transformers import pipeline
+import os
 
 paths = [str(x) for x in Path(".").glob("**/*.txt")]
 '''
@@ -34,7 +35,10 @@ tokenizer.train(files=paths, vocab_size=52_000, min_frequency=2, special_tokens=
 
 ])
 
-tokenizer.save_model("EsperBERTo_3")
+save_dir = "EsperBERTo_3"
+os.makedirs(save_dir, exist_ok=True)
+tokenizer.save_model(save_dir)
+# tokenizer.save_model("EsperBERTo_3")
 tokenizer = ByteLevelBPETokenizer(
     "./EsperBERTo_3/vocab.json",
     "./EsperBERTo_3/merges.txt",
