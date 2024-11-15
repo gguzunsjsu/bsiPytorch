@@ -63,7 +63,7 @@ with open(output_text_file, 'w') as text_file:
         K_size_kb = K_size / 1024
         V_size_kb = V_size / 1024
 
-        precision_factor = 38; #changed name from conversion_factor to precision_factor. Changed value to 10^31
+        precision_factor = 38; #changed name from conversion_factor to precision_factor. Changed value to 10^31 -- Initially it is 31
         custom_exec_times = []
         torch_exec_times = []
         vector_exec_times = []
