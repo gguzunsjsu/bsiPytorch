@@ -69,13 +69,13 @@ with open(output_text_file, 'w') as text_file:
         vector_exec_times = []
         for _ in range(num_runs):
             #res, time_taken, bsiQ, bsiK = bsi_ops.dot_product(Q_flat, K_flat, precision_factor)
-            res, time_taken, bsiSizeQ, bsiSizeK     = bsi_ops.dot_product(Q_flat, K_flat, precision_factor)
+            res, time_taken, bsiSizeQ, bsiSizeK     = bsi_ops.dot_product(Q_flat, K_flat, precision_factor) #bsi dot product
             custom_exec_times.append(time_taken/1e9)
             start_time = time.time()
-            torch_res = torch.dot(Q_flat, K_flat)
+            torch_res = torch.dot(Q_flat, K_flat) # torch dot product
             torch_exec_time = time.time() - start_time
             torch_exec_times.append(torch_exec_time)
-            vector_result, vector_dot_product_timeTaken = bsi_ops.vector_dot_product(Q_flat, K_flat, precision_factor)
+            vector_result, vector_dot_product_timeTaken = bsi_ops.vector_dot_product(Q_flat, K_flat, precision_factor) #c++ vector dot product
             vector_exec_times.append(vector_dot_product_timeTaken/1e9)
         custom_avg_time = sum(custom_exec_times) / num_runs
         torch_avg_time = sum(torch_exec_times) / num_runs
