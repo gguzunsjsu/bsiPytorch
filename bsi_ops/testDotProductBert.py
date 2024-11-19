@@ -11,7 +11,7 @@ print('import works')  # just to verify against import errors
 
 # Load the triplets from the saved pickle file
 # pickle_file_weights_stored_path = './hpcBERTTrainDataDotProduct/output_39882/bertVectors/bertVectors_9.pkl'
-with open('/home/poorna/Desktop/RA BSI/bsi_pytorch/bsiPytorch/bsi_ops/extract_tensors/extracting_qkv_bert_new/bert_imdb10.pkl', 'rb') as f:
+with open('/home/poorna/Desktop/RA BSI/bsi_pytorch/bsiPytorch/bsi_ops/extract_tensors/extracting_qkv_bert_new/bert_imdb_pickle_store/bert_imdb45.pkl', 'rb') as f:
     triplets = pickle.load(f)
 print("BERT triplets loaded from the pickle file")
 # List to store dot products for each layer
@@ -29,7 +29,7 @@ k_flat_histograms = []
 num_runs = 5
 
 # Create a text file for saving the results
-output_text_file = './hpcBERTTrainDataDotProduct/output_39882/bertVectors/5_bit/imdb/dot_product_results_imdb_e5.txt'
+output_text_file = './hpcBERTTrainDataDotProduct/output_39882/bertVectors/5_bit/imdb_e50/dot_product_results_imdb_e45_4bit_PF7.txt'
 os.makedirs(os.path.dirname(output_text_file), exist_ok=True)
 bsi_values = []
 normal_values = []
@@ -63,7 +63,8 @@ with open(output_text_file, 'w') as text_file:
         K_size_kb = K_size / 1024
         V_size_kb = V_size / 1024
 
-        precision_factor = 38; #changed name from conversion_factor to precision_factor. Changed value to 10^31 -- Initially it is 31
+        # precision_factor = 38; #changed name from conversion_factor to precision_factor. Changed value to 10^31 -- Initially it is 31
+        precision_factor = 7
         custom_exec_times = []
         torch_exec_times = []
         vector_exec_times = []
@@ -145,7 +146,7 @@ fig.text(0.5, 0.04, 'Layer', ha='center')
 plt.tight_layout()
 
 # Save the plot as an image (e.g., PNG)
-plt.savefig('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/5_bit/imdb/bert_visualization_e10_b128.png')
+plt.savefig('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/5_bit/imdb_e50/bert_visualization_e45_4bit_PF7.png')
 
 # Show the plot (optional)
 plt.show()
@@ -161,25 +162,25 @@ plt.ylabel('Average Execution Time (milliseconds)')
 plt.legend()
 plt.title('Average Execution Time Comparison (5 Runs)')
 plt.grid(True)
-plt.savefig('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/5_bit/imdb/bert_time_visualization_e10_b128.png')
+plt.savefig('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/5_bit/imdb_e50/bert_time_visualization_e45_4bit_PF7.png')
 plt.show()
 # Plot histograms for Q_flat and K_flat
-plt.figure(figsize=(10, 6))
+# plt.figure(figsize=(10, 6))
 
-plt.subplot(1, 2, 1)
-plt.hist(q_flat_histograms, bins=50, alpha=0.7, label='Query Tensors')
-plt.title('Histogram for Query tensors')
-plt.xlabel('Value')
-plt.ylabel('Frequency')
-plt.legend()
+# plt.subplot(1, 2, 1)
+# plt.hist(q_flat_histograms, bins=50, alpha=0.7, label='Query Tensors')
+# plt.title('Histogram for Query tensors')
+# plt.xlabel('Value')
+# plt.ylabel('Frequency')
+# plt.legend()
 
-plt.subplot(1, 2, 2)
-plt.hist(k_flat_histograms, bins=50, alpha=0.7, label='Key Tensors')
-plt.title('Histogram for Key tensors')
-plt.xlabel('Value')
-plt.ylabel('Frequency')
-plt.legend()
+# plt.subplot(1, 2, 2)
+# plt.hist(k_flat_histograms, bins=50, alpha=0.7, label='Key Tensors')
+# plt.title('Histogram for Key tensors')
+# plt.xlabel('Value')
+# plt.ylabel('Frequency')
+# plt.legend()
 
-plt.tight_layout()
-plt.savefig('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/5_bit/imdb/bert_tensor_distribution_e10_b128.png')
-plt.show()
+# plt.tight_layout()
+# plt.savefig('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/5_bit/imdb_e50/bert_tensor_distribution_e45_7bit_PF63.png')
+# plt.show()
