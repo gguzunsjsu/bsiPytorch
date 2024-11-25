@@ -29,7 +29,7 @@ k_flat_histograms = []
 num_runs = 5
 
 # Create a text file for saving the results
-output_text_file = './hpcBERTTrainDataDotProduct/output_39882/bertVectors/5_bit/imdb_e50/dot_product_results_imdb_e45_4bit_PF7.txt'
+output_text_file = './hpcBERTTrainDataDotProduct/output_39882/bertVectors/5_bit/imdb_e50/dot_product_results_imdb_e45_6bit_31.txt'
 os.makedirs(os.path.dirname(output_text_file), exist_ok=True)
 bsi_values = []
 normal_values = []
@@ -63,8 +63,8 @@ with open(output_text_file, 'w') as text_file:
         K_size_kb = K_size / 1024
         V_size_kb = V_size / 1024
 
-        # precision_factor = 38; #changed name from conversion_factor to precision_factor. Changed value to 10^31 -- Initially it is 31
-        precision_factor = 7
+        # precision_factor = 38; #changed name from conversion_factor to precision_factor. Changed value to 10^31 -- Initially it is 31 -> 6bits
+        precision_factor = 31
         custom_exec_times = []
         torch_exec_times = []
         vector_exec_times = []
@@ -146,7 +146,7 @@ fig.text(0.5, 0.04, 'Layer', ha='center')
 plt.tight_layout()
 
 # Save the plot as an image (e.g., PNG)
-plt.savefig('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/5_bit/imdb_e50/bert_visualization_e45_4bit_PF7.png')
+plt.savefig('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/5_bit/imdb_e50/bert_visualization_e45_6bit_31.png')
 
 # Show the plot (optional)
 plt.show()
@@ -162,7 +162,7 @@ plt.ylabel('Average Execution Time (milliseconds)')
 plt.legend()
 plt.title('Average Execution Time Comparison (5 Runs)')
 plt.grid(True)
-plt.savefig('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/5_bit/imdb_e50/bert_time_visualization_e45_4bit_PF7.png')
+plt.savefig('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/5_bit/imdb_e50/bert_time_visualization_e45_6bit_31.png')
 plt.show()
 # Plot histograms for Q_flat and K_flat
 # plt.figure(figsize=(10, 6))

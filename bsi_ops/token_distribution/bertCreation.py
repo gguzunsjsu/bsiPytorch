@@ -309,11 +309,10 @@ dataset = load_dataset('imdb')
 train_dataset = dataset['train']
 test_dataset = dataset['test']
 
-# Initialize the tokenizer
+
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 
-# Define maximum sequence length
-max_seq_length = 256
+max_seq_length = 256 #following sliding window technique of bert
 
 class IMDBDataset(Dataset):
     def __init__(self, texts, labels, tokenizer, max_len):
@@ -329,20 +328,20 @@ class IMDBDataset(Dataset):
         text = str(self.texts[idx])
         label = int(self.labels[idx])
 
-        # Encode the text using the tokenizer
+        
         encoding = self.tokenizer.encode_plus(
             text,
-            add_special_tokens=True,  # Add [CLS] and [SEP]
+            add_special_tokens=True,  
             max_length=self.max_len,
             padding='max_length',
             truncation=True,
             return_attention_mask=True,
             return_token_type_ids=True,
-            return_tensors='pt',  # Return PyTorch tensors
+            return_tensors='pt',  
         )
 
         return {
-            'input_ids': encoding['input_ids'].flatten(),  # [seq_length]
+            'input_ids': encoding['input_ids'].flatten(),  
             'attention_mask': encoding['attention_mask'].flatten(),
             'token_type_ids': encoding['token_type_ids'].flatten(),
             'labels': torch.tensor(label, dtype=torch.long)
@@ -369,13 +368,10 @@ batch_size = 16
 train_data_loader = create_data_loader(train_dataset, tokenizer, max_seq_length, batch_size)
 test_data_loader = create_data_loader(test_dataset, tokenizer, max_seq_length, batch_size)
 
-# Create configuration
 config = BertConfig()
 
-# Instantiate the model
 model = BertForSequenceClassification(config)
 
-# Move model to device
 model = model.to(device)
 
 
@@ -384,7 +380,7 @@ import torch.optim as optim
 optimizer = optim.AdamW(model.parameters(), lr=2e-5)
 
 # Number of training steps
-total_steps = len(train_data_loader) * 3  # Number of epochs = 3
+total_steps = len(train_data_loader) * 3
 
 scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.1)
 
@@ -428,7 +424,6 @@ def train_epoch(
         loss.backward()
         nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
-        # Scheduler step can be adjusted as needed
 
     return np.mean(losses), np.mean(acc)
 

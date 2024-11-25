@@ -114,12 +114,13 @@ DotProductResult dot_product(torch::Tensor m, torch::Tensor n, float precision_f
 
     for(auto i=0; i<m_a.size(0); i++) {
         m_v.push_back(static_cast<long>(m_a[i] * precision_factor_long));
+        // std::cout << "Scaled weights: " << static_cast<long>(m_a[i] * precision_factor_long) << std::endl;
     }
     for(auto i=0; i<n_a.size(0); i++) {
         n_v.push_back(static_cast<long>(n_a[i] * precision_factor_long));
     }
     u_int64_t end = timeSinceEpoch();
-
+    std::cout << "Scaling completed and converted tensors to vectors" << std::endl;
     // std::cout << "[C++] Converted tensors to vectors" << std::endl;
     // std::cout << "[C++] Time Taken to convert tensors to vectors: " << end - start << "ns" << std::endl;
 
