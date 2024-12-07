@@ -29,7 +29,7 @@ k_flat_histograms = []
 num_runs = 5
 
 # Create a text file for saving the results
-output_text_file = './hpcBERTTrainDataDotProduct/output_39882/bertVectors/5_bit/imdb_e50/dot_product_results_imdb_e45_6bit_31.txt'
+output_text_file = './hpcBERTTrainDataDotProduct/output_39882/bertVectors/imdb_50/torch_32/noCompression/bert_imdb_e45_pf31_6bit.txt'
 os.makedirs(os.path.dirname(output_text_file), exist_ok=True)
 bsi_values = []
 normal_values = []
@@ -43,9 +43,15 @@ with open(output_text_file, 'w') as text_file:
         K_flat = K.reshape(-1)
         V_flat = V.reshape(-1)
         # Convert the NumPy array to a PyTorch tensor
-        Q_flat = torch.tensor(Q_flat)
-        K_flat = torch.tensor(K_flat)
-        V_flat = torch.tensor(V_flat)
+        Q_flat = torch.tensor(Q_flat, dtype=torch.float32)
+        K_flat = torch.tensor(K_flat, dtype=torch.float32)
+        V_flat = torch.tensor(V_flat, dtype=torch.float32)
+        
+        Q_bits_used = Q_flat.element_size() * 8 # element_size() return size of an element in bytes
+        K_bits_used = V_flat.element_size() * 8
+        V_bits_used = V_flat.element_size() * 8
+        print(f"Bits used by Q_flat {Q_bits_used}, K_flat {K_bits_used}, V_flat {V_bits_used}")
+
         # Store histogram data
         q_flat_histograms.append(Q_flat.detach().numpy())
         k_flat_histograms.append(K_flat.detach().numpy())
@@ -70,7 +76,8 @@ with open(output_text_file, 'w') as text_file:
         vector_exec_times = []
         for _ in range(num_runs):
             #res, time_taken, bsiQ, bsiK = bsi_ops.dot_product(Q_flat, K_flat, precision_factor)
-            res, time_taken, bsiSizeQ, bsiSizeK     = bsi_ops.dot_product(Q_flat, K_flat, precision_factor) #bsi dot product
+            # res, time_taken, bsiSizeQ, bsiSizeK     = bsi_ops.dot_product(Q_flat, K_flat, precision_factor) #bsi dot product
+            res, time_taken, bsiSizeQ, bsiSizeK     = bsi_ops.dot_product_without_compression(Q_flat, K_flat, precision_factor)
             custom_exec_times.append(time_taken/1e9)
             start_time = time.time()
             torch_res = torch.dot(Q_flat, K_flat) # torch dot product
@@ -93,6 +100,7 @@ with open(output_text_file, 'w') as text_file:
         print('BERT normalized Q and K dot product::: bsi:', res, 'normal:',torch_res)
 
         text_file.write(f"Layer {i} - Q shape: {Q.shape}, K shape: {K.shape}, V shape: {V.shape}\n")
+        text_file.write(f"Bits used by Q_flat: {Q_bits_used}, K_flat: {K_bits_used}, V_flat: {V_bits_used}\n")
         text_file.write(f"Q size: {Q_size} bytes\n")
         text_file.write(f"K size: {K_size} bytes\n")
         #bsiSizeQ = sys.getsizeof(bsiQ)
@@ -101,6 +109,8 @@ with open(output_text_file, 'w') as text_file:
         #bsiSizeQ = 0
         text_file.write(f"BSI Q size: {bsiSizeQ} bytes\n")
         text_file.write(f"BSI K size: {bsiSizeK} bytes\n")
+        text_file.write(f"BSI Q size in MB: {bsiSizeQ/(2**20)}MB\n")
+        text_file.write(f"BSI K size in MB: {bsiSizeK/(2**20)}MB\n")
         dtype = Q_flat.dtype
         precision = torch.finfo(dtype).bits
         text_file.write(f"Precision of the K tensor: {precision} bits\n")
@@ -146,7 +156,7 @@ fig.text(0.5, 0.04, 'Layer', ha='center')
 plt.tight_layout()
 
 # Save the plot as an image (e.g., PNG)
-plt.savefig('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/5_bit/imdb_e50/bert_visualization_e45_6bit_31.png')
+plt.savefig('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/imdb_50/torch_32/noCompression/bert_visualization_e45_pf31_6bit.png')
 
 # Show the plot (optional)
 plt.show()
@@ -162,25 +172,27 @@ plt.ylabel('Average Execution Time (milliseconds)')
 plt.legend()
 plt.title('Average Execution Time Comparison (5 Runs)')
 plt.grid(True)
-plt.savefig('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/5_bit/imdb_e50/bert_time_visualization_e45_6bit_31.png')
+plt.savefig('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/imdb_50/torch_32/noCompression/bert_time_visualization_e45_pf31_6bit.png')
 plt.show()
+
+
 # Plot histograms for Q_flat and K_flat
-# plt.figure(figsize=(10, 6))
+plt.figure(figsize=(10, 6))
 
-# plt.subplot(1, 2, 1)
-# plt.hist(q_flat_histograms, bins=50, alpha=0.7, label='Query Tensors')
-# plt.title('Histogram for Query tensors')
-# plt.xlabel('Value')
-# plt.ylabel('Frequency')
-# plt.legend()
+plt.subplot(1, 2, 1)
+plt.hist(q_flat_histograms, bins=50, alpha=0.7, label='Query Tensors')
+plt.title('Histogram for Query tensors')
+plt.xlabel('Value')
+plt.ylabel('Frequency')
+plt.legend()
 
-# plt.subplot(1, 2, 2)
-# plt.hist(k_flat_histograms, bins=50, alpha=0.7, label='Key Tensors')
-# plt.title('Histogram for Key tensors')
-# plt.xlabel('Value')
-# plt.ylabel('Frequency')
-# plt.legend()
+plt.subplot(1, 2, 2)
+plt.hist(k_flat_histograms, bins=50, alpha=0.7, label='Key Tensors')
+plt.title('Histogram for Key tensors')
+plt.xlabel('Value')
+plt.ylabel('Frequency')
+plt.legend()
 
-# plt.tight_layout()
-# plt.savefig('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/5_bit/imdb_e50/bert_tensor_distribution_e45_7bit_PF63.png')
-# plt.show()
+plt.tight_layout()
+plt.savefig('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/imdb_50/torch_32/noCompression/bert_tensor_distribution_e45_pf31_6bit.png')
+plt.show()
