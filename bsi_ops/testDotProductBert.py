@@ -11,7 +11,7 @@ print('import works')  # just to verify against import errors
 
 # Load the triplets from the saved pickle file
 # pickle_file_weights_stored_path = './hpcBERTTrainDataDotProduct/output_39882/bertVectors/bertVectors_9.pkl'
-with open('/home/poorna/Desktop/RA BSI/bsi_pytorch/bsiPytorch/bsi_ops/extract_tensors/extracting_qkv_bert_new/bert_imdb_pickle_store/bert_imdb45.pkl', 'rb') as f:
+with open('/home/poorna/Desktop/RA BSI/bsi_pytorch/bsiPytorch/bsi_ops/extract_tensors/extracting_qkv_bert_new/pickle_files/qkv_weights-initial.pkl', 'rb') as f:
     triplets = pickle.load(f)
 print("BERT triplets loaded from the pickle file")
 # List to store dot products for each layer
@@ -29,7 +29,7 @@ k_flat_histograms = []
 num_runs = 5
 
 # Create a text file for saving the results
-output_text_file = './hpcBERTTrainDataDotProduct/output_39882/bertVectors/imdb_50/torch_32/noCompression/bert_imdb_e45_pf31_6bit.txt'
+output_text_file = './hpcBERTTrainDataDotProduct/output_39882/bertVectors/imdb_initial/torch_32/bert_imdb_e45_pf31_6bit.txt'
 os.makedirs(os.path.dirname(output_text_file), exist_ok=True)
 bsi_values = []
 normal_values = []
@@ -76,8 +76,8 @@ with open(output_text_file, 'w') as text_file:
         vector_exec_times = []
         for _ in range(num_runs):
             #res, time_taken, bsiQ, bsiK = bsi_ops.dot_product(Q_flat, K_flat, precision_factor)
-            # res, time_taken, bsiSizeQ, bsiSizeK     = bsi_ops.dot_product(Q_flat, K_flat, precision_factor) #bsi dot product
-            res, time_taken, bsiSizeQ, bsiSizeK     = bsi_ops.dot_product_without_compression(Q_flat, K_flat, precision_factor)
+            res, time_taken, bsiSizeQ, bsiSizeK     = bsi_ops.dot_product(Q_flat, K_flat, precision_factor) #bsi dot product
+            # res, time_taken, bsiSizeQ, bsiSizeK     = bsi_ops.dot_product_without_compression(Q_flat, K_flat, precision_factor)/ #bsi dot product without compression
             custom_exec_times.append(time_taken/1e9)
             start_time = time.time()
             torch_res = torch.dot(Q_flat, K_flat) # torch dot product
@@ -156,7 +156,7 @@ fig.text(0.5, 0.04, 'Layer', ha='center')
 plt.tight_layout()
 
 # Save the plot as an image (e.g., PNG)
-plt.savefig('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/imdb_50/torch_32/noCompression/bert_visualization_e45_pf31_6bit.png')
+plt.savefig('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/imdb_initial/torch_32/bert_visualization_e45_pf31_6bit.png')
 
 # Show the plot (optional)
 plt.show()
@@ -172,7 +172,7 @@ plt.ylabel('Average Execution Time (milliseconds)')
 plt.legend()
 plt.title('Average Execution Time Comparison (5 Runs)')
 plt.grid(True)
-plt.savefig('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/imdb_50/torch_32/noCompression/bert_time_visualization_e45_pf31_6bit.png')
+plt.savefig('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/imdb_initial/torch_32/bert_time_visualization_e45_pf31_6bit.png')
 plt.show()
 
 
@@ -194,5 +194,5 @@ plt.ylabel('Frequency')
 plt.legend()
 
 plt.tight_layout()
-plt.savefig('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/imdb_50/torch_32/noCompression/bert_tensor_distribution_e45_pf31_6bit.png')
+plt.savefig('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/imdb_initial/torch_32/bert_tensor_distribution_e45_pf31_6bit.png')
 plt.show()
