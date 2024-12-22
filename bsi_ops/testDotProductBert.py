@@ -10,7 +10,7 @@ print('import works')  # just to verify against import errors
 
 # Load the triplets from the saved pickle file
 # pickle_file_weights_stored_path = './hpcBERTTrainDataDotProduct/output_39882/bertVectors/bertVectors_9.pkl'
-with open('/home/poorna/Desktop/RA BSI/bsi_pytorch/bsiPytorch/bsi_ops/extract_tensors/extracting_qkv_bert_new/pickle_files/qkv_weights-initial.pkl', 'rb') as f:
+with open('/home/poorna/Desktop/RA BSI/bsi_pytorch/bsiPytorch/bsi_ops/extract_tensors/Weight_Processing/bert_imdb_pickle_store/bert_imdb0.pkl', 'rb') as f:
     triplets = pickle.load(f)
 print("BERT triplets loaded from the pickle file")
 # List to store dot products for each layer
@@ -28,7 +28,8 @@ k_flat_histograms = []
 num_runs = 5
 
 # Create a text file for saving the results
-output_text_file = './hpcBERTTrainDataDotProduct/output_39882/bertVectors/imdb_initial/torch_32/bert_imdb_e45_pf31_6bit.txt'
+output_text_file = './hpcBERTTrainDataDotProduct/results/imdb_initial/torch_32/all/bert_imdb_e0_pf31_6bit.txt'
+os.makedirs('./hpcBERTTrainDataDotProduct/results/imdb_initial/torch_32/all/', exist_ok=True)
 os.makedirs(os.path.dirname(output_text_file), exist_ok=True)
 bsi_values = []
 normal_values = []
@@ -155,7 +156,7 @@ fig.text(0.5, 0.04, 'Layer', ha='center')
 plt.tight_layout()
 
 # Save the plot as an image (e.g., PNG)
-plt.savefig('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/imdb_initial/torch_32/bert_visualization_e45_pf31_6bit.png')
+plt.savefig('./hpcBERTTrainDataDotProduct/results/imdb_initial/torch_32/all/bert_visualization_e0_pf31_6bit.png')
 
 # Show the plot (optional)
 plt.show()
@@ -171,7 +172,7 @@ plt.ylabel('Average Execution Time (milliseconds)')
 plt.legend()
 plt.title('Average Execution Time Comparison (5 Runs)')
 plt.grid(True)
-plt.savefig('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/imdb_initial/torch_32/bert_time_visualization_e45_pf31_6bit.png')
+plt.savefig('./hpcBERTTrainDataDotProduct/results/imdb_initial/torch_32/all/bert_time_visualization_e0_pf31_6bit.png')
 plt.show()
 
 
@@ -193,5 +194,5 @@ plt.ylabel('Frequency')
 plt.legend()
 
 plt.tight_layout()
-plt.savefig('./hpcBERTTrainDataDotProduct/output_39882/bertVectors/imdb_initial/torch_32/bert_tensor_distribution_e45_pf31_6bit.png')
+plt.savefig('./hpcBERTTrainDataDotProduct/results/imdb_initial/torch_32/all/bert_tensor_distribution_e0_pf31_6bit.png')
 plt.show()
