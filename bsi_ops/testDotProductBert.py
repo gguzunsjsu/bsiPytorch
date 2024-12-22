@@ -6,7 +6,6 @@ import time
 import sys
 import os
 
-
 print('import works')  # just to verify against import errors
 
 # Load the triplets from the saved pickle file
@@ -46,9 +45,9 @@ with open(output_text_file, 'w') as text_file:
         Q_flat = torch.tensor(Q_flat, dtype=torch.float32)
         K_flat = torch.tensor(K_flat, dtype=torch.float32)
         V_flat = torch.tensor(V_flat, dtype=torch.float32)
-        
+
         Q_bits_used = Q_flat.element_size() * 8 # element_size() return size of an element in bytes
-        K_bits_used = V_flat.element_size() * 8
+        K_bits_used = K_flat.element_size() * 8
         V_bits_used = V_flat.element_size() * 8
         print(f"Bits used by Q_flat {Q_bits_used}, K_flat {K_bits_used}, V_flat {V_bits_used}")
 
@@ -120,7 +119,7 @@ with open(output_text_file, 'w') as text_file:
         text_file.write(f"Precision of the K tensor: {precision} bits\n")
         text_file.write(f"Data Type of the K tensor: {dtype} \n")
         text_file.write(f'BERT normalized Q and K dot product::: bsi: {res}, normal: {torch_res}, '
-                            f'percentage error: {percentage_error}%\n')
+                        f'percentage error: {percentage_error}%\n')
         text_file.write(f"Time taken for BSI operation: {custom_avg_time}\n Time taken for torch operation: {torch_avg_time}\n")
         text_file.write('\n')
 print(f"Results saved to {output_text_file}")
