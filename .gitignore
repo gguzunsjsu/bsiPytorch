@@ -12,3 +12,7 @@
 *.csv
 *cola
 *.tsv
+*results
+*bert_imdb
+*pickle_files
+*weights
