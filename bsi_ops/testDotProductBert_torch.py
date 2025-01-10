@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import time
 import sys
 import os
+import pandas as pd
 
 print('import works')  # just to verify against import errors
 
@@ -14,6 +15,8 @@ with open('/home/poorna/Desktop/RA BSI/bsi_pytorch/bsiPytorch/bsi_ops/extract_te
     triplets = pickle.load(f)
 print("BERT triplets loaded from the pickle file")
 torch_times = []
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+print(f"Available device is {device}")
 
 q_flat_histograms = []
 k_flat_histograms = []
@@ -22,10 +25,12 @@ k_flat_histograms = []
 num_runs = 5
 
 # Create a text file for saving the results
-output_text_file = './hpcBERTTrainDataDotProduct/results/imdb_initial/torch_32/torch_runs/bert_imdb_e0_pf31_6bit.txt'
+output_text_file = './hpcBERTTrainDataDotProduct/results/imdb_e10/torch_32/torch_runs/bert_imdb_e0_32bit.txt'
+weight_epoch_using = 0
 os.makedirs(os.path.dirname(output_text_file), exist_ok=True)
 
 normal_values = []
+memory_usage_data = []
 
 with open(output_text_file, 'w') as text_file:
     # Iterate through each layer's triplets
@@ -36,9 +41,9 @@ with open(output_text_file, 'w') as text_file:
         K_flat = K.reshape(-1)
         V_flat = V.reshape(-1)
         # Convert the NumPy array to a PyTorch tensor
-        Q_flat = torch.tensor(Q_flat, dtype=torch.float32)
-        K_flat = torch.tensor(K_flat, dtype=torch.float32)
-        V_flat = torch.tensor(V_flat, dtype=torch.float32)
+        Q_flat = torch.tensor(Q_flat, dtype=torch.float32, device=device)
+        K_flat = torch.tensor(K_flat, dtype=torch.float32, device=device)
+        V_flat = torch.tensor(V_flat, dtype=torch.float32, device=device)
 
         Q_bits_used = Q_flat.element_size() * 8 # element_size() return size of an element in bytes
         K_bits_used = K_flat.element_size() * 8
@@ -46,8 +51,8 @@ with open(output_text_file, 'w') as text_file:
         print(f"Bits used by Q_flat {Q_bits_used}, K_flat {K_bits_used}, V_flat {V_bits_used}")
 
         # Store histogram data
-        q_flat_histograms.append(Q_flat.detach().numpy())
-        k_flat_histograms.append(K_flat.detach().numpy())
+        q_flat_histograms.append(Q_flat.detach().cpu().numpy())
+        k_flat_histograms.append(K_flat.detach().cpu().numpy())
 
         # Print the shape and size of  of the flattened tensors
         print(f"Layer {i} - Q shape: {Q_flat.shape}, K shape: {K_flat.shape}, V shape: {V_flat.shape}")
@@ -60,13 +65,16 @@ with open(output_text_file, 'w') as text_file:
         Q_size_kb = Q_size / 1024
         K_size_kb = K_size / 1024
         V_size_kb = V_size / 1024
+        Q_size_mb = Q_size/(1024*1024)
+        K_size_mb = K_size/(1024*1024)
+        V_size_mb = V_size/(1024*1024)
 
         # precision_factor = 38; #changed name from conversion_factor to precision_factor. Changed value to 10^31 -- Initially it is 31 -> 6bits
         precision_factor = 31
 
         torch_exec_times = []
 
-        for _ in range(num_runs):
+        for run in range(num_runs):
             start_time = time.time()
             torch_res = torch.dot(Q_flat, K_flat) # torch dot product
             torch_exec_time = time.time() - start_time
@@ -81,6 +89,8 @@ with open(output_text_file, 'w') as text_file:
         text_file.write(f"Bits used by Q_flat: {Q_bits_used}, K_flat: {K_bits_used}, V_flat: {V_bits_used}\n")
         text_file.write(f"Q size: {Q_size} bytes\n")
         text_file.write(f"K size: {K_size} bytes\n")
+        text_file.write(f"Q size in MB: {Q_size/(1024*1024)} MB\n")
+        text_file.write(f"K size in MB: {K_size/(1024*1024)} MB\n")
 
         dtype = Q_flat.dtype
         precision = torch.finfo(dtype).bits
@@ -93,10 +103,33 @@ with open(output_text_file, 'w') as text_file:
 
         text_file.write(f"Time taken for torch operation: {torch_avg_time}\n")
         text_file.write('\n')
+    memory_usage_data.append({
+        "Operation": "Tensor",
+        # "Layer" : i,
+        # "Run": run,
+        "Q size in MB": Q_size_mb,
+        "K size in MB": K_size_mb,
+        "V size in MB": V_size_mb,
+        "Q Bits used": Q_bits_used,
+        "K bits used": K_bits_used,
+        "epoch" : weight_epoch_using
+    })
 print(f"Results saved to {output_text_file}")
 
-output_figures_save_folder = './hpcBERTTrainDataDotProduct/results/imdb_initial/torch_32/torch_runs/'
+output_figures_save_folder = './hpcBERTTrainDataDotProduct/results/imdb_e0/torch_32/torch_runs/'
 os.makedirs(output_figures_save_folder, exist_ok=True)
+
+memory_usage_df = pd.DataFrame(memory_usage_data)
+csv_file_path = './hpcBERTTrainDataDotProduct/results/torch_memory_usage/'
+os.makedirs(csv_file_path, exist_ok=True)
+csv_file_name = os.path.join(csv_file_path, "tensor_memory_usage.csv")
+
+if os.path.isdir(csv_file_name):
+    raise ValueError(f"Conflict: '{csv_file_name}' is a directory. Please rename or remove it.")
+file_exists = os.path.isfile(csv_file_name)
+
+memory_usage_df.to_csv(csv_file_name, mode='a', header=not file_exists, index=False)
+print(f"memory usage data saved to CSV file")
 
 layer_numbers = list(range(1, len(triplets) + 1))
 
@@ -108,7 +141,7 @@ plt.ylabel('Average Execution Time (milliseconds)')
 plt.legend()
 plt.title('Average Execution Time Comparison (5 Runs)')
 plt.grid(True)
-plt.savefig('./hpcBERTTrainDataDotProduct/results/imdb_initial/torch_32/torch_runs/bert_time_visualization_e0_pf31_6bit.png')
+plt.savefig('./hpcBERTTrainDataDotProduct/results/imdb_e0/torch_32/torch_runs/bert_time_visualization_e0_32bit.png')
 plt.show()
 
 plt.figure(figsize=(10, 6))
@@ -127,5 +160,5 @@ plt.ylabel('Frequency')
 plt.legend()
 
 plt.tight_layout()
-plt.savefig('./hpcBERTTrainDataDotProduct/results/imdb_initial/torch_32/torch_runs/bert_tensor_distribution_e0_pf31_6bit.png')
+plt.savefig('./hpcBERTTrainDataDotProduct/results/imdb_e0/torch_32/torch_runs/bert_tensor_distribution_e0_32bit.png')
 plt.show()

@@ -103,6 +103,8 @@ with open(output_text_file, 'w') as text_file:
         text_file.write(f"Bits used by Q_flat: {Q_bits_used}, K_flat: {K_bits_used}, V_flat: {V_bits_used}\n")
         text_file.write(f"Q size: {Q_size} bytes\n")
         text_file.write(f"K size: {K_size} bytes\n")
+        text_file.write(f"Q size in MB: {Q_size/(1024*1024)} MB\n")
+        text_file.write(f"K size in MB: {K_size/(1024*1024)} MB\n")
         #bsiSizeQ = sys.getsizeof(bsiQ)
         #bsiSizeK = sys.getsizeof(bsiK)
         #bsiSizeK = 0
