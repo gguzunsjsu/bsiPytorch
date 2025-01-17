@@ -11,7 +11,7 @@ print('import works')  # just to verify against import errors
 
 # Load the triplets from the saved pickle file
 # pickle_file_weights_stored_path = './hpcBERTTrainDataDotProduct/output_39882/bertVectors/bertVectors_9.pkl'
-with open('/home/poorna/Desktop/RA BSI/bsi_pytorch/bsiPytorch/bsi_ops/extract_tensors/Weight_Processing/bert_imdb_pickle_store/bert_imdb0.pkl', 'rb') as f:
+with open('/home/poorna/Desktop/RA BSI/bsi_pytorch/bsiPytorch/bsi_ops/extract_tensors/Weight_Processing/bert_imdb_pickle_store/bert_imdb45.pkl', 'rb') as f:
     triplets = pickle.load(f)
 print("BERT triplets loaded from the pickle file")
 torch_times = []
@@ -25,8 +25,8 @@ k_flat_histograms = []
 num_runs = 5
 
 # Create a text file for saving the results
-output_text_file = './hpcBERTTrainDataDotProduct/results/imdb_e10/torch_32/torch_runs/bert_imdb_e0_32bit.txt'
-weight_epoch_using = 0
+output_text_file = './hpcBERTTrainDataDotProduct/results/imdb_e45/torch_16/torch_runs/bert_imdb_e45_16bit.txt'
+weight_epoch_using = 45
 os.makedirs(os.path.dirname(output_text_file), exist_ok=True)
 
 normal_values = []
@@ -36,14 +36,19 @@ with open(output_text_file, 'w') as text_file:
     # Iterate through each layer's triplets
     for i, triplet in enumerate(triplets, 1):
         Q, K, V = triplet
+        print(Q.shape)
         # Flatten the tensors to 1D using reshape
         Q_flat = Q.reshape(-1)
         K_flat = K.reshape(-1)
         V_flat = V.reshape(-1)
         # Convert the NumPy array to a PyTorch tensor
-        Q_flat = torch.tensor(Q_flat, dtype=torch.float32, device=device)
-        K_flat = torch.tensor(K_flat, dtype=torch.float32, device=device)
-        V_flat = torch.tensor(V_flat, dtype=torch.float32, device=device)
+        Q_flat = torch.tensor(Q_flat, dtype=torch.float16, device=device)
+        K_flat = torch.tensor(K_flat, dtype=torch.float16, device=device)
+        V_flat = torch.tensor(V_flat, dtype=torch.float16, device=device)
+
+        # Q_lenght = Q_flat.shape[0] # this is 10420224
+        # K_length = K_flat.shape[0]
+        # print(f"Q_length {Q_lenght} and K_length {K_length}")
 
         Q_bits_used = Q_flat.element_size() * 8 # element_size() return size of an element in bytes
         K_bits_used = K_flat.element_size() * 8
@@ -61,16 +66,15 @@ with open(output_text_file, 'w') as text_file:
         K_size = sys.getsizeof(K_flat.untyped_storage()) + sys.getsizeof(K_flat)
         V_size = sys.getsizeof(V_flat.untyped_storage()) + sys.getsizeof(V_flat)
 
-        # Convert sizes to kilobytes (optional)
+        # Convert sizes to kilobytes (optional)# Store histogram data
+        q_flat_histograms.append(Q_flat.detach().numpy())
+        k_flat_histograms.append(K_flat.detach().numpy())
         Q_size_kb = Q_size / 1024
         K_size_kb = K_size / 1024
         V_size_kb = V_size / 1024
         Q_size_mb = Q_size/(1024*1024)
         K_size_mb = K_size/(1024*1024)
         V_size_mb = V_size/(1024*1024)
-
-        # precision_factor = 38; #changed name from conversion_factor to precision_factor. Changed value to 10^31 -- Initially it is 31 -> 6bits
-        precision_factor = 31
 
         torch_exec_times = []
 
@@ -116,7 +120,7 @@ with open(output_text_file, 'w') as text_file:
     })
 print(f"Results saved to {output_text_file}")
 
-output_figures_save_folder = './hpcBERTTrainDataDotProduct/results/imdb_e0/torch_32/torch_runs/'
+output_figures_save_folder = './hpcBERTTrainDataDotProduct/results/imdb_e45/torch_16/torch_runs/'
 os.makedirs(output_figures_save_folder, exist_ok=True)
 
 memory_usage_df = pd.DataFrame(memory_usage_data)
@@ -141,7 +145,7 @@ plt.ylabel('Average Execution Time (milliseconds)')
 plt.legend()
 plt.title('Average Execution Time Comparison (5 Runs)')
 plt.grid(True)
-plt.savefig('./hpcBERTTrainDataDotProduct/results/imdb_e0/torch_32/torch_runs/bert_time_visualization_e0_32bit.png')
+plt.savefig('./hpcBERTTrainDataDotProduct/results/imdb_e45/torch_16/torch_runs/bert_time_visualization_e45_16bit.png')
 plt.show()
 
 plt.figure(figsize=(10, 6))
@@ -160,5 +164,5 @@ plt.ylabel('Frequency')
 plt.legend()
 
 plt.tight_layout()
-plt.savefig('./hpcBERTTrainDataDotProduct/results/imdb_e0/torch_32/torch_runs/bert_tensor_distribution_e0_32bit.png')
+plt.savefig('./hpcBERTTrainDataDotProduct/results/imdb_e45/torch_16/torch_runs/bert_tensor_distribution_e45_16bit.png')
 plt.show()

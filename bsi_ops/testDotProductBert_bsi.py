@@ -80,6 +80,7 @@ with open(output_text_file, 'w') as text_file:
         for _ in range(num_runs):
             #res, time_taken, bsiQ, bsiK = bsi_ops.dot_product(Q_flat, K_flat, precision_factor)
             res, time_taken, bsiSizeQ, bsiSizeK = bsi_ops.dot_product(Q_flat, K_flat, precision_factor) #bsi dot product
+            # print(f"Layer {i} bsiSizeQ {bsiSizeQ} bsiSizeK {bsiSizeK}")
             # res, time_taken, bsiSizeQ, bsiSizeK     = bsi_ops.dot_product_without_compression(Q_flat, K_flat, precision_factor)/ #bsi dot product without compression
             custom_exec_times.append(time_taken/1e9)
             # start_time = time.time()
@@ -93,17 +94,21 @@ with open(output_text_file, 'w') as text_file:
         print('BERT normalized Q and K dot product::: bsi:', res)
         bsi_Q_size_mb = bsiSizeQ/(2**20)
         bsi_k_size_mb = bsiSizeK/(2**20)
+        # print(f"Q size in mb: {bsi_Q_size_mb}")
+        # print(f"K size in mb: {bsi_k_size_mb}")
 
-    bsi_memory_usage_data.append({
-        "Operation": "bsi",
-        # "Layer" : i,
-        # "Run": run,
-        "Q size in MB": bsi_Q_size_mb,
-        "K size in MB": bsi_k_size_mb,
-        "Q Bits used": bits_using,
-        "K bits used": bits_using,
-        "epoch" : weight_epoch_using
-    })
+        bsi_memory_usage_data.append({
+            "Operation": "bsi",
+            # "Layer" : i,
+            # "Run": run,
+            "Q size in MB": bsi_Q_size_mb,
+            "K size in MB": bsi_k_size_mb,
+            "Q Bits used": bits_using,
+            "K bits used": bits_using,
+            "epoch" : weight_epoch_using
+        })
+
+        print(f"layer {i} bsiQsize {bsi_Q_size_mb} bsiKsize {bsi_k_size_mb}")
 
         # text_file.write(f"Layer {i} - Q shape: {Q.shape}, K shape: {K.shape}, V shape: {V.shape}\n")
         # text_file.write(f"Bits used by Q_flat: {Q_bits_used}, K_flat: {K_bits_used}, V_flat: {V_bits_used}\n")
@@ -136,17 +141,17 @@ layer_numbers = list(range(1, len(triplets) + 1))
 output_figures_save_folder = './hpcBERTTrainDataDotProduct/results/imdb_e45/bsi_runs/'
 os.makedirs(output_figures_save_folder, exist_ok=True)
 
-memory_usage_df = pd.DataFrame(bsi_memory_usage_data)
-csv_file_path = './hpcBERTTrainDataDotProduct/results/bsi_memory_usage/'
-os.makedirs(csv_file_path, exist_ok=True)
-csv_file_name = os.path.join(csv_file_path, "bsi_memory_usage.csv")
-
-if os.path.isdir(csv_file_name):
-    raise ValueError(f"Conflict: '{csv_file_name}' is a directory. Please rename or remove it.")
-file_exists = os.path.isfile(csv_file_name)
-
-memory_usage_df.to_csv(csv_file_name, mode='a', header=not file_exists, index=False)
-print(f"memory usage data saved to CSV file")
+# memory_usage_df = pd.DataFrame(bsi_memory_usage_data)
+# csv_file_path = './hpcBERTTrainDataDotProduct/results/bsi_memory_usage/'
+# os.makedirs(csv_file_path, exist_ok=True)
+# csv_file_name = os.path.join(csv_file_path, "bsi_memory_usage.csv")
+#
+# if os.path.isdir(csv_file_name):
+#     raise ValueError(f"Conflict: '{csv_file_name}' is a directory. Please rename or remove it.")
+# file_exists = os.path.isfile(csv_file_name)
+#
+# memory_usage_df.to_csv(csv_file_name, mode='a', header=not file_exists, index=False)
+# print(f"memory usage data saved to CSV file")
 
 # Plot the time results
 plt.figure(figsize=(12, 6))
