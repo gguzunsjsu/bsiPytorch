@@ -52,7 +52,7 @@ with open(output_text_file, 'w') as text_file:
         Q_bits_used = Q_flat.element_size() * 8 # element_size() return size of an element in bytes
         K_bits_used = K_flat.element_size() * 8
         V_bits_used = V_flat.element_size() * 8
-        print(f"Bits used by Q_flat {Q_bits_used}, K_flat {K_bits_used}, V_flat {V_bits_used}")
+        # print(f"Bits used by Q_flat {Q_bits_used}, K_flat {K_bits_used}, V_flat {V_bits_used}")
 
         # Store histogram data
         q_flat_histograms.append(Q_flat.detach().cpu().numpy())
@@ -60,7 +60,7 @@ with open(output_text_file, 'w') as text_file:
 
 
         # Print the shape and size of  of the flattened tensors
-        print(f"Layer {i} - Q shape: {Q_flat.shape}, K shape: {K_flat.shape}, V shape: {V_flat.shape}")
+        # print(f"Layer {i} - Q shape: {Q_flat.shape}, K shape: {K_flat.shape}, V shape: {V_flat.shape}")
         # Calculate the total size of each tensor in bytes using sys.getsizeof
         Q_size = sys.getsizeof(Q_flat.untyped_storage()) + sys.getsizeof(Q_flat) #storage() is being deprecated. so used untyped_storage()
         K_size = sys.getsizeof(K_flat.untyped_storage()) + sys.getsizeof(K_flat)
@@ -72,7 +72,16 @@ with open(output_text_file, 'w') as text_file:
         V_size_kb = V_size / 1024
 
         # precision_factor = 38; #changed name from conversion_factor to precision_factor. Changed value to 10^31 -- Initially it is 31 -> 6bits
-        precision_factor = (2**31)-1
+        """
+        pf value used for scaling and bits could used by doing this
+        bits: pf
+        6: 32
+        8: 128
+        16: 2^15-1
+        32: 2^31-1
+        64: 2^64
+        """
+        precision_factor = 7
         bits_using = math.log2((precision_factor+1))+1
         # print(f"Bits using by the bsi is {bits_using}")
         custom_exec_times = []
@@ -99,8 +108,9 @@ with open(output_text_file, 'w') as text_file:
 
         bsi_memory_usage_data.append({
             "Operation": "bsi",
-            # "Layer" : i,
+            "Layer" : i,
             # "Run": run,
+            "Result": res,
             "Q size in MB": bsi_Q_size_mb,
             "K size in MB": bsi_k_size_mb,
             "Q Bits used": bits_using,
@@ -141,17 +151,18 @@ layer_numbers = list(range(1, len(triplets) + 1))
 output_figures_save_folder = './hpcBERTTrainDataDotProduct/results/imdb_e45/bsi_runs/'
 os.makedirs(output_figures_save_folder, exist_ok=True)
 
-# memory_usage_df = pd.DataFrame(bsi_memory_usage_data)
-# csv_file_path = './hpcBERTTrainDataDotProduct/results/bsi_memory_usage/'
-# os.makedirs(csv_file_path, exist_ok=True)
-# csv_file_name = os.path.join(csv_file_path, "bsi_memory_usage.csv")
-#
-# if os.path.isdir(csv_file_name):
-#     raise ValueError(f"Conflict: '{csv_file_name}' is a directory. Please rename or remove it.")
-# file_exists = os.path.isfile(csv_file_name)
-#
-# memory_usage_df.to_csv(csv_file_name, mode='a', header=not file_exists, index=False)
-# print(f"memory usage data saved to CSV file")
+memory_usage_df = pd.DataFrame(bsi_memory_usage_data)
+# print(memory_usage_df)
+csv_file_path = './hpcBERTTrainDataDotProduct/results/bsi_memory_usage/'
+os.makedirs(csv_file_path, exist_ok=True)
+csv_file_name = os.path.join(csv_file_path, "bsi_memory_usage.csv")
+
+if os.path.isdir(csv_file_name):
+    raise ValueError(f"Conflict: '{csv_file_name}' is a directory. Please rename or remove it.")
+file_exists = os.path.isfile(csv_file_name)
+
+memory_usage_df.to_csv(csv_file_name, mode='a', header=not file_exists, index=False)
+print(f"memory usage data saved to CSV file")
 
 # Plot the time results
 plt.figure(figsize=(12, 6))
@@ -165,23 +176,23 @@ plt.savefig('./hpcBERTTrainDataDotProduct/results/imdb_e45/bsi_runs/bert_time_vi
 plt.show()
 
 
-# Plot histograms for Q_flat and K_flat
-plt.figure(figsize=(10, 6))
-
-plt.subplot(1, 2, 1)
-plt.hist(q_flat_histograms, bins=50, alpha=0.7, label='Query Tensors')
-plt.title('Histogram for Query tensors')
-plt.xlabel('Value')
-plt.ylabel('Frequency')
-plt.legend()
-
-plt.subplot(1, 2, 2)
-plt.hist(k_flat_histograms, bins=50, alpha=0.7, label='Key Tensors')
-plt.title('Histogram for Key tensors')
-plt.xlabel('Value')
-plt.ylabel('Frequency')
-plt.legend()
-
-plt.tight_layout()
-plt.savefig('./hpcBERTTrainDataDotProduct/results/imdb_e45/bsi_runs/bert_tensor_distribution_e45_pf31_6bit.png')
-plt.show()
+# # Plot histograms for Q_flat and K_flat
+# plt.figure(figsize=(10, 6))
+#
+# plt.subplot(1, 2, 1)
+# plt.hist(q_flat_histograms, bins=50, alpha=0.7, label='Query Tensors')
+# plt.title('Histogram for Query tensors')
+# plt.xlabel('Value')
+# plt.ylabel('Frequency')
+# plt.legend()
+#
+# plt.subplot(1, 2, 2)
+# plt.hist(k_flat_histograms, bins=50, alpha=0.7, label='Key Tensors')
+# plt.title('Histogram for Key tensors')
+# plt.xlabel('Value')
+# plt.ylabel('Frequency')
+# plt.legend()
+#
+# plt.tight_layout()
+# plt.savefig('./hpcBERTTrainDataDotProduct/results/imdb_e45/bsi_runs/bert_tensor_distribution_e45_pf31_6bit.png')
+# plt.show()

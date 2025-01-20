@@ -58,7 +58,7 @@ with open(output_text_file, 'w') as text_file:
         K_size_kb = K_size / 1024
         V_size_kb = V_size / 1024
 
-        precision_factor = 31
+        precision_factor = 2**63-1
 
         vector_exec_times = []
         for _ in range(num_runs):
@@ -71,6 +71,7 @@ with open(output_text_file, 'w') as text_file:
         vector_dotProduct_times.append(vector_dot_product_avg_timeTaken*1000)
     vector_memory_usage_data.append({
         "Operation": "Vector",
+        "Result": vector_result,
         "Vector1_Size": memVec1/(2**20),
         "Vector2_size": memVec2/(2**20),
         "Vector1_bits": bitsVec1,
@@ -114,7 +115,7 @@ os.makedirs(output_figures_save_folder, exist_ok=True)
 memory_usage_df = pd.DataFrame(vector_memory_usage_data)
 csv_file_path = './hpcBERTTrainDataDotProduct/results/vector_memory_usage/'
 os.makedirs(csv_file_path, exist_ok=True)
-csv_file_name = os.path.join(csv_file_path, "tensor_memory_usage.csv")
+csv_file_name = os.path.join(csv_file_path, "vector_memory_usage.csv")
 
 if os.path.isdir(csv_file_name):
     raise ValueError(f"Conflict: '{csv_file_name}' is a directory. Please rename or remove it.")

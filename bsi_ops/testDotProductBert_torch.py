@@ -42,9 +42,9 @@ with open(output_text_file, 'w') as text_file:
         K_flat = K.reshape(-1)
         V_flat = V.reshape(-1)
         # Convert the NumPy array to a PyTorch tensor
-        Q_flat = torch.tensor(Q_flat, dtype=torch.float16, device=device)
-        K_flat = torch.tensor(K_flat, dtype=torch.float16, device=device)
-        V_flat = torch.tensor(V_flat, dtype=torch.float16, device=device)
+        Q_flat = torch.tensor(Q_flat, dtype=torch.float64, device=device)
+        K_flat = torch.tensor(K_flat, dtype=torch.float64, device=device)
+        V_flat = torch.tensor(V_flat, dtype=torch.float64, device=device)
 
         # Q_lenght = Q_flat.shape[0] # this is 10420224
         # K_length = K_flat.shape[0]
@@ -148,21 +148,21 @@ plt.grid(True)
 plt.savefig('./hpcBERTTrainDataDotProduct/results/imdb_e45/torch_16/torch_runs/bert_time_visualization_e45_16bit.png')
 plt.show()
 
-plt.figure(figsize=(10, 6))
-plt.subplot(1, 2, 1)
-plt.hist(q_flat_histograms, bins=50, alpha=0.7, label='Query Tensors')
-plt.title('Histogram for Query tensors')
-plt.xlabel('Value')
-plt.ylabel('Frequency')
-plt.legend()
-
-plt.subplot(1, 2, 2)
-plt.hist(k_flat_histograms, bins=50, alpha=0.7, label='Key Tensors')
-plt.title('Histogram for Key tensors')
-plt.xlabel('Value')
-plt.ylabel('Frequency')
-plt.legend()
-
-plt.tight_layout()
-plt.savefig('./hpcBERTTrainDataDotProduct/results/imdb_e45/torch_16/torch_runs/bert_tensor_distribution_e45_16bit.png')
-plt.show()
+# plt.figure(figsize=(10, 6))
+# plt.subplot(1, 2, 1)
+# plt.hist(q_flat_histograms, bins=50, alpha=0.7, label='Query Tensors')
+# plt.title('Histogram for Query tensors')
+# plt.xlabel('Value')
+# plt.ylabel('Frequency')
+# plt.legend()
+#
+# plt.subplot(1, 2, 2)
+# plt.hist(k_flat_histograms, bins=50, alpha=0.7, label='Key Tensors')
+# plt.title('Histogram for Key tensors')
+# plt.xlabel('Value')
+# plt.ylabel('Frequency')
+# plt.legend()
+#
+# plt.tight_layout()
+# plt.savefig('./hpcBERTTrainDataDotProduct/results/imdb_e45/torch_16/torch_runs/bert_tensor_distribution_e45_16bit.png')
+# plt.show()

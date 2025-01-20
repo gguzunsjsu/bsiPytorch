@@ -137,7 +137,55 @@ RandomNumberDotProduct random_number_dot_bsi(torch::Tensor m, torch::Tensor n){
 
 VectorDotProductResult dot_product_vector(torch::Tensor m, torch::Tensor n, float precision_factor){
     VectorDotProductResult result;
-    long precision_factor_long = static_cast<int16_t>(precision_factor);
+    int64_t precision_factor_long = static_cast<int64_t>(precision_factor);
+    std::vector<int64_t> vec1 = {};
+    std::vector<int64_t> vec2 = {};
+    auto m_a = m.accessor<float, 1>();
+    auto n_a = n.accessor<float, 1>();
+
+    //creating vectors
+    for(auto i=0; i<m_a.size(0); i++){
+        vec1.push_back(static_cast<int64_t>(m_a[i]*precision_factor_long));
+    }
+    for(auto i=0; i<n_a.size(0); i++){
+        vec2.push_back(static_cast<int64_t>(n_a[i]*precision_factor_long));
+    }
+
+//    cout << "Size of vectors: vec1 size " << vec1.size() << " and vec2 size: " << vec2.size() << endl;
+    //doing dot product and logging time
+    uint64_t start = timeSinceEpoch();
+    auto res = 0;
+    for(int i=0;i<vec1.size(); i++){
+        res += vec1[i]*vec2[i];
+    }
+    uint64_t end = timeSinceEpoch();
+
+    std::byte* vec1_start = reinterpret_cast<std::byte*>(vec1.data());
+    std::byte* vec1_end = vec1_start+vec1.capacity();
+    size_t vec1_memory = reinterpret_cast<uintptr_t>(vec1_end)-reinterpret_cast<uintptr_t>(vec1_start);
+
+    std::byte* vec2_start = reinterpret_cast<std::byte*>(vec2.data());
+    std::byte* vec2_end = vec2_start+vec2.capacity();
+    size_t vec2_memory = reinterpret_cast<uintptr_t>(vec2_end)-reinterpret_cast<uintptr_t>(vec2_start);
+
+//    size_t vec1_metadata = sizeof(std::vector<int16_t>);
+//    size_t vec2_metadata = sizeof(std::vector<int16_t>);
+
+    result.result = res;
+    result.timeTaken = end-start;
+    result.memoryUsedVec1 = vec1_memory;  // Memory in bytes
+    result.memoryUsedVec2 = vec2_memory;  // Memory in bytes
+    result.bitsUsedVec1 = sizeof(int64_t) * 8;     // bytes to bits
+    result.bitsUsedVec2 = sizeof(int64_t) * 8;     // bytes to bits
+
+    cout << "Vec1 bits" << result.bitsUsedVec1 << endl;
+
+    return result;
+    
+}
+
+VectorDotProductResult dot_product_vector_noPrecision(torch::Tensor m, torch::Tensor n){
+    VectorDotProductResult result;
     std::vector<int16_t> vec1 = {};
     std::vector<int16_t> vec2 = {};
     auto m_a = m.accessor<float, 1>();
@@ -145,20 +193,22 @@ VectorDotProductResult dot_product_vector(torch::Tensor m, torch::Tensor n, floa
 
     //creating vectors
     for(auto i=0; i<m_a.size(0); i++){
-        vec1.push_back(static_cast<int16_t>(m_a[i]*precision_factor_long));
+        vec1.push_back(static_cast<int16_t>(m_a[i]));
     }
     for(auto i=0; i<n_a.size(0); i++){
-        vec2.push_back(static_cast<int16_t>(n_a[i]*precision_factor_long));
+        vec2.push_back(static_cast<int16_t>(n_a[i]));
     }
 
 //    cout << "Size of vectors: vec1 size " << vec1.size() << " and vec2 size: " << vec2.size() << endl;
     //doing dot product and logging time
     uint64_t start = timeSinceEpoch();
-    int16_t res = 0;
+    long res = 0;
     for(int i=0;i<vec1.size(); i++){
         res += vec1[i]*vec2[i];
     }
     uint64_t end = timeSinceEpoch();
+
+    cout << "Vector result: " << res << endl;
 
     result.result = res;
     result.timeTaken = end-start;
@@ -170,7 +220,7 @@ VectorDotProductResult dot_product_vector(torch::Tensor m, torch::Tensor n, floa
     cout << "Vec1 bits" << result.bitsUsedVec1 << endl;
 
     return result;
-    
+
 }
 
 DotProductResult dot_product(torch::Tensor m, torch::Tensor n, float precision_factor) {
@@ -218,10 +268,12 @@ DotProductResult dot_product(torch::Tensor m, torch::Tensor n, float precision_f
     BsiAttribute<uint64_t>* bsi_1;
     BsiAttribute<uint64_t>* bsi_2;
     bsi_1 = ubsi.buildBsiAttributeFromVector(m_v, 1);
+//    std::cout << "----------- added bits login -----------" << std::endl;
     bsi_1->setPartitionID(0);
     bsi_1->setFirstSliceFlag(true);
     bsi_1->setLastSliceFlag(true);
     bsi_2 = ubsi.buildBsiAttributeFromVector(n_v, 1);
+//    std::cout << "*********** second bits logic ************" << std::endl;
     bsi_2->setPartitionID(0);
     bsi_2->setFirstSliceFlag(true);
     bsi_2->setLastSliceFlag(true);
@@ -260,8 +312,8 @@ DotProductResult dot_product(torch::Tensor m, torch::Tensor n, float precision_f
     resultStruct.sizeOfBsi1 = bsi_1->getSizeInMemory();
     resultStruct.sizeOfBsi2 = bsi_2->getSizeInMemory();
 //    cout << "Fixed by returning total" << endl;
-    cout << "bsi1 size: " << resultStruct.sizeOfBsi1/(1024*1024) << endl;
-    cout << "bsi2 size: " << resultStruct.sizeOfBsi2/(1024*1024) << endl;
+//    cout << "bsi1 size: " << resultStruct.sizeOfBsi1/(1024*1024) << endl;
+//    cout << "bsi2 size: " << resultStruct.sizeOfBsi2/(1024*1024) << endl;
     delete bsi_1;
     delete bsi_2;
 
@@ -379,6 +431,16 @@ pybind11::tuple dot_product_without_compression_with_time(torch::Tensor m, torch
     return pybind11::make_tuple(result.result, result.timeTaken, result.sizeOfBsi1,result.sizeOfBsi2);
 }
 
+pybind11::tuple vector_dot_product_no_precison(torch::Tensor m, torch::Tensor n){
+    VectorDotProductResult result = dot_product_vector_noPrecision(m, n);
+    return pybind11::make_tuple(result.result,
+                                result.timeTaken,
+                                result.memoryUsedVec1,
+                                result.memoryUsedVec2,
+                                result.bitsUsedVec1,
+                                result.bitsUsedVec2);
+}
+
 pybind11::tuple vector_dot_product(torch::Tensor m, torch::Tensor n, float precision_factor){
     VectorDotProductResult result = dot_product_vector(m, n, precision_factor);
     return pybind11::make_tuple(result.result,
@@ -395,6 +457,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
    m.def("dot_product_without_compression", &dot_product_without_compression_with_time, "Dot product using non-compressed BSI (Non-CUDA)");
    m.def("random_number_dot_product_vector",  &random_number_dot_product_vector, "Dot product of random numbers using C++ vectors");
    m.def("random_number_dot_product_bsi", &random_number_dot_product_bsi, "Dot product of random numbers using bsi");
+   m.def("vector_dot_product_no_precison", &vector_dot_product_no_precison, "Dot product using c++ vector without precison");
 }
 
 

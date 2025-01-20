@@ -20,16 +20,25 @@ int main(){
     int range = 100;
     long length = 10000000;
 
-    std::vector<uint64_t> vec1;
-    std::vector<uint64_t> vec2;
+    std::vector<uint8_t> vec1;
+    std::vector<uint8_t> vec2;
 
     for(auto i=0; i<length; i++){
         vec1.push_back(std::rand()%range);
         vec2.push_back(std::rand()%range);
     }
 
-    size_t vec1_memory = sizeof(uint64_t) * vec1.capacity();
-    size_t vec2_memory = sizeof(uint64_t) * vec2.capacity();
+    std::byte* vec1_start = reinterpret_cast<std::byte*>(vec1.data());
+    std::byte* vec1_end = vec1_start+vec1.capacity();
+    size_t vec1_memory = reinterpret_cast<uintptr_t>(vec1_end)-reinterpret_cast<uintptr_t>(vec1_start);
+
+    std::byte* vec2_start = reinterpret_cast<std::byte*>(vec2.data());
+    std::byte* vec2_end = vec2_start+vec2.capacity();
+    size_t vec2_memory = reinterpret_cast<uintptr_t>(vec2_end)-reinterpret_cast<uintptr_t>(vec2_start);
+
+
+//    size_t vec1_memory = sizeof(uint64_t) * vec1.capacity();
+//    size_t vec2_memory = sizeof(uint64_t) * vec2.capacity();
 
     cout << "vec1 memory: " << vec1_memory/(1024.0 * 1024.0) << " mb" << endl;
     cout << "vec2 memory: " << vec2_memory/(1024.0 * 1024.0) << " mb" << endl;
@@ -48,7 +57,7 @@ int main(){
     auto end = std::chrono::high_resolution_clock::now();
     auto vec_duration = (std::chrono::duration_cast<std::chrono::milliseconds>(end-start)).count();
 
-    cout << "Bits used by vector values: " << sizeof(uint64_t)*8 << " bits" << endl;
+    cout << "Bits used by vector values: " << sizeof(uint8_t)*8 << " bits" << endl;
 
 
     /*
