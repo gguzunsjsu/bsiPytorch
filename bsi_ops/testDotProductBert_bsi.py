@@ -49,6 +49,8 @@ with open(output_text_file, 'w') as text_file:
         K_flat = torch.tensor(K_flat, dtype=torch.float32, device=device)
         V_flat = torch.tensor(V_flat, dtype=torch.float32, device=device)
 
+        # print(Q_flat.shape)
+
         Q_bits_used = Q_flat.element_size() * 8 # element_size() return size of an element in bytes
         K_bits_used = K_flat.element_size() * 8
         V_bits_used = V_flat.element_size() * 8

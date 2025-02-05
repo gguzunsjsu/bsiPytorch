@@ -20,8 +20,8 @@ int main(){
     int range = 100;
     long length = 10000000;
 
-    std::vector<uint8_t> vec1;
-    std::vector<uint8_t> vec2;
+    std::vector<int32_t> vec1;
+    std::vector<int32_t> vec2;
 
     for(auto i=0; i<length; i++){
         vec1.push_back(std::rand()%range);
@@ -29,11 +29,11 @@ int main(){
     }
 
     std::byte* vec1_start = reinterpret_cast<std::byte*>(vec1.data());
-    std::byte* vec1_end = vec1_start+vec1.capacity();
+    std::byte* vec1_end = vec1_start+vec1.capacity()*sizeof(int32_t);
     size_t vec1_memory = reinterpret_cast<uintptr_t>(vec1_end)-reinterpret_cast<uintptr_t>(vec1_start);
 
     std::byte* vec2_start = reinterpret_cast<std::byte*>(vec2.data());
-    std::byte* vec2_end = vec2_start+vec2.capacity();
+    std::byte* vec2_end = vec2_start+vec2.capacity()*sizeof(int32_t);
     size_t vec2_memory = reinterpret_cast<uintptr_t>(vec2_end)-reinterpret_cast<uintptr_t>(vec2_start);
 
 
@@ -57,7 +57,7 @@ int main(){
     auto end = std::chrono::high_resolution_clock::now();
     auto vec_duration = (std::chrono::duration_cast<std::chrono::milliseconds>(end-start)).count();
 
-    cout << "Bits used by vector values: " << sizeof(uint8_t)*8 << " bits" << endl;
+    cout << "Bits used by vector values: " << sizeof(int32_t)*8 << " bits" << endl;
 
 
     /*

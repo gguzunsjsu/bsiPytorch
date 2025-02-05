@@ -160,12 +160,16 @@ VectorDotProductResult dot_product_vector(torch::Tensor m, torch::Tensor n, floa
     }
     uint64_t end = timeSinceEpoch();
 
+    //For checking
+    size_t memory_for_elements = vec1.capacity() * sizeof(int64_t);
+    cout << "Memory for elements is: " << memory_for_elements/(1024*1024) << " MB" << endl;
+
     std::byte* vec1_start = reinterpret_cast<std::byte*>(vec1.data());
-    std::byte* vec1_end = vec1_start+vec1.capacity();
+    std::byte* vec1_end = vec1_start+(vec1.capacity() * sizeof(int64_t));
     size_t vec1_memory = reinterpret_cast<uintptr_t>(vec1_end)-reinterpret_cast<uintptr_t>(vec1_start);
 
     std::byte* vec2_start = reinterpret_cast<std::byte*>(vec2.data());
-    std::byte* vec2_end = vec2_start+vec2.capacity();
+    std::byte* vec2_end = vec2_start+(vec2.capacity() * sizeof(int64_t));
     size_t vec2_memory = reinterpret_cast<uintptr_t>(vec2_end)-reinterpret_cast<uintptr_t>(vec2_start);
 
 //    size_t vec1_metadata = sizeof(std::vector<int16_t>);
@@ -178,7 +182,7 @@ VectorDotProductResult dot_product_vector(torch::Tensor m, torch::Tensor n, floa
     result.bitsUsedVec1 = sizeof(int64_t) * 8;     // bytes to bits
     result.bitsUsedVec2 = sizeof(int64_t) * 8;     // bytes to bits
 
-    cout << "Vec1 bits" << result.bitsUsedVec1 << endl;
+//    cout << "Vec1 bits" << result.bitsUsedVec1 << endl;
 
     return result;
     

@@ -58,14 +58,14 @@ with open(output_text_file, 'w') as text_file:
         K_size_kb = K_size / 1024
         V_size_kb = V_size / 1024
 
-        precision_factor = 2**63-1
+        precision_factor = 127
 
         vector_exec_times = []
         for _ in range(num_runs):
             # print(bsi_ops.vector_dot_product(Q_flat, K_flat, precision_factor))
             vector_result, vector_dot_product_timeTaken, memVec1, memVec2, bitsVec1, bitsVec2 = bsi_ops.vector_dot_product(Q_flat, K_flat, precision_factor) #c++ vector dot product
             vector_exec_times.append(vector_dot_product_timeTaken/1e9)
-            print(f"Layer {i} Vector1Memory {memVec1} Vector2Memory {memVec2} Vector1bits {bitsVec1} Vector2bits {bitsVec2}")
+            # print(f"Layer {i} Vector1Memory {memVec1} Vector2Memory {memVec2} Vector1bits {bitsVec1} Vector2bits {bitsVec2}")
         vector_dot_product_avg_timeTaken = sum(vector_exec_times)/num_runs
 
         vector_dotProduct_times.append(vector_dot_product_avg_timeTaken*1000)
