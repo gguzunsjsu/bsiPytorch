@@ -161,8 +161,8 @@ VectorDotProductResult dot_product_vector(torch::Tensor m, torch::Tensor n, floa
     uint64_t end = timeSinceEpoch();
 
     //For checking
-    size_t memory_for_elements = vec1.capacity() * sizeof(int64_t);
-    cout << "Memory for elements is: " << memory_for_elements/(1024*1024) << " MB" << endl;
+//    size_t memory_for_elements = vec1.capacity() * sizeof(int64_t);
+//    cout << "Memory for elements is: " << memory_for_elements/(1024*1024) << " MB" << endl;
 
     std::byte* vec1_start = reinterpret_cast<std::byte*>(vec1.data());
     std::byte* vec1_end = vec1_start+(vec1.capacity() * sizeof(int64_t));

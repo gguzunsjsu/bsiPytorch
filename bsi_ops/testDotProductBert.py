@@ -10,7 +10,7 @@ print('import works')  # just to verify against import errors
 
 # Load the triplets from the saved pickle file
 # pickle_file_weights_stored_path = './hpcBERTTrainDataDotProduct/output_39882/bertVectors/bertVectors_9.pkl'
-with open('/home/poorna/Desktop/RA BSI/bsi_pytorch/bsiPytorch/bsi_ops/extract_tensors/Weight_Processing/bert_imdb_pickle_store/bert_imdb0.pkl', 'rb') as f:
+with open('/home/poorna/Desktop/RA BSI/bsi_pytorch/bsiPytorch/bsi_ops/extract_tensors/Weight_Processing/bert_imdb_pickle_store/bert_imdb45.pkl', 'rb') as f:
     triplets = pickle.load(f)
 print("BERT triplets loaded from the pickle file")
 # List to store dot products for each layer
@@ -70,7 +70,7 @@ with open(output_text_file, 'w') as text_file:
         V_size_kb = V_size / 1024
 
         # precision_factor = 38; #changed name from conversion_factor to precision_factor. Changed value to 10^31 -- Initially it is 31 -> 6bits
-        precision_factor = 31
+        precision_factor = 15
         custom_exec_times = []
         torch_exec_times = []
         vector_exec_times = []
@@ -83,7 +83,7 @@ with open(output_text_file, 'w') as text_file:
             torch_res = torch.dot(Q_flat, K_flat) # torch dot product
             torch_exec_time = time.time() - start_time
             torch_exec_times.append(torch_exec_time)
-            vector_result, vector_dot_product_timeTaken = bsi_ops.vector_dot_product(Q_flat, K_flat, precision_factor) #c++ vector dot product
+            vector_result, vector_dot_product_timeTaken, memoryUsedVec1, memoryUsedVec2, bitsUsedVec1, bitsUsedVec2 = bsi_ops.vector_dot_product(Q_flat, K_flat, precision_factor) #c++ vector dot product
             vector_exec_times.append(vector_dot_product_timeTaken/1e9)
         custom_avg_time = sum(custom_exec_times) / num_runs
         torch_avg_time = sum(torch_exec_times) / num_runs
