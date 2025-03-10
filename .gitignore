@@ -4,3 +4,15 @@
 *dist/
 *.pyc
 *__pycache__/
+*output_*
+*bert_dbpedia*
+*Esper*
+*.pkl
+*.pth
+*.csv
+*cola
+*.tsv
+*results
+*bert_imdb
+*pickle_files
+*weights

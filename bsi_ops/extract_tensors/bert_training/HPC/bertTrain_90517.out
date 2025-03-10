@@ -1,0 +1,37 @@
+
+
+
+Torch availability:  True
+number of parameters:  83504416
+{'loss': 7.8512, 'learning_rate': 4.8358287365379566e-05, 'epoch': 0.03}
+{'loss': 7.2599, 'learning_rate': 4.671657473075913e-05, 'epoch': 0.07}
+{'loss': 7.0723, 'learning_rate': 4.5074862096138694e-05, 'epoch': 0.1}
+{'loss': 6.9693, 'learning_rate': 4.343314946151826e-05, 'epoch': 0.13}
+{'loss': 6.8699, 'learning_rate': 4.179143682689782e-05, 'epoch': 0.16}
+{'loss': 6.7875, 'learning_rate': 4.0149724192277385e-05, 'epoch': 0.2}
+{'loss': 6.7503, 'learning_rate': 3.850801155765695e-05, 'epoch': 0.23}
+{'loss': 6.6978, 'learning_rate': 3.686629892303651e-05, 'epoch': 0.26}
+{'loss': 6.6419, 'learning_rate': 3.522458628841608e-05, 'epoch': 0.3}
+{'loss': 6.5564, 'learning_rate': 3.358287365379564e-05, 'epoch': 0.33}
+{'loss': 6.448, 'learning_rate': 3.1941161019175205e-05, 'epoch': 0.36}
+{'loss': 6.2737, 'learning_rate': 3.029944838455477e-05, 'epoch': 0.39}
+{'loss': 6.1391, 'learning_rate': 2.8657735749934332e-05, 'epoch': 0.43}
+{'loss': 5.992, 'learning_rate': 2.70160231153139e-05, 'epoch': 0.46}
+{'loss': 5.864, 'learning_rate': 2.5374310480693457e-05, 'epoch': 0.49}
+{'loss': 5.7489, 'learning_rate': 2.3732597846073024e-05, 'epoch': 0.53}
+{'loss': 5.6629, 'learning_rate': 2.2090885211452588e-05, 'epoch': 0.56}
+{'loss': 5.5795, 'learning_rate': 2.0449172576832152e-05, 'epoch': 0.59}
+{'loss': 5.4902, 'learning_rate': 1.8807459942211716e-05, 'epoch': 0.62}
+{'loss': 5.428, 'learning_rate': 1.716574730759128e-05, 'epoch': 0.66}
+{'loss': 5.3989, 'learning_rate': 1.5524034672970843e-05, 'epoch': 0.69}
+{'loss': 5.3629, 'learning_rate': 1.3882322038350407e-05, 'epoch': 0.72}
+{'loss': 5.3154, 'learning_rate': 1.2240609403729971e-05, 'epoch': 0.76}
+{'loss': 5.2858, 'learning_rate': 1.0598896769109535e-05, 'epoch': 0.79}
+{'loss': 5.2666, 'learning_rate': 8.957184134489099e-06, 'epoch': 0.82}
+{'loss': 5.2321, 'learning_rate': 7.315471499868663e-06, 'epoch': 0.85}
+{'loss': 5.1983, 'learning_rate': 5.673758865248227e-06, 'epoch': 0.89}
+{'loss': 5.2125, 'learning_rate': 4.032046230627791e-06, 'epoch': 0.92}
+{'loss': 5.1719, 'learning_rate': 2.390333596007355e-06, 'epoch': 0.95}
+{'loss': 5.1908, 'learning_rate': 7.486209613869189e-07, 'epoch': 0.99}
+{'train_runtime': 10427.0717, 'train_samples_per_second': 93.463, 'train_steps_per_second': 1.46, 'train_loss': 6.011118426672392, 'epoch': 1.0}
+time to train model:  10427.106662988663
