@@ -83,7 +83,7 @@ with open(output_text_file, 'w') as text_file:
         32: 2^31-1
         64: 2^64
         """
-        precision_factor = 7
+        precision_factor = 15
         bits_using = math.log2((precision_factor+1))+1
         # print(f"Bits using by the bsi is {bits_using}")
         custom_exec_times = []
