@@ -6,7 +6,7 @@ setup(
     ext_modules=[
         CppExtension('bsi_ops', [
             'bsiFunctions.cpp',
-        ])
+        ], extra_compile_args=['-std=c++20'])
     ],
     cmdclass={
         'build_ext': BuildExtension
