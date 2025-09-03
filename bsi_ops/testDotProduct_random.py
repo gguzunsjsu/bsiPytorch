@@ -14,9 +14,9 @@ vec1 = torch.randint(0, 100, (num_numbers, ), dtype=torch.float32)
 vec2 = torch.randint(0, 100, (num_numbers, ), dtype=torch.float32)
 
 # print(vec1[:50])
-pf = 2**31-1
+decimal_places = 2
 #bsi vector product
-result_bsi, timeTaken_bsi, qbsisize, kbsisize = bsi_ops.dot_product(vec1, vec2, pf)
+result_bsi, timeTaken_bsi, qbsisize, kbsisize = bsi_ops.dot_product_decimal(vec1, vec2, decimal_places)
 
 print(f"q bsi size {qbsisize/(1024*1024)}")
 print(f"k bsi size {kbsisize/(1024*1024)}")
@@ -25,4 +25,3 @@ print(f"k bsi size {kbsisize/(1024*1024)}")
 
 print(f"BSI result: result-{result_bsi} timeTaken-{timeTaken_bsi}")
 # print(f"C++ result: result-{result_cPlus} timeTaken-{timeTaken_cPlus}")
-

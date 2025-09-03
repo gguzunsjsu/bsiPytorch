@@ -10,7 +10,7 @@ print('import works')  # just to verify against import errors
 
 # Load the triplets from the saved pickle file
 # pickle_file_weights_stored_path = './hpcBERTTrainDataDotProduct/output_39882/bertVectors/bertVectors_9.pkl'
-with open('/home/poorna/Desktop/RA BSI/bsi_pytorch/bsiPytorch/bsi_ops/extract_tensors/Weight_Processing/bert_imdb_pickle_store/bert_imdb45.pkl', 'rb') as f:
+with open('extract_tensors/Weight_Processing/bert_imdb_pickle_store/bert_imdb45.pkl', 'rb') as f:
     triplets = pickle.load(f)
 print("BERT triplets loaded from the pickle file")
 # List to store dot products for each layer
@@ -26,6 +26,9 @@ k_flat_histograms = []
 
 # Number of runs for averaging
 num_runs = 5
+
+# Number of decimal places for BSI dot product
+decimal_places = 2
 
 # Create a text file for saving the results
 output_text_file = './hpcBERTTrainDataDotProduct/results/imdb_initial/torch_32/all/bert_imdb_e0_pf31_6bit.txt'
@@ -70,13 +73,14 @@ with open(output_text_file, 'w') as text_file:
         V_size_kb = V_size / 1024
 
         # precision_factor = 38; #changed name from conversion_factor to precision_factor. Changed value to 10^31 -- Initially it is 31 -> 6bits
-        precision_factor = 15
+        precision_factor = 31
         custom_exec_times = []
         torch_exec_times = []
         vector_exec_times = []
         for _ in range(num_runs):
             #res, time_taken, bsiQ, bsiK = bsi_ops.dot_product(Q_flat, K_flat, precision_factor)
-            res, time_taken, bsiSizeQ, bsiSizeK     = bsi_ops.dot_product(Q_flat, K_flat, precision_factor) #bsi dot product
+            # res, time_taken, bsiSizeQ, bsiSizeK     = bsi_ops.dot_product(Q_flat, K_flat, precision_factor) #bsi dot product
+            res, time_taken, bsiSizeQ, bsiSizeK = bsi_ops.dot_product_decimal(Q_flat, K_flat, decimal_places) #bsi dot product with decimal places
             # res, time_taken, bsiSizeQ, bsiSizeK     = bsi_ops.dot_product_without_compression(Q_flat, K_flat, precision_factor)/ #bsi dot product without compression
             custom_exec_times.append(time_taken/1e9)
             start_time = time.time()

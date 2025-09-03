@@ -1,0 +1,395 @@
+import os
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import math
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from transformers import AutoTokenizer, OPTForCausalLM
+from torch.nn.functional import pad
+from datasets import load_dataset
+import bsi_ops
+import gc
+import numpy as np
+from typing import Dict, Any, List, Union
+
+def get_device():
+    """Auto-detect best available device"""
+    if torch.cuda.is_available():
+        return 'cuda'
+    else:
+        return 'cpu'
+
+class BSIQuantizedLinear(torch.nn.Module):
+    """BSI quantized linear layer using prebuilt BSI keys for efficiency and diagnostics."""
+
+    def __init__(self, original_linear, decimalPlaces=2, compress_threshold=0.2, query_threshold=None):
+        super().__init__()
+        self.decimalPlaces = int(decimalPlaces)
+        self.compress_threshold = float(compress_threshold)
+        self.query_compress_threshold = float(query_threshold) if query_threshold is not None else float(compress_threshold)
+
+        self.in_features = original_linear.in_features
+        self.out_features = original_linear.out_features
+
+        # tracking counters (dot-only)
+        self.dot_ns_total = 0
+        self.dot_calls = 0
+
+        dense_weight = original_linear.weight.detach().cpu().to(torch.float32)
+        self.weight_fp32 = dense_weight
+        self.weight_dense_memory_bytes = dense_weight.numel() * dense_weight.element_size()
+
+        if original_linear.bias is not None:
+            bias = original_linear.bias.detach().to(torch.float32)
+            self.register_buffer("bias", bias)
+            self.bias_fp32 = bias.cpu()
+            self.bias_memory_bytes = bias.numel() * bias.element_size()
+        else:
+            self.register_buffer("bias", None)
+            self.bias_fp32 = None
+            self.bias_memory_bytes = 0
+
+        with torch.no_grad():
+            self._bsi_keys, total_mem_bytes, num_keys, d = bsi_ops.build_bsi_keys(
+                dense_weight, self.decimalPlaces, float(self.compress_threshold)
+            )
+            assert num_keys == self.out_features and d == self.in_features
+            self.weight_bsi_memory_bytes = int(total_mem_bytes)
+            self.bsi_memory_bytes = self.weight_bsi_memory_bytes
+        self.total_bsi_static_bytes = self.weight_bsi_memory_bytes + self.bias_memory_bytes
+
+        # Error tracking fields toggled via enable_bsi_error_stats.
+        self.collect_stats = False
+        self.reset_error_stats()
+
+    def reset_error_stats(self):
+        self.mse_sum = 0.0
+        self.mae_sum = 0.0
+        self.cosine_sum = 0.0
+        self.max_abs_error = 0.0
+        self.samples_tracked = 0
+
+    def forward(self, x):
+        original_device = x.device
+        original_dtype = x.dtype
+        original_shape = x.shape
+        if len(x.shape) > 2:
+            x = x.view(-1, x.shape[-1])
+        x = x.to(torch.float32)
+
+        output_list = []
+        dense_outputs = [] if self.collect_stats else None
+        dot_ns_this_forward = 0
+        
+        # Debug: Check first forward pass
+        debug_first = not hasattr(self, '_debug_printed')
+        
+        for i in range(x.shape[0]):
+            input_vec = x[i].detach().cpu().contiguous()
+            
+            # Debug: Print input stats for first batch element
+            if debug_first and i == 0:
+                print(f"\n[DEBUG {self.__class__.__name__}] First forward pass diagnostics:")
+                print(f"  Input vec stats: min={input_vec.min():.4f}, max={input_vec.max():.4f}, mean={input_vec.mean():.4f}, std={input_vec.std():.4f}")
+                print(f"  Decimal Places used: {self.decimalPlaces}")
+            
+            scores, time_taken_ns, _query_bsi_size = bsi_ops.batch_dot_product_prebuilt(
+                input_vec,
+                self._bsi_keys,
+                float(self.query_compress_threshold)
+            )
+            
+            # Debug: Check raw scores from C++
+            if debug_first and i == 0:
+                print(f"  Raw BSI scores from C++: shape={scores.shape}, dtype={scores.dtype}")
+                print(f"    min={scores.min():.4f}, max={scores.max():.4f}, mean={scores.mean():.4f}, std={scores.std():.4f}")
+                print(f"    First 5 values: {scores[:5].tolist()}")
+                
+                # Compare with dense computation
+                with torch.no_grad():
+                    dense_scores_debug = torch.matmul(self.weight_fp32, input_vec)
+                    print(f"  Dense scores (for comparison): shape={dense_scores_debug.shape}")
+                    print(f"    min={dense_scores_debug.min():.4f}, max={dense_scores_debug.max():.4f}, mean={dense_scores_debug.mean():.4f}, std={dense_scores_debug.std():.4f}")
+                    print(f"    First 5 values: {dense_scores_debug[:5].tolist()}")
+                    
+                    # Check if scaling is the issue
+                    ratio = scores.mean() / dense_scores_debug.mean() if dense_scores_debug.mean() != 0 else 0
+                    print(f"  Ratio of BSI to dense means: {ratio:.4f}")
+                    
+            
+            # Add bias if present
+            if self.bias_fp32 is not None:
+                scores = scores + self.bias_fp32
+                if debug_first and i == 0:
+                    print(f"  After adding bias: min={scores.min():.4f}, max={scores.max():.4f}, mean={scores.mean():.4f}")
+            
+            output_list.append(scores)
+            dot_ns_this_forward += int(time_taken_ns)
+
+            if self.collect_stats:
+                dense_scores = torch.matmul(self.weight_fp32, input_vec)
+                if self.bias_fp32 is not None:
+                    dense_scores = dense_scores + self.bias_fp32
+                dense_outputs.append(dense_scores)
+        
+        # Mark that we've printed debug info
+        if debug_first:
+            self._debug_printed = True
+
+        # accumulate dot-only timing
+        self.dot_ns_total += dot_ns_this_forward
+        self.dot_calls += 1
+
+        output = torch.stack(output_list).to(original_device).to(original_dtype)
+
+        if self.collect_stats and dense_outputs:
+            with torch.no_grad():
+                bsi_out = output.detach().cpu().to(torch.float32)
+                dense_out = torch.stack(dense_outputs).to(torch.float32)
+                diff = bsi_out - dense_out
+                mse = diff.pow(2).mean(dim=1)
+                mae = diff.abs().mean(dim=1)
+                cosine_vals = []
+                for idx in range(dense_out.size(0)):
+                    bsi_vec = bsi_out[idx].view(1, -1)
+                    dense_vec = dense_out[idx].view(1, -1)
+                    if torch.allclose(dense_vec, torch.zeros_like(dense_vec)) or torch.allclose(bsi_vec, torch.zeros_like(bsi_vec)):
+                        cosine_vals.append(0.0)
+                    else:
+                        cos_val = float(F.cosine_similarity(bsi_vec, dense_vec, dim=1).item())
+                        if math.isnan(cos_val):
+                            cos_val = 0.0
+                        cosine_vals.append(cos_val)
+                self.mse_sum += float(mse.mean().item())
+                self.mae_sum += float(mae.mean().item())
+                self.cosine_sum += float(np.mean(cosine_vals))
+                self.max_abs_error = max(self.max_abs_error, float(diff.abs().max().item()))
+                self.samples_tracked += dense_out.size(0)
+
+        if len(original_shape) == 3:
+            output = output.view(original_shape[0], original_shape[1], -1)
+        # Bias has already been added above, don't add it again
+        return output
+
+def reset_bsi_dot_counters(model: nn.Module):
+    for m in model.modules():
+        if isinstance(m, BSIQuantizedLinear):
+            m.dot_ns_total = 0
+            m.dot_calls = 0
+
+def sum_bsi_dot_counters(model: nn.Module) -> int:
+    total = 0
+    for m in model.modules():
+        if isinstance(m, BSIQuantizedLinear):
+            total += int(m.dot_ns_total)
+    return total
+
+
+def enable_bsi_error_stats(model: nn.Module, enabled: bool) -> None:
+    """Toggle per-layer error tracking for BSIQuantizedLinear modules."""
+    for module in model.modules():
+        if isinstance(module, BSIQuantizedLinear):
+            if enabled and not module.collect_stats:
+                module.collect_stats = True
+                module.reset_error_stats()
+            elif not enabled:
+                module.collect_stats = False
+
+
+def collect_bsi_error_stats(model: nn.Module) -> List[Dict[str, float]]:
+    """Gather accumulated per-layer error metrics for debugging."""
+    layer_stats: List[Dict[str, float]] = []
+    for name, module in model.named_modules():
+        if isinstance(module, BSIQuantizedLinear) and module.samples_tracked > 0:
+            samples = float(module.samples_tracked)
+            layer_stats.append({
+                "name": name,
+                "decimalPlaces": module.decimalPlaces,
+                "compress_threshold": module.compress_threshold,
+                "samples_tracked": samples,
+                "mse": module.mse_sum / samples,
+                "mae": module.mae_sum / samples,
+                "cosine": module.cosine_sum / samples,
+                "max_abs": module.max_abs_error,
+            })
+    layer_stats.sort(key=lambda item: item["mse"], reverse=True)
+    return layer_stats
+
+def summarize_bsi_model(model: nn.Module) -> Dict[str, Any]:
+    summary = {
+        "total_bsi_bytes": 0,
+        "total_dense_bytes": 0,
+        "total_bias_bytes": 0,
+        "total_static_bytes": 0,
+        "total_dense_with_bias_bytes": 0,
+        "num_quantized_layers": 0,
+        "layers": [],
+    }
+    for name, module in model.named_modules():
+        if isinstance(module, BSIQuantizedLinear):
+            layer_stats = {
+                "name": name,
+                "in_features": module.in_features,
+                "out_features": module.out_features,
+                "decimalPlaces": module.decimalPlaces,
+                "compress_threshold": module.compress_threshold,
+                "weight_bsi_bytes": module.weight_bsi_memory_bytes,
+                "weight_dense_bytes": module.weight_dense_memory_bytes,
+                "bias_bytes": module.bias_memory_bytes,
+            }
+            summary["layers"].append(layer_stats)
+            summary["total_bsi_bytes"] += module.weight_bsi_memory_bytes
+            summary["total_dense_bytes"] += module.weight_dense_memory_bytes
+            summary["total_bias_bytes"] += module.bias_memory_bytes
+            summary["num_quantized_layers"] += 1
+    summary["total_static_bytes"] = summary["total_bsi_bytes"] + summary["total_bias_bytes"]
+    summary["total_dense_with_bias_bytes"] = summary["total_dense_bytes"] + summary["total_bias_bytes"]
+    return summary
+
+def _resolve_layer_value(config: Union[float, Dict[str, float]], layer_kind: str, fallback: float) -> float:
+    if isinstance(config, dict):
+        if layer_kind == 'attention':
+            return float(config.get('attention', config.get('default', fallback)))
+        if layer_kind == 'mlp':
+            return float(config.get('mlp', config.get('default', fallback)))
+        return float(config.get('default', fallback))
+    return float(config)
+
+
+def quantize_model_bsi(model, decimalPlaces=2, skip_lm_head=True, scope='all', compress_threshold=0.2):
+    """Replace linear layers with BSI quantized versions.
+
+    scope options:
+      - 'all': quantize all Linear layers except lm_head (default)
+      - 'attention': quantize only attention projection layers (q_proj, k_proj, v_proj, out_proj, self_attn)
+      - 'mlp': quantize only MLP/FFN linears (fc1, fc2, mlp, ffn)
+    """
+    def is_attention_linear(name: str) -> bool:
+        tokens = ['attn', 'self_attn', 'q_proj', 'k_proj', 'v_proj', 'out_proj']
+        return any(t in name for t in tokens)
+
+    def is_mlp_linear(name: str) -> bool:
+        tokens = ['mlp', 'ff', 'ffn', 'fc1', 'fc2']
+        return any(t in name for t in tokens)
+
+    decimal_config = decimalPlaces
+    threshold_config = compress_threshold
+    default_decimal = float(decimal_config if isinstance(decimal_config, (int, float)) else decimal_config.get('default', 2))
+    default_threshold = float(threshold_config if isinstance(threshold_config, (int, float)) else threshold_config.get('default', 0.2))
+
+    layer_count = 0
+    for name, module in model.named_modules():
+        if isinstance(module, torch.nn.Linear):
+            if skip_lm_head and 'lm_head' in name:
+                continue
+            if scope == 'attention' and not is_attention_linear(name):
+                continue
+            if scope == 'mlp' and not is_mlp_linear(name):
+                continue
+            parent_name = '.'.join(name.split('.')[:-1])
+            module_name = name.split('.')[-1]
+            parent = model
+            if parent_name:
+                for part in parent_name.split('.'):
+                    parent = getattr(parent, part)
+            layer_kind = 'attention' if is_attention_linear(name) else 'mlp' if is_mlp_linear(name) else 'other'
+            decimal_layer = _resolve_layer_value(decimal_config, layer_kind, default_decimal)
+            threshold_layer = _resolve_layer_value(threshold_config, layer_kind, default_threshold)
+            setattr(parent, module_name, BSIQuantizedLinear(module, decimalPlaces=decimal_layer, compress_threshold=threshold_layer))
+            layer_count += 1
+    print(f"Quantized {layer_count} linear layers to BSI with decimalPlaces={decimal_config} (scope={scope})")
+    return model
+
+class Evaluator:
+    def __init__(self, dataset, tokenizer, device):
+        self.dataset = dataset
+        self.tokenizer = tokenizer
+        self.device = device
+        self.dataset = self.dataset.map(self.tokenize_function, batched=True)
+        self.dataset.set_format(type="torch", columns=["input_ids"])
+
+    def tokenize_function(self, examples):
+        return self.tokenizer(examples["text"])
+
+    @torch.no_grad()
+    def evaluate(self, model):
+        model.eval()
+        total, hit = 0, 0
+        for batch in self.dataset:
+            input_ids = batch["input_ids"].to(self.device).unsqueeze(0)
+            label = input_ids[:, -1]
+            outputs = model(input_ids)
+            last_token_logits = outputs.logits[:, -2, :]
+            pred = last_token_logits.argmax(dim=-1)
+            total += label.size(0)
+            hit += (pred == label).sum().item()
+        acc = hit / total
+        return acc
+
+def main():
+    print("Quick BSI Verification with Small Model")
+    print("=" * 50)
+    
+    model_name = "facebook/opt-125m"
+    device = get_device()
+    print(f"Auto-detected device: {device}")
+    
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    dataset = load_dataset("lambada", split="validation[:10]") 
+    evaluator = Evaluator(dataset, tokenizer, device)
+    
+    print("Loading small model for quick test...")
+    if device == 'cuda':
+        model_fp16 = OPTForCausalLM.from_pretrained(
+            model_name, torch_dtype=torch.float16, device_map="auto"
+        )
+    else:
+        model_fp16 = OPTForCausalLM.from_pretrained(
+            model_name, torch_dtype=torch.float32, device_map="cpu"
+        )
+    model_bsi = OPTForCausalLM.from_pretrained(
+        model_name, torch_dtype=torch.float32, device_map="cpu"
+    )
+    
+    print("Testing FP16 baseline...")
+    acc_fp16 = evaluator.evaluate(model_fp16)
+    print(f"Original model accuracy: {acc_fp16:.4f}")
+    
+    print("Applying BSI quantization to small subset...")
+    layers_quantized = 0
+    for name, module in model_bsi.named_modules():
+        if isinstance(module, torch.nn.Linear) and 'lm_head' not in name:
+            if layers_quantized < 5:
+                parent_name = '.'.join(name.split('.')[:-1])
+                layer_name = name.split('.')[-1]
+                parent = model_bsi.get_submodule(parent_name)
+                setattr(parent, layer_name, BSIQuantizedLinear(module, decimalPlaces=2, compress_threshold=0.2))
+                layers_quantized += 1
+            else:
+                break
+    
+    print(f"Quantized {layers_quantized} layers")
+    
+    stats = summarize_bsi_model(model_bsi)
+    bsi_weight_mb = stats["total_bsi_bytes"] / (1024**2)
+    bsi_bias_mb = stats["total_bias_bytes"] / (1024**2)
+    bsi_total_mb = stats["total_static_bytes"] / (1024**2)
+    dense_linear_mb = stats["total_dense_bytes"] / (1024**2)
+    fp16_linear_mb = sum(
+        mod.in_features * mod.out_features * 2 for _, mod in model_bsi.named_modules()
+        if isinstance(mod, BSIQuantizedLinear)
+    ) / (1024**2)
+    compression = (fp16_linear_mb / bsi_total_mb) if bsi_total_mb > 0 else 0.0
+
+    print("\nBSI Static Model Size (quantized layers only):")
+    print(f"  BSI Quantized Linear Weights: {bsi_weight_mb:.2f} MB")
+    print(f"  Bias Storage (FP32): {bsi_bias_mb:.2f} MB")
+    print(f"  Total BSI Linear Storage: {bsi_total_mb:.2f} MB")
+    print(f"  Dense Linear Weights (reference dtype): {dense_linear_mb:.2f} MB")
+    print(f"  FP16 Linear Weights (same dims): {fp16_linear_mb:.2f} MB")
+    print(f"  Compression vs FP16 Linear Weights: {compression:.2f}x")
+
+if __name__ == "__main__":
+    main()
