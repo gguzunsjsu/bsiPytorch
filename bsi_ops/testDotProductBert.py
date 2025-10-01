@@ -93,9 +93,9 @@ with open(output_text_file, 'w') as text_file:
             f"({layer_total_compressed}/{layer_total_slices})"
         )
         # Calculate the total size of each tensor in bytes using sys.getsizeof
-        Q_size = sys.getsizeof(Q_flat.untyped_storage()) + sys.getsizeof(Q_flat) #storage() is being deprecated. so used untyped_storage()
-        K_size = sys.getsizeof(K_flat.untyped_storage()) + sys.getsizeof(K_flat)
-        V_size = sys.getsizeof(V_flat.untyped_storage()) + sys.getsizeof(V_flat)
+        Q_size = Q_flat.nelement() * Q_flat.element_size() #storage() is being deprecated. so used untyped_storage()
+        K_size = K_flat.nelement() * K_flat.element_size()
+        V_size = V_flat.nelement() * V_flat.element_size()
 
         # Convert sizes to kilobytes (optional)
         Q_size_kb = Q_size / 1024
