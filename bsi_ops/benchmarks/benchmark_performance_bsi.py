@@ -11,7 +11,8 @@ import time
 from verify_accuracy_bsi import (
     quantize_model_bsi, summarize_bsi_model,
     reset_bsi_dot_counters, sum_bsi_dot_counters,
-    enable_bsi_error_stats, collect_bsi_error_stats
+    enable_bsi_error_stats, collect_bsi_error_stats,
+    print_compression_summary
 )
 import argparse
 from tqdm import tqdm
@@ -356,6 +357,7 @@ def main():
             print(f"  Compression vs FP16 Linear Weights: {compression_vs_fp16_linear:.2f}x")
             print(f"  Compression vs Dense Linear Weights: {compression_vs_dense:.2f}x")
             print(f"  Reference FP16 Full Model Static Size: {fp16_total_static_mb:.2f}MB")
+            print_compression_summary(summary, heading=f"{name} Compression Summary")
         else:
             acc_bsi, fwd_ms, dot_ms, top5_acc, summary, layer_stats = evaluator.evaluate_with_bsi(
                 model_bsi, decimal_cfg, scope=args.scope, threshold_cfg=threshold_global_cfg
@@ -393,6 +395,7 @@ def main():
                             mx=entry['max_abs']
                         )
                     )
+            print_compression_summary(summary, heading=f"{name} Compression Summary")
          
         del model_bsi
         gc.collect()

@@ -21,20 +21,37 @@ uint64_t timeSinceEpoch() {
     return duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
 }
 
-// Function to get the size of the bsi vector and count the verbatim elements
-std::pair<size_t, size_t> getBsiInfo(const BsiVector<uint64_t>& BsiVector) {
-    size_t size = BsiVector.bsi.size();
-    size_t verbatimCount = 0;
+struct BsiSliceStats {
+    size_t total_slices = 0;
+    size_t verbatim_slices = 0;
 
-    // Iterate through the vector
-    for (const auto& element : BsiVector.bsi) {
-        // Check if the verbatim field is true
-        if (element.verbatim) {
-            verbatimCount++;
-        }
+    size_t compressed_slices() const {
+        return (total_slices >= verbatim_slices) ? (total_slices - verbatim_slices) : 0;
     }
 
-    return std::make_pair(size, verbatimCount);
+    double compressed_pct() const {
+        return total_slices ? (static_cast<double>(compressed_slices()) * 100.0 / total_slices) : 0.0;
+    }
+
+    double verbatim_pct() const {
+        return total_slices ? (static_cast<double>(verbatim_slices) * 100.0 / total_slices) : 0.0;
+    }
+
+    void accumulate(const BsiSliceStats &other) {
+        total_slices += other.total_slices;
+        verbatim_slices += other.verbatim_slices;
+    }
+};
+
+BsiSliceStats compute_bsi_slice_stats(const BsiVector<uint64_t> &vec) {
+    BsiSliceStats stats;
+    stats.total_slices = vec.bsi.size();
+    for (const auto &slice : vec.bsi) {
+        if (slice.verbatim) {
+            ++stats.verbatim_slices;
+        }
+    }
+    return stats;
 }
 
 // Function to log information to a text file
@@ -278,8 +295,6 @@ DotProductResult dot_product(torch::Tensor m, torch::Tensor n, float precision_f
     bsi_2->setFirstSliceFlag(true);
     bsi_2->setLastSliceFlag(true);
 
-    std::pair<size_t, size_t> bsi1Info = getBsiInfo(*bsi_1);
-    std::pair<size_t, size_t> bsi2Info = getBsiInfo(*bsi_2);
 //    std::cout << "Not logging in this run" << std::endl;
 //    logToFile(bsi1Info.first, bsi1Info.second);
 //    logToFile(bsi1Info.first, bsi1Info.second);
@@ -471,6 +486,71 @@ static PrebuiltBSIKeys* capsule_to_keys(const pybind11::capsule& cap) {
     return reinterpret_cast<PrebuiltBSIKeys*>(cap.get_pointer());
 }
 
+pybind11::dict keyset_slice_stats(pybind11::capsule keyset_cap) {
+    auto* keys = capsule_to_keys(keyset_cap);
+    TORCH_CHECK(keys != nullptr, "Invalid BSI keys capsule");
+
+    BsiSliceStats aggregate;
+    for (auto* key : keys->keys) {
+        if (key != nullptr) {
+            aggregate.accumulate(compute_bsi_slice_stats(*key));
+        }
+    }
+
+    const size_t compressed = aggregate.compressed_slices();
+
+    pybind11::dict result;
+    result["num_vectors"] = static_cast<size_t>(keys->num_keys);
+    result["total_slices"] = aggregate.total_slices;
+    result["verbatim_slices"] = aggregate.verbatim_slices;
+    result["compressed_slices"] = compressed;
+    result["compressed_pct"] = aggregate.compressed_pct();
+    result["verbatim_pct"] = aggregate.verbatim_pct();
+    return result;
+}
+
+pybind11::dict tensor_slice_stats(torch::Tensor tensor, int decimalPlaces, float compress_threshold = 0.2f, bool signed_input = true) {
+    TORCH_CHECK(tensor.dim() == 1, "tensor must be 1D [n]");
+
+    auto tensor_cpu = tensor.detach().to(torch::kFloat32).cpu().contiguous();
+    auto accessor = tensor_cpu.accessor<float, 1>();
+    const int64_t length = accessor.size(0);
+
+    std::vector<double> values;
+    values.reserve(length);
+    for (int64_t i = 0; i < length; ++i) {
+        values.push_back(static_cast<double>(accessor[i]));
+    }
+
+    BsiVector<uint64_t>* bsi_vec = nullptr;
+    if (signed_input) {
+        BsiSigned<uint64_t> builder;
+        bsi_vec = builder.buildBsiVector(values, decimalPlaces, compress_threshold);
+    } else {
+        BsiUnsigned<uint64_t> builder;
+        bsi_vec = builder.buildBsiVector(values, decimalPlaces, compress_threshold);
+    }
+
+    TORCH_CHECK(bsi_vec != nullptr, "Failed to build BSI vector for slice stats");
+
+    BsiSliceStats stats = compute_bsi_slice_stats(*bsi_vec);
+    const size_t compressed = stats.compressed_slices();
+    const size_t memory_bytes = bsi_vec->getSizeInMemory();
+    delete bsi_vec;
+
+    pybind11::dict result;
+    result["total_slices"] = stats.total_slices;
+    result["verbatim_slices"] = stats.verbatim_slices;
+    result["compressed_slices"] = compressed;
+    result["compressed_pct"] = stats.compressed_pct();
+    result["verbatim_pct"] = stats.verbatim_pct();
+    result["memory_bytes"] = memory_bytes;
+    result["decimal_places"] = decimalPlaces;
+    result["compress_threshold"] = compress_threshold;
+    result["signed_input"] = signed_input;
+    return result;
+}
+
 pybind11::tuple build_bsi_keys(torch::Tensor K, int decimalPlaces, float compress_threshold = 0.2f) {
     TORCH_CHECK(K.dim() == 2, "K must be 2D [num_keys, d]");
     // int64_t pf = static_cast<int64_t>(precision_factor);
@@ -575,4 +655,9 @@ PYBIND11_MODULE(bsi_ops, m) {
          "Prebuild BSI keys for a weight matrix; returns a capsule and total memory in bytes");
    m.def("batch_dot_product_prebuilt", &batch_dot_product_prebuilt, pybind11::arg("q"), pybind11::arg("keyset_cap"), pybind11::arg("query_threshold") = -1.0f,
          "Batch dot product using prebuilt BSI keys with optional query compression threshold");
+   m.def("keyset_slice_stats", &keyset_slice_stats, pybind11::arg("keyset_cap"),
+         "Aggregate slice statistics for a prebuilt BSI key capsule");
+   m.def("tensor_slice_stats", &tensor_slice_stats, pybind11::arg("tensor"), pybind11::arg("decimal_places"),
+         pybind11::arg("compress_threshold") = 0.2f, pybind11::arg("signed_input") = true,
+         "Build a BSI vector for a 1D tensor and return basic slice compression statistics");
 }

@@ -12,7 +12,7 @@ from datasets import load_dataset
 import bsi_ops
 import gc
 import numpy as np
-from typing import Dict, Any, List, Union
+from typing import Dict, Any, List, Union, Tuple
 
 def get_device():
     """Auto-detect best available device"""
@@ -58,6 +58,12 @@ class BSIQuantizedLinear(torch.nn.Module):
             assert num_keys == self.out_features and d == self.in_features
             self.weight_bsi_memory_bytes = int(total_mem_bytes)
             self.bsi_memory_bytes = self.weight_bsi_memory_bytes
+            self.weight_slice_stats = dict(bsi_ops.keyset_slice_stats(self._bsi_keys))
+        self.weight_total_slices = int(self.weight_slice_stats.get("total_slices", 0))
+        self.weight_verbatim_slices = int(self.weight_slice_stats.get("verbatim_slices", 0))
+        self.weight_compressed_slices = int(self.weight_slice_stats.get("compressed_slices", 0))
+        self.weight_compressed_pct = float(self.weight_slice_stats.get("compressed_pct", 0.0))
+        self.weight_verbatim_pct = float(self.weight_slice_stats.get("verbatim_pct", 0.0))
         self.total_bsi_static_bytes = self.weight_bsi_memory_bytes + self.bias_memory_bytes
 
         # Error tracking fields toggled via enable_bsi_error_stats.
@@ -225,6 +231,9 @@ def summarize_bsi_model(model: nn.Module) -> Dict[str, Any]:
         "total_static_bytes": 0,
         "total_dense_with_bias_bytes": 0,
         "num_quantized_layers": 0,
+        "total_slices": 0,
+        "compressed_slices": 0,
+        "verbatim_slices": 0,
         "layers": [],
     }
     for name, module in model.named_modules():
@@ -239,14 +248,58 @@ def summarize_bsi_model(model: nn.Module) -> Dict[str, Any]:
                 "weight_dense_bytes": module.weight_dense_memory_bytes,
                 "bias_bytes": module.bias_memory_bytes,
             }
+            layer_stats["weight_total_slices"] = getattr(module, "weight_total_slices", 0)
+            layer_stats["weight_verbatim_slices"] = getattr(module, "weight_verbatim_slices", 0)
+            layer_stats["weight_compressed_slices"] = getattr(module, "weight_compressed_slices", 0)
+            layer_stats["weight_compressed_pct"] = getattr(module, "weight_compressed_pct", 0.0)
+            layer_stats["weight_verbatim_pct"] = getattr(module, "weight_verbatim_pct", 0.0)
             summary["layers"].append(layer_stats)
             summary["total_bsi_bytes"] += module.weight_bsi_memory_bytes
             summary["total_dense_bytes"] += module.weight_dense_memory_bytes
             summary["total_bias_bytes"] += module.bias_memory_bytes
             summary["num_quantized_layers"] += 1
+            summary["total_slices"] += layer_stats["weight_total_slices"]
+            summary["compressed_slices"] += layer_stats["weight_compressed_slices"]
+            summary["verbatim_slices"] += layer_stats["weight_verbatim_slices"]
     summary["total_static_bytes"] = summary["total_bsi_bytes"] + summary["total_bias_bytes"]
     summary["total_dense_with_bias_bytes"] = summary["total_dense_bytes"] + summary["total_bias_bytes"]
+    if summary["total_slices"]:
+        summary["compressed_pct"] = (summary["compressed_slices"] * 100.0) / summary["total_slices"]
+        summary["verbatim_pct"] = (summary["verbatim_slices"] * 100.0) / summary["total_slices"]
+    else:
+        summary["compressed_pct"] = 0.0
+        summary["verbatim_pct"] = 0.0
     return summary
+
+
+def compression_summary_lines(summary: Dict[str, Any]) -> Tuple[List[str], Tuple[int, int, float]]:
+    layers = summary.get("layers", [])
+    lines: List[str] = []
+    for idx, layer in enumerate(layers, start=1):
+        total = int(layer.get("weight_total_slices", 0) or 0)
+        compressed = int(layer.get("weight_compressed_slices", 0) or 0)
+        pct = (compressed * 100.0 / total) if total else 0.0
+        layer_name = layer.get("name", f"Layer {idx}")
+        lines.append(f"Layer {idx} ({layer_name}): {compressed}/{total} ({pct:.2f}%)")
+
+    total_slices = int(summary.get("total_slices", 0) or 0)
+    compressed_slices = int(summary.get("compressed_slices", 0) or 0)
+    overall_pct = (compressed_slices * 100.0 / total_slices) if total_slices else 0.0
+    return lines, (compressed_slices, total_slices, overall_pct)
+
+
+def print_compression_summary(summary: Dict[str, Any], heading: str = "Compression Summary") -> None:
+    lines, overall = compression_summary_lines(summary)
+    compressed, total, pct = overall
+    if not lines and total == 0:
+        print(f"\n=== {heading} ===")
+        print("No compression statistics available.")
+        return
+
+    print(f"\n=== {heading} ===")
+    for line in lines:
+        print(line)
+    print(f"Overall compressed slices: {compressed}/{total} ({pct:.2f}%)")
 
 def _resolve_layer_value(config: Union[float, Dict[str, float]], layer_kind: str, fallback: float) -> float:
     if isinstance(config, dict):
@@ -390,6 +443,7 @@ def main():
     print(f"  Dense Linear Weights (reference dtype): {dense_linear_mb:.2f} MB")
     print(f"  FP16 Linear Weights (same dims): {fp16_linear_mb:.2f} MB")
     print(f"  Compression vs FP16 Linear Weights: {compression:.2f}x")
+    print_compression_summary(stats)
 
 if __name__ == "__main__":
     main()
