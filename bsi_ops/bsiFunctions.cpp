@@ -4,6 +4,7 @@
 #include <fstream>
 #include <cmath>
 #include <torch/extension.h>
+#include <filesystem>
 // #include <ATen/ATen.h>
 
 #include <vector>
@@ -644,21 +645,57 @@ pybind11::tuple batch_dot_product_prebuilt(torch::Tensor q, pybind11::capsule ke
     return pybind11::make_tuple(out, total_ns, mem_q);
 }
 
+pybind11::tuple keyset_size_on_disk(pybind11::capsule keyset_cap) {
+    auto* keys = capsule_to_keys(keyset_cap);
+    TORCH_CHECK(keys != nullptr, "Invalid BSI keys capsule");
+    size_t mem_in_memory = 0;
+    size_t bytes_on_disk = 0;
+    for (auto* key : keys->keys) {
+        if (!key) continue;
+        mem_in_memory += key->getSizeInMemory(); // current behaviour you already use
+        // sum file size for each slice if serialized with write(..., savesizeinbits=true)
+        for (const auto& slice : key->bsi) {
+            bytes_on_disk += slice.sizeOnDisk(true);
+        }
+    }
+    return pybind11::make_tuple(mem_in_memory, bytes_on_disk);
+}
+
+pybind11::none save_keyset(pybind11::capsule keyset_cap, const std::string& out_dir) {
+    auto* keys = capsule_to_keys(keyset_cap);
+    TORCH_CHECK(keys != nullptr, "Invalid BSI keys capsule");
+    std::filesystem::create_directories(out_dir);
+    for (size_t r = 0; r < keys->keys.size(); ++r) {
+        const auto& vec = *keys->keys[r];
+        // write each slice as its own file: key_<r>_slice_<s>.hb
+        for (size_t s = 0; s < vec.bsi.size(); ++s) {
+            const auto& hb = vec.bsi[s];
+            std::string fname = out_dir + "/key_" + std::to_string(r) + "_slice_" + std::to_string(s) + ".hb";
+            std::ofstream ofs(fname, std::ios::binary);
+            TORCH_CHECK(ofs.good(), "Failed to open file: ", fname);
+            hb.write(ofs, true); // format described in HybridBitmap::write
+        }
+    }
+    return pybind11::none();
+}
+
 PYBIND11_MODULE(bsi_ops, m) {
-   m.def("dot_product", &dot_product_with_time, "Dot product using BSI (Non-CUDA)");
+    m.def("dot_product", &dot_product_with_time, "Dot product using BSI (Non-CUDA)");
     m.def("dot_product_decimal", &dot_product_with_decimal, "Dot product using BSI with decimal places (Non-CUDA)");
-   m.def("vector_dot_product", &vector_dot_product, "Dot product using c++ vectors");
-   m.def("random_number_dot_product_vector",  &random_number_dot_product_vector, "Dot product of random numbers using C++ vectors");
-   m.def("random_number_dot_product_bsi", &random_number_dot_product_bsi, "Dot product of random numbers using bsi");
-   m.def("vector_dot_product_no_precison", &vector_dot_product_no_precison, "Dot product using c++ vector without precison");
-   m.def("batch_dot_product", &batch_dot_product, "Batch dot product: one query vs many keys using BSI");
-   m.def("build_bsi_keys", &build_bsi_keys, pybind11::arg("K"), pybind11::arg("decimal_places"), pybind11::arg("compress_threshold") = 0.2f,
+    m.def("vector_dot_product", &vector_dot_product, "Dot product using c++ vectors");
+    m.def("random_number_dot_product_vector",  &random_number_dot_product_vector, "Dot product of random numbers using C++ vectors");
+    m.def("random_number_dot_product_bsi", &random_number_dot_product_bsi, "Dot product of random numbers using bsi");
+    m.def("vector_dot_product_no_precison", &vector_dot_product_no_precison, "Dot product using c++ vector without precison");
+    m.def("batch_dot_product", &batch_dot_product, "Batch dot product: one query vs many keys using BSI");
+    m.def("build_bsi_keys", &build_bsi_keys, pybind11::arg("K"), pybind11::arg("decimal_places"), pybind11::arg("compress_threshold") = 0.2f,
          "Prebuild BSI keys for a weight matrix; returns a capsule and total memory in bytes");
-   m.def("batch_dot_product_prebuilt", &batch_dot_product_prebuilt, pybind11::arg("q"), pybind11::arg("keyset_cap"), pybind11::arg("query_threshold") = -1.0f,
+    m.def("batch_dot_product_prebuilt", &batch_dot_product_prebuilt, pybind11::arg("q"), pybind11::arg("keyset_cap"), pybind11::arg("query_threshold") = -1.0f,
          "Batch dot product using prebuilt BSI keys with optional query compression threshold");
-   m.def("keyset_slice_stats", &keyset_slice_stats, pybind11::arg("keyset_cap"),
+    m.def("keyset_slice_stats", &keyset_slice_stats, pybind11::arg("keyset_cap"),
          "Aggregate slice statistics for a prebuilt BSI key capsule");
-   m.def("tensor_slice_stats", &tensor_slice_stats, pybind11::arg("tensor"), pybind11::arg("decimal_places"),
+    m.def("tensor_slice_stats", &tensor_slice_stats, pybind11::arg("tensor"), pybind11::arg("decimal_places"),
          pybind11::arg("compress_threshold") = 0.2f, pybind11::arg("signed_input") = true,
          "Build a BSI vector for a 1D tensor and return basic slice compression statistics");
+    m.def("keyset_size_on_disk", &keyset_size_on_disk, "Return (mem_in_memory, bytes_on_disk)");
+    m.def("save_keyset", &save_keyset, "Serialize keyset to directory of .hb slice files");
 }

@@ -58,6 +58,9 @@ class BSIQuantizedLinear(torch.nn.Module):
             assert num_keys == self.out_features and d == self.in_features
             self.weight_bsi_memory_bytes = int(total_mem_bytes)
             self.bsi_memory_bytes = self.weight_bsi_memory_bytes
+            self.weight_bsi_disk_bytes = 0
+            mem_in_mem, mem_on_disk = bsi_ops.keyset_size_on_disk(self._bsi_keys)
+            self.weight_bsi_disk_bytes = int(mem_on_disk)
             self.weight_slice_stats = dict(bsi_ops.keyset_slice_stats(self._bsi_keys))
         self.weight_total_slices = int(self.weight_slice_stats.get("total_slices", 0))
         self.weight_verbatim_slices = int(self.weight_slice_stats.get("verbatim_slices", 0))
@@ -253,10 +256,12 @@ def summarize_bsi_model(model: nn.Module) -> Dict[str, Any]:
             layer_stats["weight_compressed_slices"] = getattr(module, "weight_compressed_slices", 0)
             layer_stats["weight_compressed_pct"] = getattr(module, "weight_compressed_pct", 0.0)
             layer_stats["weight_verbatim_pct"] = getattr(module, "weight_verbatim_pct", 0.0)
+            layer_stats["weight_bsi_disk_bytes"] = getattr(module, "weight_bsi_disk_bytes", 0)
             summary["layers"].append(layer_stats)
             summary["total_bsi_bytes"] += module.weight_bsi_memory_bytes
             summary["total_dense_bytes"] += module.weight_dense_memory_bytes
             summary["total_bias_bytes"] += module.bias_memory_bytes
+            summary["total_bsi_disk_bytes"] = summary.get("total_bsi_disk_bytes", 0) + layer_stats["weight_bsi_disk_bytes"]
             summary["num_quantized_layers"] += 1
             summary["total_slices"] += layer_stats["weight_total_slices"]
             summary["compressed_slices"] += layer_stats["weight_compressed_slices"]
@@ -270,6 +275,24 @@ def summarize_bsi_model(model: nn.Module) -> Dict[str, Any]:
         summary["compressed_pct"] = 0.0
         summary["verbatim_pct"] = 0.0
     return summary
+
+def save_bsi_model(model: nn.Module, out_dir: str):
+    os.makedirs(out_dir, exist_ok=True)
+    meta = []
+    for name, module in model.named_modules():
+        if isinstance(module, BSIQuantizedLinear):
+            layer_dir = os.path.join(out_dir, name.replace('.', '_'))
+            os.makedirs(layer_dir, exist_ok=True)
+            bsi_ops.save_keyset(module._bsi_keys, layer_dir)
+            meta.append({
+                "name": name,
+                "in": module.in_features,
+                "out": module.out_features,
+                "decimalPlaces": module.decimalPlaces,
+                "compress_threshold": module.compress_threshold
+            })
+    with open(os.path.join(out_dir, "manifest.json"), "w") as f:
+        import json; json.dump(meta, f, indent=2)
 
 
 def compression_summary_lines(summary: Dict[str, Any]) -> Tuple[List[str], Tuple[int, int, float]]:
