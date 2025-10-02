@@ -68,6 +68,8 @@ class BSIQuantizedLinear(torch.nn.Module):
         self.weight_compressed_pct = float(self.weight_slice_stats.get("compressed_pct", 0.0))
         self.weight_verbatim_pct = float(self.weight_slice_stats.get("verbatim_pct", 0.0))
         self.total_bsi_static_bytes = self.weight_bsi_memory_bytes + self.bias_memory_bytes
+        # Debug/verbosity flag: when True, prints one-time diagnostics on first forward
+        self.verbose = False
 
         # Error tracking fields toggled via enable_bsi_error_stats.
         self.collect_stats = False
@@ -92,8 +94,8 @@ class BSIQuantizedLinear(torch.nn.Module):
         dense_outputs = [] if self.collect_stats else None
         dot_ns_this_forward = 0
         
-        # Debug: Check first forward pass
-        debug_first = not hasattr(self, '_debug_printed')
+        # Debug printing gated by `self.verbose` to avoid overhead in benchmarks
+        debug_first = bool(self.verbose) and not hasattr(self, '_debug_printed')
         
         for i in range(x.shape[0]):
             input_vec = x[i].detach().cpu().contiguous()
@@ -301,6 +303,22 @@ def save_bsi_model(model: nn.Module, out_dir: str):
             })
     with open(os.path.join(out_dir, "manifest.json"), "w") as f:
         import json; json.dump(meta, f, indent=2)
+
+
+def bsi_full_model_static_bytes(model: nn.Module, summary: Dict[str, Any]) -> int:
+    """Return full model static size (bytes) for a BSI-quantized model.
+
+    This sums all registered parameters and buffers (which include non-BSI
+    modules and BSI biases) and adds the total BSI weight bytes which are not
+    stored as parameters.
+    """
+    param_bytes = 0
+    for p in model.parameters():
+        param_bytes += p.nelement() * p.element_size()
+    buffer_bytes = 0
+    for b in model.buffers():
+        buffer_bytes += b.nelement() * b.element_size()
+    return int(param_bytes + buffer_bytes + int(summary.get("total_bsi_bytes", 0)))
 
 
 def compression_summary_lines(summary: Dict[str, Any]) -> Tuple[List[str], Tuple[int, int, float]]:

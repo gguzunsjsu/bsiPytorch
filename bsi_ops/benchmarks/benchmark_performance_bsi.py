@@ -12,7 +12,7 @@ from verify_accuracy_bsi import (
     quantize_model_bsi, summarize_bsi_model,
     reset_bsi_dot_counters, sum_bsi_dot_counters,
     enable_bsi_error_stats, collect_bsi_error_stats,
-    print_compression_summary, save_bsi_model
+    print_compression_summary, save_bsi_model, bsi_full_model_static_bytes
 )
 import argparse
 from tqdm import tqdm
@@ -250,6 +250,11 @@ def print_model_size(model):
     print(f'Model static size: {size_all_mb:.3f}MB')
     return param_size, buffer_size
 
+def get_model_static_bytes(model) -> int:
+    """Return total static bytes (parameters + buffers) for a torch.nn.Module."""
+    p = sum(p.nelement() * p.element_size() for p in model.parameters())
+    b = sum(buf.nelement() * buf.element_size() for buf in model.buffers())
+    return int(p + b)
 
 def build_layer_config(default_value, attention_value, mlp_value):
     """Utility to construct per-scope configuration dictionaries."""
@@ -341,19 +346,20 @@ def main():
     parser.add_argument('--skip_baseline', action='store_true',
                     help='Skip evaluating FP baseline (useful on CPU)')
     parser.add_argument('--decimal_attention', type=int, default=None,
-                    help='Optional decimal-place override for attention layers')
+                    help='[DEPRECATED; ignored] Optional decimal-place override for attention layers')
     parser.add_argument('--decimal_mlp', type=int, default=None,
-                    help='Optional decimal-place override for MLP/FFN layers')
+                    help='[DEPRECATED; ignored] Optional decimal-place override for MLP/FFN layers')
     parser.add_argument('--compress_threshold', type=float, default=0.2,
                     help='Base compression threshold for BSI slices (0 disables compression)')
     parser.add_argument('--threshold_attention', type=float, default=None,
-                    help='Compression threshold override for attention layers')
+                    help='[DEPRECATED; ignored] Compression threshold override for attention layers')
     parser.add_argument('--threshold_mlp', type=float, default=None,
-                    help='Compression threshold override for MLP/FFN layers')
+                    help='[DEPRECATED; ignored] Compression threshold override for MLP/FFN layers')
     parser.add_argument('--layer_stats_batches', type=int, default=0,
                     help='Collect per-layer error metrics for the first N batches (0 disables)')
     parser.add_argument('--report_dir', type=str, default=None, help='Write per-run JSON + per-layer CSV here')
-
+    parser.add_argument('--simple_report_txt', type=str, default=None,
+        help='If set, append a simple line per configuration to this text file (memory-only and/or eval runs)')
     parser.add_argument('--memory_only', action='store_true', help='Only compute and print static BSI weights memory (no evaluation)')
     parser.add_argument('--num_samples', type=int, default=1000, help='Number of validation samples from LAMBADA')
     parser.add_argument('--max_seq_len', type=int, default=512, help='Max sequence length (padding/truncation length)')
@@ -368,6 +374,8 @@ def main():
         help='Dataset split to use (default: validation).')
     parser.add_argument('--save_bsi_dir', type=str, default=None,
         help='If set, save quantized BSI keysets for each config to this directory')
+    parser.add_argument('--base_dtype', type=str, choices=['fp32','fp16'], default='fp32',
+        help='dtype to load the base (pre-quantization) model for reference size (default: fp32)')
     
     args = parser.parse_args()
 
@@ -410,74 +418,89 @@ def main():
                 print_metric_banner(dataset_name, args.split, args.num_samples, args.max_seq_len)
 
             print(f"\n--- Benchmarking FP baseline: {fp16_model_name} ---")
-            baseline_kwargs = {
-                'torch_dtype': torch.float16 if device == 'cuda' else torch.float32,
-                'device_map': 'auto' if device == 'cuda' else 'cpu'
-            }
-            model_fp16 = OPTForCausalLM.from_pretrained(fp16_model_name, **baseline_kwargs)
-
-            param_size, buffer_size = print_model_size(model_fp16)
-            fp16_total_static_mb = (param_size + buffer_size) / (1024 ** 2)
-            fp16_linear_weight_bytes = 0
-            for name, module in model_fp16.named_modules():
-                if isinstance(module, torch.nn.Linear) and 'lm_head' not in name:
-                    w = module.weight
-                    fp16_linear_weight_bytes += w.nelement() * w.element_size()
-            fp16_linear_weight_mb = fp16_linear_weight_bytes / (1024 ** 2)
-            print(f"FP16 linear weights size: {fp16_linear_weight_mb:.2f}MB")
-
-            baseline_acc = None
-            baseline_latency = None
-            baseline_peak_mem = 0.0
-            if not args.memory_only:
-                if args.skip_baseline:
-                    print("Skipping baseline evaluation (--skip_baseline)")
-                else:
-                    acc_fp16, latency_fp16, mem_fp16 = evaluator.evaluate(model_fp16)
-                    print(
-                        f"-> [NEXT-TOKEN ACC] FP baseline top1={acc_fp16:.4f}, "
-                        f"avg_fwd={latency_fp16:.3f}ms, peak_mem={mem_fp16:.2f}MB"
-                    )
-                    baseline_acc = acc_fp16
-                    baseline_latency = latency_fp16
-                    baseline_peak_mem = mem_fp16
-
-            run_results.append({
-                "name": "FP16 baseline",
-                "decimal": None,
-                "scope": "dense",
-                "accuracy_top1": baseline_acc,
-                "accuracy_top5": None,
-                "avg_forward_ms": baseline_latency,
-                "avg_dot_ms": None,
-                "peak_mem_mb": baseline_peak_mem,
-                "summary": {
-                    "total_dense_bytes": fp16_linear_weight_bytes,
-                    "total_static_bytes": param_size + buffer_size,
-                    "linear_weight_mb": fp16_linear_weight_mb
+            fp16_total_static_mb = 0.0
+            fp16_linear_weight_mb = 0.0
+            if args.memory_only and args.skip_baseline:
+                print("\n--- Skipping separate baseline model load for memory-only (--skip_baseline) ---")
+            else:
+                baseline_kwargs = {
+                    'torch_dtype': torch.float16 if device == 'cuda' else torch.float32,
+                    'device_map': 'auto' if device == 'cuda' else 'cpu'
                 }
-            })
+                model_fp16 = OPTForCausalLM.from_pretrained(fp16_model_name, **baseline_kwargs)
+                # Print dtype of the FP baseline model
+                try:
+                    print(f"Baseline model dtype: {next(model_fp16.parameters()).dtype}")
+                except StopIteration:
+                    pass
+                param_size, buffer_size = print_model_size(model_fp16)
+                fp16_total_static_mb = (param_size + buffer_size) / (1024 ** 2)
+                fp16_linear_weight_bytes = 0
+                for name, module in model_fp16.named_modules():
+                    if isinstance(module, torch.nn.Linear) and 'lm_head' not in name:
+                        w = module.weight
+                        fp16_linear_weight_bytes += w.nelement() * w.element_size()
+                fp16_linear_weight_mb = fp16_linear_weight_bytes / (1024 ** 2)
+                print(f"FP16 linear weights size: {fp16_linear_weight_mb:.2f}MB")
 
-            del model_fp16
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+                baseline_acc = None
+                baseline_latency = None
+                baseline_peak_mem = 0.0
+                if not args.memory_only:
+                    if args.skip_baseline:
+                        print("Skipping baseline evaluation (--skip_baseline)")
+                    else:
+                        acc_fp16, latency_fp16, mem_fp16 = evaluator.evaluate(model_fp16)
+                        print(
+                            f"-> [NEXT-TOKEN ACC] FP baseline top1={acc_fp16:.4f}, "
+                            f"avg_fwd={latency_fp16:.3f}ms, peak_mem={mem_fp16:.2f}MB"
+                        )
+                        baseline_acc = acc_fp16
+                        baseline_latency = latency_fp16
+                        baseline_peak_mem = mem_fp16
+
+                run_results.append({
+                    "name": "FP16 baseline",
+                    "decimal": None,
+                    "scope": "dense",
+                    "accuracy_top1": baseline_acc,
+                    "accuracy_top5": None,
+                    "avg_forward_ms": baseline_latency,
+                    "avg_dot_ms": None,
+                    "peak_mem_mb": baseline_peak_mem,
+                    "summary": {
+                        "total_dense_bytes": fp16_linear_weight_bytes,
+                        "total_static_bytes": param_size + buffer_size,
+                        "linear_weight_mb": fp16_linear_weight_mb
+                    }
+                })
+
+                del model_fp16
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
             bsi_configs = [(f"BSI (dec={dec})", dec) for dec in args.decimal_places]
-            threshold_global_cfg = build_layer_config(
-                args.compress_threshold, args.threshold_attention, args.threshold_mlp
-            )
+            threshold_global_cfg = float(args.compress_threshold)
 
             for name, dec in bsi_configs:
                 print(f"\n--- Benchmarking {name} ---")
+                base_torch_dtype = torch.float16 if args.base_dtype.lower() == 'fp16' else torch.float32
                 model_bsi = OPTForCausalLM.from_pretrained(
                     fp16_model_name,
-                    torch_dtype=torch.float32,
+                    torch_dtype=base_torch_dtype,
                     device_map='cpu'
                 )
-                decimal_cfg = build_layer_config(dec, args.decimal_attention, args.decimal_mlp)
+                # Print dtype of the base (pre-quantization) model used for reference size
+                try:
+                    print(f"Reference Full Model dtype (pre-quantization): {next(model_bsi.parameters()).dtype}")
+                except StopIteration:
+                    pass
+                decimal_cfg = dec
 
                 if args.memory_only:
+                    # Compute base (pre-quantization) full static size on the same model instance
+                    base_full_static_mb = get_model_static_bytes(model_bsi) / (1024 ** 2)
                     model_bsi = quantize_model_bsi(
                         model_bsi,
                         decimalPlaces=decimal_cfg,
@@ -485,6 +508,8 @@ def main():
                         compress_threshold=threshold_global_cfg
                     )
                     summary = summarize_bsi_model(model_bsi)
+                    # Compute full-model static size (MB): params+buffers+BSI weight bytes
+                    bsi_full_total_mb = bsi_full_model_static_bytes(model_bsi, summary) / (1024 ** 2)
                     # Optionally persist quantized keysets
                     if args.save_bsi_dir:
                         safe_dataset = dataset_name.replace('/', '_')
@@ -507,9 +532,10 @@ def main():
                     print(f"  Bias Storage (FP32): {bsi_bias_mb:.2f} MB")
                     print(f"  Total BSI Linear Storage: {bsi_total_mb:.2f} MB")
                     print(f"  Dense Linear Weights (reference dtype): {dense_linear_mb:.2f} MB")
-                    print(f"  Compression vs FP16 Linear Weights: {compression_vs_fp16_linear:.2f}x")
                     print(f"  Compression vs Dense Linear Weights: {compression_vs_dense:.2f}x")
-                    print(f"  Reference FP16 Full Model Static Size: {fp16_total_static_mb:.2f}MB")
+                    print(f"  Reference Full Model Static Size: {base_full_static_mb:.2f}MB")
+                    print(f"  BSI Full Model Static Size: {bsi_full_total_mb:.2f}MB")
+                    print(f"  Compression vs Full Model: {base_full_static_mb / bsi_full_total_mb if bsi_full_total_mb > 0 else 0:.2f}x")
                     print_compression_summary(summary, heading=f"{name} Compression Summary")
                     result_entry = {
                         "name": name,
@@ -519,9 +545,26 @@ def main():
                         "accuracy_top5": None,
                         "avg_forward_ms": None,
                         "avg_dot_ms": None,
-                        "summary": summary
+                        "summary": summary,
+                        "bsi_full_static_mb": bsi_full_total_mb,
+                        "base_full_static_mb": base_full_static_mb,
+                        "compression_vs_full": (base_full_static_mb / bsi_full_total_mb if bsi_full_total_mb > 0 else 0)
                     }
+                    # Append to simple text report if requested
+                    if args.simple_report_txt:
+                        try:
+                            os.makedirs(os.path.dirname(args.simple_report_txt) or '.', exist_ok=True)
+                        except Exception:
+                            pass
+                        with open(args.simple_report_txt, 'a') as tf:
+                            stamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+                            tf.write(
+                                f"[{stamp}] dataset={dataset_name} model={fp16_model_name} scope={args.scope} dec={dec} thr={args.compress_threshold} base_dtype={args.base_dtype} "
+                                f"base_full_mb={base_full_static_mb:.4f} bsi_full_mb={bsi_full_total_mb:.4f} compression_full={base_full_static_mb / bsi_full_total_mb if bsi_full_total_mb > 0 else 0:.4f}\n"
+                            )
                 else:
+                    # Compute base (pre-quantization) full static size on the same model instance
+                    base_full_static_mb = get_model_static_bytes(model_bsi) / (1024 ** 2)
                     acc_bsi, fwd_ms, dot_ms, top5_acc, summary, layer_stats = evaluator.evaluate_with_bsi(
                         model_bsi,
                         decimal_cfg,
@@ -535,6 +578,8 @@ def main():
                         cfg_folder = f"{safe_dataset}__{safe_model}__{args.scope}__dec{dec}"
                         out_dir = os.path.join(args.save_bsi_dir, cfg_folder)
                         save_bsi_model(model_bsi, out_dir)
+                    # Compute full-model static size (MB): params+buffers+BSI weight bytes
+                    bsi_full_total_mb = bsi_full_model_static_bytes(model_bsi, summary) / (1024 ** 2)
                     bsi_weight_mb = summary["total_bsi_bytes"] / (1024 ** 2)
                     bsi_bias_mb = summary["total_bias_bytes"] / (1024 ** 2)
                     bsi_total_mb = summary["total_static_bytes"] / (1024 ** 2)
@@ -552,9 +597,10 @@ def main():
                     print(f"  BSI Weights: {bsi_weight_mb:.2f}MB  |  Bias: {bsi_bias_mb:.2f}MB")
                     print(f"  Total BSI Linear Storage: {bsi_total_mb:.2f}MB")
                     print(f"  Dense Linear Storage (reference dtype): {dense_linear_mb:.2f}MB")
-                    print(f"  Compression vs FP16 Linear Weights: {compression_vs_fp16_linear:.2f}x")
                     print(f"  Compression vs Dense Linear Weights: {compression_vs_dense:.2f}x")
-                    print(f"  Reference FP16 Full Model Static Size: {fp16_total_static_mb:.2f}MB")
+                    print(f"  Reference Full Model Static Size: {base_full_static_mb:.2f}MB")
+                    print(f"  BSI Full Model Static Size: {bsi_full_total_mb:.2f}MB")
+                    print(f"  Compression vs Full Model: {base_full_static_mb / bsi_full_total_mb if bsi_full_total_mb > 0 else 0:.2f}x")
                     if layer_stats:
                         print("  Worst layers by MSE (top 5):")
                         for entry in layer_stats[:5]:
@@ -581,8 +627,24 @@ def main():
                         "avg_forward_ms": fwd_ms,
                         "avg_dot_ms": dot_ms,
                         "summary": summary,
+                        "bsi_full_static_mb": bsi_full_total_mb,
+                        "base_full_static_mb": base_full_static_mb,
+                        "compression_vs_full": (base_full_static_mb / bsi_full_total_mb if bsi_full_total_mb > 0 else 0),
                         "layer_stats": layer_stats
                     }
+                    # Append to simple text report if requested
+                    if args.simple_report_txt:
+                        try:
+                            os.makedirs(os.path.dirname(args.simple_report_txt) or '.', exist_ok=True)
+                        except Exception:
+                            pass
+                        with open(args.simple_report_txt, 'a') as tf:
+                            stamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+                            tf.write(
+                                f"[{stamp}] dataset={dataset_name} model={fp16_model_name} scope={args.scope} dec={dec} thr={args.compress_threshold} base_dtype={args.base_dtype} "
+                                f"base_full_mb={base_full_static_mb:.4f} bsi_full_mb={bsi_full_total_mb:.4f} compression_full={base_full_static_mb / bsi_full_total_mb if bsi_full_total_mb > 0 else 0:.4f} "
+                                f"top1={acc_bsi:.4f} top5={top5_acc:.4f} fwd_ms={fwd_ms:.3f} dot_ms={dot_ms:.3f}\n"
+                            )
 
                 run_results.append(result_entry)
 
@@ -606,10 +668,9 @@ def main():
                     "scope": args.scope,
                     "decimal_places": args.decimal_places,
                     "compress_threshold": args.compress_threshold,
-                    "threshold_attention": args.threshold_attention,
-                    "threshold_mlp": args.threshold_mlp,
                     "layer_stats_batches": args.layer_stats_batches,
-                    "memory_only": args.memory_only
+                    "memory_only": args.memory_only,
+                    "base_dtype": args.base_dtype
                 }
                 write_report(report_dir, run_cfg, fp16_total_static_mb, run_results)
 
