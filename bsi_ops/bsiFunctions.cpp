@@ -365,10 +365,11 @@ DotProductResult dot_product_decimal(torch::Tensor m, torch::Tensor n, int decim
 
     uint64_t start = timeSinceEpoch();
     double raw = static_cast<double>(bsi_1->dot(bsi_2));
+    uint64_t end = timeSinceEpoch();
+
     const int totalDecimals = bsi_1->decimals + bsi_2->decimals;
     double scale = (totalDecimals > 0) ? std::pow(10.0, totalDecimals) : 1.0;
     double res = raw / scale;
-    uint64_t end = timeSinceEpoch();
 
     DotProductResult result;
     result.result = res;
