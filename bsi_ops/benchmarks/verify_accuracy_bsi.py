@@ -231,6 +231,7 @@ def summarize_bsi_model(model: nn.Module) -> Dict[str, Any]:
         "total_bsi_bytes": 0,
         "total_dense_bytes": 0,
         "total_bias_bytes": 0,
+        "total_fp16_linear_bytes": 0,
         "total_static_bytes": 0,
         "total_dense_with_bias_bytes": 0,
         "num_quantized_layers": 0,
@@ -251,6 +252,12 @@ def summarize_bsi_model(model: nn.Module) -> Dict[str, Any]:
                 "weight_dense_bytes": module.weight_dense_memory_bytes,
                 "bias_bytes": module.bias_memory_bytes,
             }
+            # Add equivalent FP16 weight bytes for apples-to-apples reporting
+            try:
+                fp16_bytes = int(module.in_features * module.out_features * 2)
+            except Exception:
+                fp16_bytes = 0
+            layer_stats["weight_fp16_bytes"] = fp16_bytes
             layer_stats["weight_total_slices"] = getattr(module, "weight_total_slices", 0)
             layer_stats["weight_verbatim_slices"] = getattr(module, "weight_verbatim_slices", 0)
             layer_stats["weight_compressed_slices"] = getattr(module, "weight_compressed_slices", 0)
@@ -261,6 +268,7 @@ def summarize_bsi_model(model: nn.Module) -> Dict[str, Any]:
             summary["total_bsi_bytes"] += module.weight_bsi_memory_bytes
             summary["total_dense_bytes"] += module.weight_dense_memory_bytes
             summary["total_bias_bytes"] += module.bias_memory_bytes
+            summary["total_fp16_linear_bytes"] += fp16_bytes
             summary["total_bsi_disk_bytes"] = summary.get("total_bsi_disk_bytes", 0) + layer_stats["weight_bsi_disk_bytes"]
             summary["num_quantized_layers"] += 1
             summary["total_slices"] += layer_stats["weight_total_slices"]

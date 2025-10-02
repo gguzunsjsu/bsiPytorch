@@ -280,16 +280,16 @@ DotProductResult dot_product(torch::Tensor m, torch::Tensor n, float precision_f
 //    std::cout << "m_v size in mb: " << m_v_mb << std::endl;
 //    std::cout << "n_v size in mb: " << n_v_mb << std::endl;
 
-    BsiUnsigned<uint64_t> ubsi;
+    BsiSigned<uint64_t> bsi;
     BsiVector<uint64_t>* bsi_1;
     BsiVector<uint64_t>* bsi_2;
-    bsi_1 = ubsi.buildBsiVector(m_v, 1);
+    bsi_1 = bsi.buildBsiVector(m_v, 1);
     // std::cout << "BSI1 slices: " << bsi_1->getNumberOfSlices() << std::endl;
 //    std::cout << "----------- added bits login -----------" << std::endl;
     bsi_1->setPartitionID(0);
     bsi_1->setFirstSliceFlag(true);
     bsi_1->setLastSliceFlag(true);
-    bsi_2 = ubsi.buildBsiVector(n_v, 1);
+    bsi_2 = bsi.buildBsiVector(n_v, 1);
     // std::cout << "BSI2 slices: " << bsi_2->getNumberOfSlices() << std::endl;
 //    std::cout << "*********** second bits logic ************" << std::endl;
     bsi_2->setPartitionID(0);

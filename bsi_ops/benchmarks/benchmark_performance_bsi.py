@@ -297,17 +297,27 @@ def write_report(report_dir, run_cfg, fp16_static_mb, results):
     layers = summary.get("layers", [])
     with open(os.path.join(report_dir, f"layers_{stamp}.csv"), "w", newline="") as f:
         w = csv.writer(f)
+        # Report sizes in MB and include FP16 per-layer weight size
         w.writerow(["name","in","out","decimalPlaces","compress_threshold",
-                    "weight_bsi_bytes","weight_bsi_disk_bytes","weight_dense_bytes",
-                    "bias_bytes","total_slices","compressed_slices","verbatim_slices",
+                    "bsi_weight_mb","bsi_disk_mb","dense_weight_mb","fp16_weight_mb",
+                    "bias_mb","total_slices","compressed_slices","verbatim_slices",
                     "compressed_pct","verbatim_pct"])
         for L in layers:
+            def _mb(x):
+                try:
+                    return (float(x) / (1024**2))
+                except Exception:
+                    return 0.0
+            bsi_mb = _mb(L.get("weight_bsi_bytes", 0))
+            bsi_disk_mb = _mb(L.get("weight_bsi_disk_bytes", 0))
+            dense_mb = _mb(L.get("weight_dense_bytes", 0))
+            fp16_mb = _mb(L.get("weight_fp16_bytes", 0) or (L.get("weight_dense_bytes", 0) / 2))
+            bias_mb = _mb(L.get("bias_bytes", 0))
             w.writerow([
                 L["name"], L["in_features"], L["out_features"],
                 L["decimalPlaces"], L["compress_threshold"],
-                L.get("weight_bsi_bytes",0),
-                L.get("weight_bsi_disk_bytes",0),   # will be 0 unless you added disk-bytes in Python
-                L["weight_dense_bytes"], L["bias_bytes"],
+                f"{bsi_mb:.4f}", f"{bsi_disk_mb:.4f}", f"{dense_mb:.4f}", f"{fp16_mb:.4f}",
+                f"{bias_mb:.4f}",
                 L.get("weight_total_slices",0),
                 L.get("weight_compressed_slices",0),
                 L.get("weight_verbatim_slices",0),
