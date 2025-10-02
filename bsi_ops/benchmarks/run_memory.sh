@@ -3,11 +3,11 @@ set -euo pipefail
 
 MODELS="opt-125m,opt-1.3b,opt-6.7b"
 DECIMALS=(1 2 3)
-THRS=(0 0.2 0.4 0.5 0.7)
+THRS=(0.4 0.5 0.7)
 
 for THR in "${THRS[@]}"; do
   echo "=== MEMORY-ONLY | thr=${THR} ==="
-  python bsi_ops/benchmarks/benchmark_performance_bsi.py \
+  python benchmarks/benchmark_performance_bsi.py \
     --models "${MODELS}" \
     --memory_only \
     --decimal_places "${DECIMALS[@]}" \

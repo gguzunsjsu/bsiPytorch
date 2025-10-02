@@ -7,12 +7,12 @@ THRS=(0 0.2 0.4 0.5 0.7)
 
 for THR in "${THRS[@]}"; do
   echo "=== EVAL | thr=${THR} ==="
-  python bsi_ops/benchmarks/benchmark_performance_bsi.py \
+  python benchmarks/benchmark_performance_bsi.py \
     --models "${MODELS}" \
     --num_samples 100 --max_seq_len 128 \
     --decimal_places "${DECIMALS[@]}" \
     --compress_threshold "${THR}" \
-    --scope all \
+    --scope attention \
     --base_dtype fp32 \
     --simple_report_txt "reports/simple_eval_thr${THR}.txt" \
     --report_dir "reports/eval_runs_thr${THR}"

@@ -376,6 +376,8 @@ def main():
         help='If set, save quantized BSI keysets for each config to this directory')
     parser.add_argument('--base_dtype', type=str, choices=['fp32','fp16'], default='fp32',
         help='dtype to load the base (pre-quantization) model for reference size (default: fp32)')
+    parser.add_argument('--show_compression_summary', action='store_true',
+        help='Print per-layer slice compression summary (default: off)')
     
     args = parser.parse_args()
 
@@ -536,7 +538,8 @@ def main():
                     print(f"  Reference Full Model Static Size: {base_full_static_mb:.2f}MB")
                     print(f"  BSI Full Model Static Size: {bsi_full_total_mb:.2f}MB")
                     print(f"  Compression vs Full Model: {base_full_static_mb / bsi_full_total_mb if bsi_full_total_mb > 0 else 0:.2f}x")
-                    print_compression_summary(summary, heading=f"{name} Compression Summary")
+                    if args.show_compression_summary:
+                        print_compression_summary(summary, heading=f"{name} Compression Summary")
                     result_entry = {
                         "name": name,
                         "decimal": dec,
@@ -617,7 +620,8 @@ def main():
                                     mx=entry['max_abs']
                                 )
                             )
-                    print_compression_summary(summary, heading=f"{name} Compression Summary")
+                    if args.show_compression_summary:
+                        print_compression_summary(summary, heading=f"{name} Compression Summary")
                     result_entry = {
                         "name": name,
                         "decimal": dec,
