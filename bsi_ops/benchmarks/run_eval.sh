@@ -9,7 +9,7 @@ for THR in "${THRS[@]}"; do
   echo "=== EVAL | thr=${THR} ==="
   python bsi_ops/benchmarks/benchmark_performance_bsi.py \
     --models "${MODELS}" \
-    --num_samples 1000 --max_seq_len 512 \
+    --num_samples 100 --max_seq_len 128 \
     --decimal_places "${DECIMALS[@]}" \
     --compress_threshold "${THR}" \
     --scope all \
