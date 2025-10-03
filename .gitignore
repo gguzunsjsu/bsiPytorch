@@ -18,3 +18,7 @@
 *weights
 saved_bsi/
 reports/
+*.png
+*.so
+.DS_Store
+.ipynb_checkpoints/
