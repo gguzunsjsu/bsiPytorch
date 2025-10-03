@@ -194,7 +194,7 @@ class Evaluator:
     @torch.no_grad()
     def evaluate(self, model):
         model.eval()
-        total, hit = 0, 0
+        total, hit, top5_hit = 0, 0, 0
         latency = 0
         
         if self.device == 'cuda' and torch.cuda.is_available():
@@ -232,12 +232,19 @@ class Evaluator:
             pred = last_token_logits.argmax(dim=-1)
             total += label.size(0)
             hit += (pred == label).sum().item()
+            
+            # top-5 accuracy
+            topk = torch.topk(last_token_logits, k=5, dim=-1)
+            top_ids = [int(x) for x in topk.indices[0].tolist()]
+            if int(label.item()) in top_ids:
+                top5_hit += 1
         
         accuracy = hit / total if total else 0.0
+        top5_accuracy = top5_hit / total if total else 0.0
         avg_latency = latency / max(1, self.num_samples)
         peak_memory = torch.cuda.max_memory_allocated() / (1024**2) if self.device == 'cuda' and torch.cuda.is_available() else 0
 
-        return accuracy, avg_latency, peak_memory
+        return accuracy, top5_accuracy, avg_latency, peak_memory
 
 def print_model_size(model):
     param_size = 0
@@ -446,18 +453,20 @@ def main():
                 print(f"FP16 linear weights size: {fp16_linear_weight_mb:.2f}MB")
 
                 baseline_acc = None
+                baseline_top5 = None
                 baseline_latency = None
                 baseline_peak_mem = 0.0
                 if not args.memory_only:
                     if args.skip_baseline:
                         print("Skipping baseline evaluation (--skip_baseline)")
                     else:
-                        acc_fp16, latency_fp16, mem_fp16 = evaluator.evaluate(model_fp16)
+                        acc_fp16, top5_fp16, latency_fp16, mem_fp16 = evaluator.evaluate(model_fp16)
                         print(
-                            f"-> [NEXT-TOKEN ACC] FP baseline top1={acc_fp16:.4f}, "
+                            f"-> [NEXT-TOKEN ACC] FP baseline top1={acc_fp16:.4f}, top5={top5_fp16:.4f}, "
                             f"avg_fwd={latency_fp16:.3f}ms, peak_mem={mem_fp16:.2f}MB"
                         )
                         baseline_acc = acc_fp16
+                        baseline_top5 = top5_fp16
                         baseline_latency = latency_fp16
                         baseline_peak_mem = mem_fp16
 
@@ -466,7 +475,7 @@ def main():
                     "decimal": None,
                     "scope": "dense",
                     "accuracy_top1": baseline_acc,
-                    "accuracy_top5": None,
+                    "accuracy_top5": baseline_top5,
                     "avg_forward_ms": baseline_latency,
                     "avg_dot_ms": None,
                     "peak_mem_mb": baseline_peak_mem,
@@ -529,15 +538,11 @@ def main():
                     compression_vs_dense = (
                         dense_linear_mb / bsi_total_mb if bsi_total_mb > 0 else 0
                     )
-                    print("\nBSI Static Model Size (quantized layers only):")
-                    print(f"  BSI Quantized Linear Weights: {bsi_weight_mb:.2f} MB")
-                    print(f"  Bias Storage (FP32): {bsi_bias_mb:.2f} MB")
-                    print(f"  Total BSI Linear Storage: {bsi_total_mb:.2f} MB")
-                    print(f"  Dense Linear Weights (reference dtype): {dense_linear_mb:.2f} MB")
-                    print(f"  Compression vs Dense Linear Weights: {compression_vs_dense:.2f}x")
-                    print(f"  Reference Full Model Static Size: {base_full_static_mb:.2f}MB")
-                    print(f"  BSI Full Model Static Size: {bsi_full_total_mb:.2f}MB")
-                    print(f"  Compression vs Full Model: {base_full_static_mb / bsi_full_total_mb if bsi_full_total_mb > 0 else 0:.2f}x")
+                    print(f"Baseline model static size: {base_full_static_mb:.3f}MB")
+                    print(f"BSI model static size: {bsi_full_total_mb:.3f}MB")
+                    compression_ratio = base_full_static_mb / bsi_full_total_mb if bsi_full_total_mb > 0 else 0
+                    print(f"Compression: {compression_ratio:.2f}x")
+
                     if args.show_compression_summary:
                         print_compression_summary(summary, heading=f"{name} Compression Summary")
                     result_entry = {
@@ -597,13 +602,10 @@ def main():
                         f"-> [NEXT-TOKEN ACC] {name} top1={acc_bsi:.4f}, top5={top5_acc:.4f}, "
                         f"avg_fwd={fwd_ms:.3f}ms, dot_only={dot_ms:.3f}ms (per-sample)"
                     )
-                    print(f"  BSI Weights: {bsi_weight_mb:.2f}MB  |  Bias: {bsi_bias_mb:.2f}MB")
-                    print(f"  Total BSI Linear Storage: {bsi_total_mb:.2f}MB")
-                    print(f"  Dense Linear Storage (reference dtype): {dense_linear_mb:.2f}MB")
-                    print(f"  Compression vs Dense Linear Weights: {compression_vs_dense:.2f}x")
-                    print(f"  Reference Full Model Static Size: {base_full_static_mb:.2f}MB")
-                    print(f"  BSI Full Model Static Size: {bsi_full_total_mb:.2f}MB")
-                    print(f"  Compression vs Full Model: {base_full_static_mb / bsi_full_total_mb if bsi_full_total_mb > 0 else 0:.2f}x")
+                    print(f"Baseline model static size: {base_full_static_mb:.3f}MB")
+                    print(f"BSI model static size: {bsi_full_total_mb:.3f}MB")
+                    compression_ratio = base_full_static_mb / bsi_full_total_mb if bsi_full_total_mb > 0 else 0
+                    print(f"Compression: {compression_ratio:.2f}x")
                     if layer_stats:
                         print("  Worst layers by MSE (top 5):")
                         for entry in layer_stats[:5]:

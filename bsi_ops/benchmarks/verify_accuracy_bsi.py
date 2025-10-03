@@ -106,7 +106,7 @@ class BSIQuantizedLinear(torch.nn.Module):
                 print(f"  Input vec stats: min={input_vec.min():.4f}, max={input_vec.max():.4f}, mean={input_vec.mean():.4f}, std={input_vec.std():.4f}")
                 print(f"  Decimal Places used: {self.decimalPlaces}")
             
-            scores, time_taken_ns, _query_bsi_size = bsi_ops.batch_dot_product_prebuilt(
+            scores, time_taken_ns, build_ns, dot_ns, _query_bsi_size = bsi_ops.batch_dot_product_prebuilt(
                 input_vec,
                 self._bsi_keys,
                 float(self.query_compress_threshold)
@@ -137,7 +137,7 @@ class BSIQuantizedLinear(torch.nn.Module):
                     print(f"  After adding bias: min={scores.min():.4f}, max={scores.max():.4f}, mean={scores.mean():.4f}")
             
             output_list.append(scores)
-            dot_ns_this_forward += int(time_taken_ns)
+            dot_ns_this_forward += int(dot_ns)
 
             if self.collect_stats:
                 dense_scores = torch.matmul(self.weight_fp32, input_vec)

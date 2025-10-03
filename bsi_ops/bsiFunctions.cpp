@@ -599,7 +599,7 @@ pybind11::tuple build_bsi_keys(torch::Tensor K, int decimalPlaces, float compres
 }
 
 pybind11::tuple batch_dot_product_prebuilt(torch::Tensor q, pybind11::capsule keyset_cap, 
-                                          float threshold = 0.2f) {
+    float threshold = 0.2f) {
     TORCH_CHECK(q.dim() == 1, "q must be 1D [d]");
     auto* keys = capsule_to_keys(keyset_cap);
     TORCH_CHECK(keys != nullptr, "Invalid BSI keys capsule");
@@ -614,35 +614,40 @@ pybind11::tuple batch_dot_product_prebuilt(torch::Tensor q, pybind11::capsule ke
     std::vector<double> q_v; q_v.reserve(d);
     for (int64_t i = 0; i < d; ++i) q_v.push_back(static_cast<double>(q_a[i]));
 
+    uint64_t build_ns_start = timeSinceEpoch();
     BsiSigned<uint64_t> bsi;
     BsiVector<uint64_t>* bsi_q = bsi.buildBsiVector(q_v, decimalPlaces, threshold_val);
     bsi_q->setPartitionID(0);
     bsi_q->setFirstSliceFlag(true);
     bsi_q->setLastSliceFlag(true);
+    uint64_t build_ns = timeSinceEpoch() - build_ns_start;
+
     size_t mem_q = bsi_q->getSizeInMemory();
 
     auto out = torch::empty({keys->num_keys}, torch::TensorOptions().dtype(torch::kFloat64));
     auto out_a = out.accessor<double, 1>();
 
-    uint64_t total_ns = 0;
+    uint64_t dot_ns = 0;
     for (int64_t r = 0; r < keys->num_keys; ++r) {
-        uint64_t t0 = timeSinceEpoch();
-        double raw = static_cast<double>(bsi_q->dot(keys->keys[r]));
-        uint64_t t1 = timeSinceEpoch();
-        total_ns += (t1 - t0);
-        const int totalDecimals = bsi_q->decimals + keys->keys[r]->decimals;
-        // if (r == 0) {
-        //     std::cout << "[batch_dot_product_prebuilt] q decimals=" << bsi_q->decimals
-        //               << " k decimals=" << keys->keys[r]->decimals << " total=" << totalDecimals
-        //               << " raw=" << raw << std::endl;
-        // }
-        double scale = (totalDecimals > 0) ? std::pow(10.0, totalDecimals) : 1.0;
-        double score = raw / scale;
-        out_a[r] = score;
+    uint64_t t0 = timeSinceEpoch();
+    double raw = static_cast<double>(bsi_q->dot(keys->keys[r]));
+    uint64_t t1 = timeSinceEpoch();
+    dot_ns += (t1 - t0);
+    const int totalDecimals = bsi_q->decimals + keys->keys[r]->decimals;
+    // if (r == 0) {
+    //     std::cout << "[batch_dot_product_prebuilt] q decimals=" << bsi_q->decimals
+    //               << " k decimals=" << keys->keys[r]->decimals << " total=" << totalDecimals
+    //               << " raw=" << raw << std::endl;
+    // }
+    double scale = (totalDecimals > 0) ? std::pow(10.0, totalDecimals) : 1.0;
+    double score = raw / scale;
+    out_a[r] = score;
     }
 
     delete bsi_q;
-    return pybind11::make_tuple(out, total_ns, mem_q);
+
+    uint64_t total_ns = build_ns + dot_ns;
+    return pybind11::make_tuple(out, total_ns, build_ns, dot_ns, mem_q);
 }
 
 pybind11::tuple keyset_size_on_disk(pybind11::capsule keyset_cap) {

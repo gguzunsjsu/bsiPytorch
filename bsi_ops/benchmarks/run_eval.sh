@@ -2,8 +2,8 @@
 set -euo pipefail
 
 MODELS="opt-125m,opt-1.3b,opt-6.7b"
-DECIMALS=(1 2 3)
-THRS=(0 0.2 0.4 0.5 0.7)
+DECIMALS=(2)
+THRS=(0.5)
 
 for THR in "${THRS[@]}"; do
   echo "=== EVAL | thr=${THR} ==="
