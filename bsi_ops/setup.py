@@ -16,7 +16,7 @@ cpu_sources = [
 ]
 
 cuda_sources = cpu_sources + [
-    'csrc/cuda/bsi_cuda.cpp',
+    'csrc/cuda/bsi_cuda.cu',
     'csrc/cuda/bsi_cuda_kernels.cu',
 ]
 
