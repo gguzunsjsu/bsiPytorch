@@ -17,18 +17,20 @@
 
 using u64 = uint64_t;
 
-// kernel decl
-extern "C" void popcount_pairwise_kernel(
+// kernel launcher decls (implemented in .cu)
+extern "C" void launch_popcount_pairwise(
     const unsigned long long* A,
     const unsigned long long* B,
     int Sa, int Sb, int W,
-    unsigned long long* out);
+    unsigned long long* out,
+    cudaStream_t stream);
 
-extern "C" void ewah_decompress_kernel(
+extern "C" void launch_ewah_decompress(
     const unsigned long long* in,
     int in_len,
     int W,
-    unsigned long long* out);
+    unsigned long long* out,
+    cudaStream_t stream);
 
 static inline uint64_t now_ns() {
     using namespace std::chrono;
@@ -204,11 +206,13 @@ static pybind11::tuple dot_product_decimal_cuda(torch::Tensor q, torch::Tensor k
     cudaEvent_t start, end;
     cudaEventCreate(&start); cudaEventCreate(&end);
     cudaEventRecord(start);
-    popcount_pairwise_kernel<<<grid, block>>>(
+    auto stream = at::cuda::getCurrentCUDAStream();
+    launch_popcount_pairwise(
         reinterpret_cast<const unsigned long long*>(A_dev.data_ptr<int64_t>()),
         reinterpret_cast<const unsigned long long*>(B_dev.data_ptr<int64_t>()),
         Sa, Sb, Wa,
-        reinterpret_cast<unsigned long long*>(counts_dev.data_ptr<int64_t>()));
+        reinterpret_cast<unsigned long long*>(counts_dev.data_ptr<int64_t>()),
+        stream.stream());
     cudaEventRecord(end);
     cudaEventSynchronize(end);
     float kernel_ms = 0.0f;
@@ -237,7 +241,8 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda(torch::Tensor q, pybind11
     float threshold_val = query_threshold >= 0.0f ? query_threshold : keys->threshold;
 
     // Build query BSI on CPU
-    auto qa = q.detach().to(torch::kFloat32).cpu().contiguous().accessor<float,1>();
+    auto q_cpu = q.detach().to(torch::kFloat32).cpu().contiguous();
+    auto qa = q_cpu.accessor<float,1>();
     std::vector<double> qv; qv.reserve(d);
     for (int64_t i = 0; i < d; ++i) qv.push_back(static_cast<double>(qa[i]));
 
@@ -272,11 +277,13 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda(torch::Tensor q, pybind11
         dim3 block(256);
         cudaEvent_t start, end; cudaEventCreate(&start); cudaEventCreate(&end);
         cudaEventRecord(start);
-        popcount_pairwise_kernel<<<grid, block>>>(
+        auto stream1 = at::cuda::getCurrentCUDAStream();
+        launch_popcount_pairwise(
             reinterpret_cast<const unsigned long long*>(A_dev.data_ptr<int64_t>()),
             reinterpret_cast<const unsigned long long*>(B_dev.data_ptr<int64_t>()),
             Sa, Sb, Wa,
-            reinterpret_cast<unsigned long long*>(counts_dev.data_ptr<int64_t>()));
+            reinterpret_cast<unsigned long long*>(counts_dev.data_ptr<int64_t>()),
+            stream1.stream());
         cudaEventRecord(end); cudaEventSynchronize(end);
         float kernel_ms = 0.0f; cudaEventElapsedTime(&kernel_ms, start, end);
         cudaEventDestroy(start); cudaEventDestroy(end);
@@ -353,14 +360,13 @@ void register_bsi_cuda(pybind11::module& m) {
                     int in_len = static_cast<int>(hb.buffer.size());
                     if (in_len > 0) {
                         at::Tensor in_dev = torch::from_blob((void*)hb.buffer.data(), {(long long)in_len}, torch::TensorOptions().dtype(torch::kInt64)).clone().to(torch::kCUDA);
-                        // launch one-thread kernel
-                        dim3 grid(1), block(1);
-                        ewah_decompress_kernel<<<1,1>>>(
+                        auto stream = at::cuda::getCurrentCUDAStream();
+                        launch_ewah_decompress(
                             reinterpret_cast<const unsigned long long*>(in_dev.data_ptr<int64_t>()),
                             in_len,
                             Wb,
-                            row_ptr
-                        );
+                            row_ptr,
+                            stream.stream());
                         // a cudaDeviceSynchronize is not strictly needed here; rely on later ops
                     }
                 }
@@ -414,11 +420,13 @@ void register_bsi_cuda(pybind11::module& m) {
             dim3 grid(Sa, km.S); dim3 block(256);
             cudaEvent_t s,e; cudaEventCreate(&s); cudaEventCreate(&e);
             cudaEventRecord(s);
-            popcount_pairwise_kernel<<<grid, block>>>(
+            auto stream2 = at::cuda::getCurrentCUDAStream();
+            launch_popcount_pairwise(
                 reinterpret_cast<const unsigned long long*>(A_dev.data_ptr<int64_t>()),
                 reinterpret_cast<const unsigned long long*>(B_dev.data_ptr<int64_t>()),
                 Sa, km.S, Wa,
-                reinterpret_cast<unsigned long long*>(counts_dev.data_ptr<int64_t>()));
+                reinterpret_cast<unsigned long long*>(counts_dev.data_ptr<int64_t>()),
+                stream2.stream());
             cudaEventRecord(e); cudaEventSynchronize(e);
             float ms=0.0f; cudaEventElapsedTime(&ms,s,e); cudaEventDestroy(s); cudaEventDestroy(e);
             total_kernel_ms += ms;

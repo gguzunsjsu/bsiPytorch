@@ -75,3 +75,24 @@ void ewah_decompress_kernel(
     // pad zeros
     while (out_idx < W) out[out_idx++] = 0ULL;
 }
+
+// Host-callable launchers (called from C++ host code)
+extern "C" void launch_popcount_pairwise(
+    const unsigned long long* A,
+    const unsigned long long* B,
+    int Sa, int Sb, int W,
+    unsigned long long* out,
+    cudaStream_t stream) {
+    dim3 grid(Sa, Sb);
+    dim3 block(256);
+    popcount_pairwise_kernel<<<grid, block, 0, stream>>>(A, B, Sa, Sb, W, out);
+}
+
+extern "C" void launch_ewah_decompress(
+    const unsigned long long* in,
+    int in_len,
+    int W,
+    unsigned long long* out,
+    cudaStream_t stream) {
+    ewah_decompress_kernel<<<1,1,0,stream>>>(in, in_len, W, out);
+}

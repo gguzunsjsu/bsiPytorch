@@ -13,10 +13,10 @@ def has_cuda():
 
 cpu_sources = [
     'bsiFunctions.cpp',
+    'csrc/cuda/bsi_cuda.cpp',
 ]
 
 cuda_sources = cpu_sources + [
-    'csrc/cuda/bsi_cuda.cu',
     'csrc/cuda/bsi_cuda_kernels.cu',
 ]
 
@@ -28,7 +28,7 @@ if has_cuda():
         sources=cuda_sources,
         extra_compile_args={
             'cxx': common_cxx_flags + ['-DBSI_WITH_CUDA=1'],
-            'nvcc': ['-O3']
+            'nvcc': ['-O3', '-std=c++20']
         },
     )
 else:
