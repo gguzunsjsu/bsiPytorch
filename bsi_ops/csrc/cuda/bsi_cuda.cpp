@@ -208,10 +208,10 @@ static pybind11::tuple dot_product_decimal_cuda(torch::Tensor q, torch::Tensor k
     cudaEventRecord(start);
     auto stream = at::cuda::getCurrentCUDAStream();
     launch_popcount_pairwise(
-        reinterpret_cast<const unsigned long long*>(A_dev.data_ptr<int64_t>()),
-        reinterpret_cast<const unsigned long long*>(B_dev.data_ptr<int64_t>()),
+        reinterpret_cast<const unsigned long long*>(A_dev.data_ptr()),
+        reinterpret_cast<const unsigned long long*>(B_dev.data_ptr()),
         Sa, Sb, Wa,
-        reinterpret_cast<unsigned long long*>(counts_dev.data_ptr<int64_t>()),
+        reinterpret_cast<unsigned long long*>(counts_dev.data_ptr()),
         stream.stream());
     cudaEventRecord(end);
     cudaEventSynchronize(end);
@@ -279,10 +279,10 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda(torch::Tensor q, pybind11
         cudaEventRecord(start);
         auto stream1 = at::cuda::getCurrentCUDAStream();
         launch_popcount_pairwise(
-            reinterpret_cast<const unsigned long long*>(A_dev.data_ptr<int64_t>()),
-            reinterpret_cast<const unsigned long long*>(B_dev.data_ptr<int64_t>()),
+            reinterpret_cast<const unsigned long long*>(A_dev.data_ptr()),
+            reinterpret_cast<const unsigned long long*>(B_dev.data_ptr()),
             Sa, Sb, Wa,
-            reinterpret_cast<unsigned long long*>(counts_dev.data_ptr<int64_t>()),
+            reinterpret_cast<unsigned long long*>(counts_dev.data_ptr()),
             stream1.stream());
         cudaEventRecord(end); cudaEventSynchronize(end);
         float kernel_ms = 0.0f; cudaEventElapsedTime(&kernel_ms, start, end);
@@ -343,7 +343,7 @@ void register_bsi_cuda(pybind11::module& m) {
             // Fill each slice
             for (int s=0; s<Sb; ++s) {
                 const auto& hb = bsi_k->bsi[s];
-                auto* row_ptr = reinterpret_cast<unsigned long long*>(B_dev.data_ptr<int64_t>() + (size_t)s * Wb);
+                auto* row_ptr = reinterpret_cast<unsigned long long*>(B_dev.data_ptr() + (size_t)s * Wb);
                 if (hb.isVerbatim()) {
                     // verbatim: copy host words -> device row
                     size_t n = hb.buffer.size();
@@ -365,7 +365,7 @@ void register_bsi_cuda(pybind11::module& m) {
                         at::Tensor in_dev = torch::from_blob((void*)hb.buffer.data(), {(long long)in_len}, torch::TensorOptions().dtype(torch::kInt64)).clone().to(torch::kCUDA);
                         auto stream = at::cuda::getCurrentCUDAStream();
                         launch_ewah_decompress(
-                            reinterpret_cast<const unsigned long long*>(in_dev.data_ptr<int64_t>()),
+                            reinterpret_cast<const unsigned long long*>(in_dev.data_ptr()),
                             in_len,
                             Wb,
                             row_ptr,
@@ -426,10 +426,10 @@ void register_bsi_cuda(pybind11::module& m) {
             cudaEventRecord(s);
             auto stream2 = at::cuda::getCurrentCUDAStream();
             launch_popcount_pairwise(
-                reinterpret_cast<const unsigned long long*>(A_dev.data_ptr<int64_t>()),
-                reinterpret_cast<const unsigned long long*>(B_dev.data_ptr<int64_t>()),
+                reinterpret_cast<const unsigned long long*>(A_dev.data_ptr()),
+                reinterpret_cast<const unsigned long long*>(B_dev.data_ptr()),
                 Sa, km.S, Wa,
-                reinterpret_cast<unsigned long long*>(counts_dev.data_ptr<int64_t>()),
+                reinterpret_cast<unsigned long long*>(counts_dev.data_ptr()),
                 stream2.stream());
             cudaEventRecord(e); cudaEventSynchronize(e);
             float ms=0.0f; cudaEventElapsedTime(&ms,s,e); cudaEventDestroy(s); cudaEventDestroy(e);
