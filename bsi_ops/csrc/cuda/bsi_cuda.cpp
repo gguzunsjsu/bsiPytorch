@@ -397,7 +397,8 @@ void register_bsi_cuda(pybind11::module& m) {
         float thr = (query_threshold >= 0.0f) ? query_threshold : keys->threshold;
 
         // Build query BSI on CPU
-        auto qa = q.detach().to(torch::kFloat32).cpu().contiguous().accessor<float,1>();
+        auto q_cpu2 = q.detach().to(torch::kFloat32).cpu().contiguous();
+        auto qa = q_cpu2.accessor<float,1>();
         std::vector<double> qv; qv.reserve(d);
         for (int64_t i=0;i<d;++i) qv.push_back(static_cast<double>(qa[i]));
         uint64_t t0 = now_ns();
