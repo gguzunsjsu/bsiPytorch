@@ -345,16 +345,19 @@ void register_bsi_cuda(pybind11::module& m) {
                 const auto& hb = bsi_k->bsi[s];
                 auto* row_ptr = reinterpret_cast<unsigned long long*>(B_dev.data_ptr<int64_t>() + (size_t)s * Wb);
                 if (hb.isVerbatim()) {
-                    // verbatim: copy words and pad
+                    // verbatim: copy host words -> device row
                     size_t n = hb.buffer.size();
                     if (n > (size_t)Wb) n = (size_t)Wb;
                     if (n > 0) {
-                        // copy to device
-                        at::Tensor host_view = torch::from_blob((void*)hb.buffer.data(), {(long long)n}, torch::TensorOptions().dtype(torch::kInt64));
-                        at::Tensor dev_dst = torch::from_blob((void*)row_ptr, {(long long)Wb}, torch::device(torch::kCUDA).dtype(torch::kInt64));
-                        dev_dst.narrow(0, 0, (long long)n).copy_(host_view);
+                        auto stream0 = at::cuda::getCurrentCUDAStream();
+                        cudaMemcpyAsync(
+                            row_ptr,
+                            hb.buffer.data(),
+                            n * sizeof(unsigned long long),
+                            cudaMemcpyHostToDevice,
+                            stream0.stream());
                     }
-                    // rest remain zeros
+                    // remaining elements already zeros in B_dev
                 } else {
                     // compressed: upload buffer and decompress on device to row
                     int in_len = static_cast<int>(hb.buffer.size());
