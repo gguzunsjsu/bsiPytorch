@@ -9,11 +9,11 @@
 #include <iostream>
 
 // bring in BSI core (CPU) to build and access slices
-#include "../../bsiCPP/bsi/BsiVector.hpp"
-#include "../../bsiCPP/bsi/BsiSigned.hpp"
-#include "../../bsiCPP/bsi/BsiUnsigned.hpp"
-#include "../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h"
-#include "../../bsiCPP/bsi/hybridBitmap/runninglengthword.h"
+#include "../../../bsiCPP/bsi/BsiVector.hpp"
+#include "../../../bsiCPP/bsi/BsiSigned.hpp"
+#include "../../../bsiCPP/bsi/BsiUnsigned.hpp"
+#include "../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h"
+#include "../../../bsiCPP/bsi/hybridBitmap/runninglengthword.h"
 
 using u64 = uint64_t;
 
