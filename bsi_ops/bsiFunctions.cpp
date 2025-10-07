@@ -703,4 +703,10 @@ PYBIND11_MODULE(bsi_ops, m) {
          "Build a BSI vector for a 1D tensor and return basic slice compression statistics");
     m.def("keyset_size_on_disk", &keyset_size_on_disk, "Return (mem_in_memory, bytes_on_disk)");
     m.def("save_keyset", &save_keyset, "Serialize keyset to directory of .hb slice files");
+
+#ifdef BSI_WITH_CUDA
+    // Register CUDA bindings if built with CUDA
+    void register_bsi_cuda(pybind11::module&);
+    register_bsi_cuda(m);
+#endif
 }

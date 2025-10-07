@@ -51,14 +51,15 @@ class Evaluator:
         return self.tokenizer(examples['text'])
 
     @torch.no_grad()
-    def evaluate_with_bsi(self, model, decimal_cfg=2, scope='all', threshold_cfg=0.2):
+    def evaluate_with_bsi(self, model, decimal_cfg=2, scope='all', threshold_cfg=0.2, bsi_device: str='auto'):
         """Evaluate model with actual BSI quantization on CPU"""
         model.eval()
         total, hit = 0, 0
         latency = 0
 
-        print(f"Quantizing model with BSI (decimal_places={decimal_cfg}, scope={scope})...")
-        model = quantize_model_bsi(model, decimalPlaces=decimal_cfg, scope=scope, compress_threshold=threshold_cfg)
+        print(f"Quantizing model with BSI (decimal_places={decimal_cfg}, scope={scope}, device={bsi_device})...")
+        prefer_cuda = (bsi_device == 'cuda') or (bsi_device == 'auto' and torch.cuda.is_available())
+        model = quantize_model_bsi(model, decimalPlaces=decimal_cfg, scope=scope, compress_threshold=threshold_cfg, prefer_cuda=prefer_cuda)
         summary = summarize_bsi_model(model)
         reset_bsi_dot_counters(model)
         if summary["total_bsi_bytes"] == 0:
@@ -385,6 +386,8 @@ def main():
         help='dtype to load the base (pre-quantization) model for reference size (default: fp32)')
     parser.add_argument('--show_compression_summary', action='store_true',
         help='Print per-layer slice compression summary (default: off)')
+    parser.add_argument('--bsi_device', type=str, choices=['auto','cpu','cuda'], default='auto',
+        help='Preferred device for BSI dot kernels (auto=CUDA if available)')
     
     args = parser.parse_args()
 
@@ -577,7 +580,8 @@ def main():
                         model_bsi,
                         decimal_cfg,
                         scope=args.scope,
-                        threshold_cfg=threshold_global_cfg
+                        threshold_cfg=threshold_global_cfg,
+                        bsi_device=args.bsi_device
                     )
                     # Model is quantized in-place; optionally persist keysets
                     if args.save_bsi_dir:
