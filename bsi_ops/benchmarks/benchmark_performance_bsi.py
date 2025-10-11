@@ -52,7 +52,7 @@ class Evaluator:
 
     @torch.no_grad()
     def evaluate_with_bsi(self, model, decimal_cfg=2, scope='all', threshold_cfg=0.2, bsi_device: str='auto'):
-        """Evaluate model with actual BSI quantization on CPU"""
+        """Evaluate model with actual BSI quantization."""
         model.eval()
         total, hit = 0, 0
         latency = 0
@@ -65,9 +65,12 @@ class Evaluator:
         if summary["total_bsi_bytes"] == 0:
             print("Warning: BSI weight memory not found on modules. Did quantization run?")
 
-        # Always run BSI model on CPU; move inputs to model's device
-        model_device = next(model.parameters()).device
-        assert str(model_device) == 'cpu', "BSI model should be on CPU for evaluation"
+        if prefer_cuda and torch.cuda.is_available():
+            model = model.to('cuda')
+            model_device = torch.device('cuda')
+        else:
+            model = model.to('cpu')
+            model_device = torch.device('cpu')
 
         # Enable layer-wise error stats for first N batches if requested.
         if self.layer_stats_batches > 0:
@@ -91,10 +94,21 @@ class Evaluator:
                     pad_len = max(0, self.max_seq_len - input_ids.shape[1])
                     input_ids = pad(input_ids, (0, pad_len), value=self.pad_id)
 
-                start_time = time.perf_counter()
-                outputs = model(input_ids)
-                end_time = time.perf_counter()
-                batch_fwd_ms = (end_time - start_time) * 1000
+                if model_device.type == 'cuda':
+                    torch.cuda.synchronize()
+                    start_event = torch.cuda.Event(enable_timing=True)
+                    end_event = torch.cuda.Event(enable_timing=True)
+                    start_event.record()
+                    outputs = model(input_ids)
+                    end_event.record()
+                    torch.cuda.synchronize()
+                    batch_fwd_ms = start_event.elapsed_time(end_event)
+                    del start_event, end_event
+                else:
+                    start_time = time.perf_counter()
+                    outputs = model(input_ids)
+                    end_time = time.perf_counter()
+                    batch_fwd_ms = (end_time - start_time) * 1000
                 latency += batch_fwd_ms
 
                 last_token_logits = outputs.logits[:, -2 - pad_len, :]
@@ -142,10 +156,21 @@ class Evaluator:
                     pad_len = max(0, self.max_seq_len - input_ids.shape[1])
                     input_ids = pad(input_ids, (0, pad_len), value=self.pad_id)
 
-                start_time = time.perf_counter()
-                outputs = model(input_ids)
-                end_time = time.perf_counter()
-                batch_fwd_ms = (end_time - start_time) * 1000
+                if model_device.type == 'cuda':
+                    torch.cuda.synchronize()
+                    start_event = torch.cuda.Event(enable_timing=True)
+                    end_event = torch.cuda.Event(enable_timing=True)
+                    start_event.record()
+                    outputs = model(input_ids)
+                    end_event.record()
+                    torch.cuda.synchronize()
+                    batch_fwd_ms = start_event.elapsed_time(end_event)
+                    del start_event, end_event
+                else:
+                    start_time = time.perf_counter()
+                    outputs = model(input_ids)
+                    end_time = time.perf_counter()
+                    batch_fwd_ms = (end_time - start_time) * 1000
                 latency += batch_fwd_ms
 
                 last_token_logits = outputs.logits[:, -2 - pad_len, :]

@@ -129,6 +129,7 @@ struct KeyMeta {
 
 struct PrebuiltBSIKeysCUDA {
     std::vector<at::Tensor> dev_words; // each [S_k, W], int64, cuda
+    std::vector<at::Tensor> slice_weights; // each [S_k], float64, cuda
     std::vector<KeyMeta> metas;
     int W = 0;
     int64_t d = 0;
@@ -146,6 +147,20 @@ static inline long double weight_for_meta(int offset, int idx, bool twos, int S)
     long double w = (shift >= 0) ? std::ldexp(1.0L, shift) : 0.0L;
     if (twos && idx == S - 1) w = -w;
     return w;
+}
+
+static inline at::Tensor make_slice_weights_cuda(int S, int offset, bool twos) {
+    std::vector<double> host(S);
+    for (int i = 0; i < S; ++i) {
+        long double w = weight_for_meta(offset, i, twos, S);
+        host[i] = static_cast<double>(w);
+    }
+    return torch::from_blob(
+               host.data(),
+               {S},
+               torch::TensorOptions().dtype(torch::kFloat64))
+        .clone()
+        .to(torch::kCUDA);
 }
 
 static double accumulate_weighted_dot_meta(
@@ -329,6 +344,7 @@ void register_bsi_cuda(pybind11::module& m) {
         }
 
         holder->dev_words.reserve(num_keys);
+        holder->slice_weights.reserve(num_keys);
         holder->metas.reserve(num_keys);
         size_t total_mem = 0;
         for (int64_t r=0;r<num_keys;++r) {
@@ -376,6 +392,7 @@ void register_bsi_cuda(pybind11::module& m) {
                 }
             }
             holder->dev_words.push_back(B_dev);
+            holder->slice_weights.push_back(make_slice_weights_cuda(Sb, bsi_k->offset, bsi_k->twosComplement));
             KeyMeta meta; meta.S = Sb; meta.offset = bsi_k->offset; meta.twos = bsi_k->twosComplement; meta.decimals = bsi_k->decimals;
             holder->metas.push_back(meta);
             total_mem += bsi_k->getSizeInMemory();
@@ -414,13 +431,14 @@ void register_bsi_cuda(pybind11::module& m) {
         TORCH_CHECK(Wa == keys->W, "word count mismatch (q vs keys)");
         auto A_dev = torch::from_blob(A_host.data(), {Sa, Wa}, torch::dtype(torch::kInt64)).clone().to(torch::kCUDA);
 
-        auto out = torch::empty({keys->num_keys}, torch::TensorOptions().dtype(torch::kFloat64));
-        auto out_a = out.accessor<double,1>();
+        auto out = torch::zeros({keys->num_keys}, torch::TensorOptions().device(torch::kCUDA).dtype(torch::kFloat64));
+        auto query_weights = make_slice_weights_cuda(Sa, bsi_q->offset, bsi_q->twosComplement);
         float total_kernel_ms = 0.0f;
 
         for (int64_t r=0;r<keys->num_keys;++r) {
             const auto& B_dev = keys->dev_words[r];
             const auto& km = keys->metas[r];
+            const auto& key_weights = keys->slice_weights[r];
             auto counts_dev = torch::empty({km.S, Sa}, torch::device(torch::kCUDA).dtype(torch::kInt64));
             dim3 grid(Sa, km.S); dim3 block(256);
             cudaEvent_t s,e; cudaEventCreate(&s); cudaEventCreate(&e);
@@ -436,15 +454,21 @@ void register_bsi_cuda(pybind11::module& m) {
             float ms=0.0f; cudaEventElapsedTime(&ms,s,e); cudaEventDestroy(s); cudaEventDestroy(e);
             total_kernel_ms += ms;
 
-            auto counts_cpu = counts_dev.to(torch::kCPU).contiguous();
-            double score = accumulate_weighted_dot_meta(Sa, bsi_q->offset, bsi_q->twosComplement, bsi_q->decimals, counts_cpu, km);
-            out_a[r] = score;
+            auto counts_fp = counts_dev.to(torch::kFloat64);
+            auto weighted = counts_fp.mul(query_weights.view({1, Sa}));
+            auto slice_sums = weighted.sum(1);
+            auto raw_tensor = slice_sums.mul(key_weights).sum();
+            int totalDecimals = bsi_q->decimals + km.decimals;
+            double scale = (totalDecimals > 0) ? std::pow(10.0, totalDecimals) : 1.0;
+            auto scaled_tensor = raw_tensor / scale;
+            out.index_put_({r}, scaled_tensor);
         }
 
+        size_t mem_q = bsi_q->getSizeInMemory();
         delete bsi_q;
         uint64_t dot_ns = (uint64_t)(total_kernel_ms * 1.0e6);
         uint64_t total_ns = build_ns + dot_ns;
-        return pybind11::make_tuple(out, total_ns, build_ns, dot_ns, (uint64_t)0);
+        return pybind11::make_tuple(out, total_ns, build_ns, dot_ns, (uint64_t)mem_q);
     }, pybind11::arg("q"), pybind11::arg("keyset_cuda_cap"), pybind11::arg("query_threshold") = -1.0f,
        "Batch dot using prepacked CUDA keys and CUDA popcount kernel");
 }

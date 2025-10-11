@@ -96,7 +96,7 @@ class BSIQuantizedLinear(torch.nn.Module):
         self.weight_verbatim_pct = float(self.weight_slice_stats.get("verbatim_pct", 0.0))
         self.total_bsi_static_bytes = self.weight_bsi_memory_bytes + self.bias_memory_bytes
         # Debug/verbosity flag: when True, prints one-time diagnostics on first forward
-        self.verbose = False
+        self.verbose = True
 
         # Error tracking fields toggled via enable_bsi_error_stats.
         self.collect_stats = False
@@ -125,7 +125,8 @@ class BSIQuantizedLinear(torch.nn.Module):
         debug_first = bool(self.verbose) and not hasattr(self, '_debug_printed')
         
         for i in range(x.shape[0]):
-            input_vec = x[i].detach().cpu().contiguous()
+            input_vec = x[i].detach().contiguous()
+            input_vec_cpu = input_vec if input_vec.device.type == 'cpu' else None
             
             # Debug: Print input stats for first batch element
             if debug_first and i == 0:
@@ -147,21 +148,25 @@ class BSIQuantizedLinear(torch.nn.Module):
                     float(self.query_compress_threshold)
                 )
             else:
+                if input_vec_cpu is None:
+                    input_vec_cpu = input_vec.cpu()
                 scores, time_taken_ns, build_ns, dot_ns, _query_bsi_size = bsi_ops.batch_dot_product_prebuilt(
-                    input_vec,
+                    input_vec_cpu,
                     self._bsi_keys,
                     float(self.query_compress_threshold)
                 )
             
             # Debug: Check raw scores from C++
             if debug_first and i == 0:
+                if input_vec_cpu is None:
+                    input_vec_cpu = input_vec.cpu()
                 print(f"  Raw BSI scores from C++: shape={scores.shape}, dtype={scores.dtype}")
                 print(f"    min={scores.min():.4f}, max={scores.max():.4f}, mean={scores.mean():.4f}, std={scores.std():.4f}")
                 print(f"    First 5 values: {scores[:5].tolist()}")
                 
                 # Compare with dense computation
                 with torch.no_grad():
-                    dense_scores_debug = torch.matmul(self.weight_fp32, input_vec)
+                    dense_scores_debug = torch.matmul(self.weight_fp32, input_vec_cpu)
                     print(f"  Dense scores (for comparison): shape={dense_scores_debug.shape}")
                     print(f"    min={dense_scores_debug.min():.4f}, max={dense_scores_debug.max():.4f}, mean={dense_scores_debug.mean():.4f}, std={dense_scores_debug.std():.4f}")
                     print(f"    First 5 values: {dense_scores_debug[:5].tolist()}")
@@ -172,16 +177,19 @@ class BSIQuantizedLinear(torch.nn.Module):
                     
             
             # Add bias if present
-            if self.bias_fp32 is not None:
-                scores = scores + self.bias_fp32
-                if debug_first and i == 0:
-                    print(f"  After adding bias: min={scores.min():.4f}, max={scores.max():.4f}, mean={scores.mean():.4f}")
-            
+            scores = scores.to(device=original_device, dtype=original_dtype, non_blocking=scores.is_cuda and original_device.type == 'cuda')
+            if self.bias is not None:
+                scores = scores + self.bias.to(device=original_device, dtype=original_dtype)
+            if debug_first and i == 0:
+                print(f"  After adding bias: min={scores.min():.4f}, max={scores.max():.4f}, mean={scores.mean():.4f}")
+
             output_list.append(scores)
             dot_ns_this_forward += int(dot_ns)
 
             if self.collect_stats:
-                dense_scores = torch.matmul(self.weight_fp32, input_vec)
+                if input_vec_cpu is None:
+                    input_vec_cpu = input_vec.cpu()
+                dense_scores = torch.matmul(self.weight_fp32, input_vec_cpu)
                 if self.bias_fp32 is not None:
                     dense_scores = dense_scores + self.bias_fp32
                 dense_outputs.append(dense_scores)
@@ -191,10 +199,10 @@ class BSIQuantizedLinear(torch.nn.Module):
             self._debug_printed = True
 
         # accumulate dot-only timing
-            self.dot_ns_total += dot_ns_this_forward
+        self.dot_ns_total += dot_ns_this_forward
         self.dot_calls += 1
 
-        output = torch.stack(output_list).to(original_device).to(original_dtype)
+        output = torch.stack(output_list)
 
         if self.collect_stats and dense_outputs:
             with torch.no_grad():
