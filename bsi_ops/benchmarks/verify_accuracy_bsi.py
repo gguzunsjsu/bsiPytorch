@@ -483,18 +483,23 @@ def main():
     dataset = load_dataset("lambada", split="validation[:10]") 
     evaluator = Evaluator(dataset, tokenizer, device)
     
+    prefer_cuda = device == 'cuda' and torch.cuda.is_available()
+
     print("Loading small model for quick test...")
-    if device == 'cuda':
+    if prefer_cuda:
         model_fp16 = OPTForCausalLM.from_pretrained(
-            model_name, torch_dtype=torch.float16, device_map="auto"
+            model_name, torch_dtype=torch.float16, device_map="auto", use_safetensors=True
+        )
+        model_bsi = OPTForCausalLM.from_pretrained(
+            model_name, torch_dtype=torch.float32, device_map="auto", use_safetensors=True
         )
     else:
         model_fp16 = OPTForCausalLM.from_pretrained(
-            model_name, torch_dtype=torch.float32, device_map="cpu"
+            model_name, torch_dtype=torch.float32, device_map="cpu", use_safetensors=True
         )
-    model_bsi = OPTForCausalLM.from_pretrained(
-        model_name, torch_dtype=torch.float32, device_map="cpu"
-    )
+        model_bsi = OPTForCausalLM.from_pretrained(
+            model_name, torch_dtype=torch.float32, device_map="cpu", use_safetensors=True
+        )
     
     print("Testing FP16 baseline...")
     acc_fp16 = evaluator.evaluate(model_fp16)
@@ -508,12 +513,20 @@ def main():
                 parent_name = '.'.join(name.split('.')[:-1])
                 layer_name = name.split('.')[-1]
                 parent = model_bsi.get_submodule(parent_name)
-                setattr(parent, layer_name, BSIQuantizedLinear(module, decimalPlaces=2, compress_threshold=0.2))
+                setattr(parent, layer_name, BSIQuantizedLinear(
+                    module,
+                    decimalPlaces=2,
+                    compress_threshold=0.2,
+                    prefer_cuda=prefer_cuda,
+                ))
                 layers_quantized += 1
             else:
                 break
-    
+
     print(f"Quantized {layers_quantized} layers")
+
+    if prefer_cuda:
+        model_bsi.to('cuda')
     
     stats = summarize_bsi_model(model_bsi)
     bsi_weight_mb = stats["total_bsi_bytes"] / (1024**2)
