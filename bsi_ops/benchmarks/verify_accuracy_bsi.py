@@ -15,6 +15,28 @@ import gc
 import numpy as np
 from typing import Dict, Any, List, Union, Tuple
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
+
+_cpu_count = os.cpu_count() or 1
+_query_builder_workers = max(1, _cpu_count // 2)
+_QUERY_BUILD_EXECUTOR = ThreadPoolExecutor(max_workers=_query_builder_workers)
+
+def _build_query_cpu(tensor_cpu: torch.Tensor, decimal_places: int, threshold: float):
+    start = time.perf_counter_ns()
+    capsule, mem_bytes, slices = bsi_ops.build_bsi_query(tensor_cpu, decimal_places, threshold)
+    elapsed = time.perf_counter_ns() - start
+    return capsule, mem_bytes, slices, elapsed
+
+def _build_query_cuda(tensor_gpu: torch.Tensor, decimal_places: int, threshold: float, device_index: int):
+    prev_device = torch.cuda.current_device()
+    if prev_device != device_index:
+        torch.cuda.set_device(device_index)
+    start = time.perf_counter_ns()
+    capsule, mem_bytes, slices, words = bsi_ops.build_bsi_query_cuda(tensor_gpu, decimal_places, threshold)
+    elapsed = time.perf_counter_ns() - start
+    if prev_device != device_index:
+        torch.cuda.set_device(prev_device)
+    return capsule, mem_bytes, (slices, words), elapsed
 
 def get_device():
     """Auto-detect best available device"""
@@ -157,48 +179,71 @@ class BSIQuantizedLinear(torch.nn.Module):
         # Debug printing gated by `self.verbose` to avoid overhead in benchmarks
         debug_first = bool(self.verbose) and not hasattr(self, '_debug_printed')
         
-        for i in range(x.shape[0]):
+        use_cuda = (
+            self._bsi_keys_cuda is not None
+            and hasattr(bsi_ops, 'build_bsi_query_cuda')
+            and hasattr(bsi_ops, 'batch_dot_product_prebuilt_cuda_caps')
+            and torch.cuda.is_available()
+        )
+        device_index = torch.cuda.current_device() if use_cuda else None
+
+        batch_size = x.shape[0]
+        batch_inputs: List[torch.Tensor] = []
+        cache_keys: List[Any] = []
+        cpu_inputs: List[torch.Tensor] = [None] * batch_size
+        future_builds: Dict[Any, Any] = {}
+        cached_queries: Dict[Any, Tuple[Any, int]] = {}
+
+        for i in range(batch_size):
             input_vec = x[i].detach().contiguous()
-            input_vec_cpu = input_vec if input_vec.device.type == 'cpu' else None
-            
-            # Debug: Print input stats for first batch element
+            batch_inputs.append(input_vec)
+            cache_key = self._query_cache_key(input_vec)
+            cache_keys.append(cache_key)
+
+            cached_entry = self._query_cache_get(cache_key)
+            if cached_entry is not None:
+                cached_queries[cache_key] = cached_entry
+                if not use_cuda and input_vec.device.type != 'cpu':
+                    cpu_inputs[i] = input_vec.cpu()
+                continue
+
+            if use_cuda:
+                future_builds[cache_key] = _QUERY_BUILD_EXECUTOR.submit(
+                    _build_query_cuda,
+                    input_vec,
+                    self.decimalPlaces,
+                    float(self.query_compress_threshold),
+                    device_index,
+                )
+            else:
+                cpu_tensor = input_vec.cpu() if input_vec.device.type != 'cpu' else input_vec
+                cpu_inputs[i] = cpu_tensor
+                future_builds[cache_key] = _QUERY_BUILD_EXECUTOR.submit(
+                    _build_query_cpu,
+                    cpu_tensor,
+                    self.decimalPlaces,
+                    float(self.query_compress_threshold),
+                )
+
+        for i in range(batch_size):
+            input_vec = batch_inputs[i]
+            input_vec_cpu = cpu_inputs[i]
+
             if debug_first and i == 0:
                 print(f"\n[DEBUG {self.__class__.__name__}] First forward pass diagnostics:")
                 print(f"  Input vec stats: min={input_vec.min():.4f}, max={input_vec.max():.4f}, mean={input_vec.mean():.4f}, std={input_vec.std():.4f}")
                 print(f"  Decimal Places used: {self.decimalPlaces}")
-            
-            use_cuda = (
-                self._bsi_keys_cuda is not None
-                and hasattr(bsi_ops, 'build_bsi_query_cuda')
-                and hasattr(bsi_ops, 'batch_dot_product_prebuilt_cuda_caps')
-                and torch.cuda.is_available()
-            )
 
-            cache_key = self._query_cache_key(input_vec)
-            cached_entry = self._query_cache_get(cache_key)
-            build_ns_python = 0
-            if cached_entry is None:
-                t_build = time.perf_counter_ns()
-                if use_cuda:
-                    query_capsule, query_mem, _, _ = bsi_ops.build_bsi_query_cuda(
-                        input_vec
-                    )
-                else:
-                    if input_vec_cpu is None:
-                        input_vec_cpu = input_vec.cpu()
-                    query_capsule, query_mem, _ = bsi_ops.build_bsi_query(
-                        input_vec_cpu,
-                        self.decimalPlaces,
-                        float(self.query_compress_threshold)
-                    )
-                build_ns_python = time.perf_counter_ns() - t_build
-                self._query_cache_set(cache_key, (query_capsule, query_mem))
-            else:
+            cache_key = cache_keys[i]
+            cached_entry = cached_queries.get(cache_key)
+            if cached_entry is not None:
                 query_capsule, query_mem = cached_entry
-
-            if build_ns_python:
-                self.build_ns_total += build_ns_python
+            else:
+                future = future_builds.pop(cache_key)
+                query_capsule, query_mem, _meta, python_build_ns = future.result()
+                self.build_ns_total += python_build_ns
                 self.build_calls += 1
+                self._query_cache_set(cache_key, (query_capsule, query_mem))
 
             build_ns_cpp = 0
             if use_cuda:
@@ -209,6 +254,7 @@ class BSIQuantizedLinear(torch.nn.Module):
             elif hasattr(bsi_ops, 'batch_dot_product_prebuilt_capsule'):
                 if input_vec_cpu is None:
                     input_vec_cpu = input_vec.cpu()
+                    cpu_inputs[i] = input_vec_cpu
                 scores, time_taken_ns, build_ns_cpp, dot_ns, _query_bsi_size = bsi_ops.batch_dot_product_prebuilt_capsule(
                     query_capsule,
                     self._bsi_keys
@@ -222,6 +268,7 @@ class BSIQuantizedLinear(torch.nn.Module):
             else:
                 if input_vec_cpu is None:
                     input_vec_cpu = input_vec.cpu()
+                    cpu_inputs[i] = input_vec_cpu
                 scores, time_taken_ns, build_ns_cpp, dot_ns, _query_bsi_size = bsi_ops.batch_dot_product_prebuilt(
                     input_vec_cpu,
                     self._bsi_keys,
