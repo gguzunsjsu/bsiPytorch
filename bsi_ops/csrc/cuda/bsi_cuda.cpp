@@ -8,6 +8,7 @@
 #include <chrono>
 #include <iostream>
 #include <cstdint>
+#include <c10/cuda/CUDAFunctions.h>
 
 // bring in BSI core (CPU) to build and access slices
 #include "../../../bsiCPP/bsi/BsiVector.hpp"
@@ -255,7 +256,7 @@ static pybind11::tuple build_bsi_query_cuda(torch::Tensor q, int decimalPlaces, 
     holder->vec->setFirstSliceFlag(true);
     holder->vec->setLastSliceFlag(true);
 
-    auto device = torch::Device(torch::kCUDA, torch::cuda::current_device());
+    auto device = torch::Device(torch::kCUDA, c10::cuda::current_device());
     bool verbose = bsi_cuda_should_log();
     holder->device_view = create_bsi_vector_cuda_from_cpu(*holder->vec, device, verbose);
     holder->S = holder->device_view.slices;
@@ -455,13 +456,15 @@ void register_bsi_cuda(pybind11::module& m) {
             BsiSigned<u64> b;
             BsiVector<u64>* bsi_k = b.buildBsiVector(kv, decimalPlaces, compress_threshold);
             bsi_k->setPartitionID(0); bsi_k->setFirstSliceFlag(true); bsi_k->setLastSliceFlag(true);
-            auto device = torch::Device(torch::kCUDA, torch::cuda::current_device());
-            auto dev_view = create_bsi_vector_cuda_from_cpu(*bsi_k, device, bsi_cuda_should_log());
-            TORCH_CHECK(dev_view.words_per_slice == holder->W,
-                        "word count mismatch while building CUDA keys");
-            holder->device_views.push_back(dev_view);
-            holder->dev_words.push_back(dev_view.words);
-            holder->slice_weights.push_back(make_slice_weights_cuda(Sb, bsi_k->offset, bsi_k->twosComplement));
+            auto device = torch::Device(torch::kCUDA, c10::cuda::current_device());
+        auto dev_view = create_bsi_vector_cuda_from_cpu(*bsi_k, device, bsi_cuda_should_log());
+        int Sb = dev_view.slices;
+        int Wb = dev_view.words_per_slice;
+        TORCH_CHECK(Wb == holder->W,
+                    "word count mismatch while building CUDA keys");
+        holder->device_views.push_back(dev_view);
+        holder->dev_words.push_back(dev_view.words);
+        holder->slice_weights.push_back(make_slice_weights_cuda(Sb, bsi_k->offset, bsi_k->twosComplement));
             KeyMeta meta; meta.S = Sb; meta.offset = bsi_k->offset; meta.twos = bsi_k->twosComplement; meta.decimals = bsi_k->decimals;
             holder->metas.push_back(meta);
             total_mem += bsi_k->getSizeInMemory();
