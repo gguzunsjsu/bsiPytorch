@@ -7,6 +7,8 @@
 #include <iostream>
 
 #include <c10/cuda/CUDAStream.h>
+#include <ATen/ops/bitwise_right_shift.h>
+#include <ATen/ops/floor_divide.h>
 
 namespace {
 inline torch::Tensor make_words_tensor(const std::vector<uint64_t>& words,
@@ -96,7 +98,7 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& input,
             if (abs_vals.bitwise_and(1).ne(0).any().item<bool>()) {
                 break;
             }
-            abs_vals = abs_vals >> 1;
+            abs_vals = at::bitwise_right_shift(abs_vals, 1);
             ++offset;
         }
         // Avoid dropping all slices; keep at least the sign slice.
@@ -106,7 +108,10 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& input,
     }
 
     int stored_slices = std::max(1, total_slices - offset);
-    auto shifted = (offset > 0 && rows > 0) ? (scaled >> offset) : scaled;
+    torch::Tensor shifted = scaled;
+    if (offset > 0 && rows > 0) {
+        shifted = at::bitwise_right_shift(scaled, offset);
+    }
     shifted = shifted.contiguous();
 
     const int words_per_slice = rows > 0 ? static_cast<int>((rows + 63) / 64) : 1;
