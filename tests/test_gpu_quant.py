@@ -31,6 +31,15 @@ def test_gpu_quant_matches_cpu():
                 gpu_cap, _, _, _ = bsi_ops.build_bsi_query_cuda(values, decimals)
                 gpu_words, gpu_rows, gpu_offset, gpu_decimals, gpu_twos = bsi_ops.debug_bsi_query_cuda(gpu_cap)
 
+                print(f"gpu_rows: {gpu_rows}, cpu_rows: {cpu_rows}")
+                print(f"gpu_offset: {gpu_offset}, cpu_offset: {cpu_offset}")
+                print(f"gpu_decimals: {gpu_decimals}, cpu_decimals: {cpu_decimals}")
+                print(f"gpu_twos: {gpu_twos}, cpu_twos: {cpu_twos}")
+                if not torch.equal(gpu_words, cpu_words):
+                    print("cpu_words:", cpu_words.tolist())
+                    print("gpu_words:", gpu_words.tolist())
+                    print("diff:", (gpu_words - cpu_words).tolist())
+
                 assert gpu_rows == cpu_rows == cpu_tensor.numel()
                 assert gpu_offset == cpu_offset
                 assert gpu_decimals == cpu_decimals == decimals
