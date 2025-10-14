@@ -488,6 +488,16 @@ static PrebuiltBSIKeys* capsule_to_keys(const pybind11::capsule& cap) {
     return reinterpret_cast<PrebuiltBSIKeys*>(cap.get_pointer());
 }
 
+struct PrebuiltBSIQuery {
+    BsiVector<uint64_t>* vec = nullptr;
+    int decimalPlaces = 0;
+    float threshold = 0.2f;
+};
+
+static PrebuiltBSIQuery* capsule_to_query(const pybind11::capsule& cap) {
+    return reinterpret_cast<PrebuiltBSIQuery*>(cap.get_pointer());
+}
+
 pybind11::dict keyset_slice_stats(pybind11::capsule keyset_cap) {
     auto* keys = capsule_to_keys(keyset_cap);
     TORCH_CHECK(keys != nullptr, "Invalid BSI keys capsule");
@@ -598,6 +608,45 @@ pybind11::tuple build_bsi_keys(torch::Tensor K, int decimalPlaces, float compres
     return pybind11::make_tuple(cap, total_mem, num_keys, d);
 }
 
+pybind11::tuple build_bsi_query(torch::Tensor q, int decimalPlaces, float compress_threshold = 0.2f) {
+    TORCH_CHECK(q.dim() == 1, "q must be 1D [d]");
+
+    auto q_cpu = q.detach().to(torch::kFloat32).cpu().contiguous();
+    auto accessor = q_cpu.accessor<float, 1>();
+    const int64_t length = accessor.size(0);
+
+    std::vector<double> values;
+    values.reserve(length);
+    for (int64_t i = 0; i < length; ++i) {
+        values.push_back(static_cast<double>(accessor[i]));
+    }
+
+    auto* holder = new PrebuiltBSIQuery();
+    holder->decimalPlaces = decimalPlaces;
+    holder->threshold = compress_threshold;
+
+    BsiSigned<uint64_t> builder;
+    holder->vec = builder.buildBsiVector(values, decimalPlaces, compress_threshold);
+    TORCH_CHECK(holder->vec != nullptr, "Failed to build BSI query vector");
+    holder->vec->setPartitionID(0);
+    holder->vec->setFirstSliceFlag(true);
+    holder->vec->setLastSliceFlag(true);
+
+    pybind11::capsule cap(holder, "PrebuiltBSIQuery",
+        [](PyObject* capsule) {
+            auto* p = reinterpret_cast<PrebuiltBSIQuery*>(PyCapsule_GetPointer(capsule, "PrebuiltBSIQuery"));
+            if (p) {
+                delete p->vec;
+                delete p;
+            }
+        }
+    );
+
+    uint64_t mem_bytes = holder->vec->getSizeInMemory();
+    int slices = holder->vec->getNumberOfSlices();
+    return pybind11::make_tuple(cap, mem_bytes, slices);
+}
+
 pybind11::tuple batch_dot_product_prebuilt(torch::Tensor q, pybind11::capsule keyset_cap, 
     float threshold = 0.2f) {
     TORCH_CHECK(q.dim() == 1, "q must be 1D [d]");
@@ -650,6 +699,36 @@ pybind11::tuple batch_dot_product_prebuilt(torch::Tensor q, pybind11::capsule ke
     return pybind11::make_tuple(out, total_ns, build_ns, dot_ns, mem_q);
 }
 
+pybind11::tuple batch_dot_product_prebuilt_capsule(pybind11::capsule query_cap, pybind11::capsule keyset_cap) {
+    auto* query = capsule_to_query(query_cap);
+    TORCH_CHECK(query != nullptr && query->vec != nullptr, "Invalid BSI query capsule");
+    auto* keys = capsule_to_keys(keyset_cap);
+    TORCH_CHECK(keys != nullptr, "Invalid BSI keys capsule");
+
+    auto* bsi_q = query->vec;
+    const int64_t num_keys = keys->num_keys;
+
+    auto out = torch::empty({num_keys}, torch::TensorOptions().dtype(torch::kFloat64));
+    auto out_a = out.accessor<double, 1>();
+
+    uint64_t dot_ns = 0;
+    for (int64_t r = 0; r < num_keys; ++r) {
+        auto* bsi_k = keys->keys[r];
+        TORCH_CHECK(bsi_k != nullptr, "Null BSI key encountered");
+        uint64_t t0 = timeSinceEpoch();
+        double raw = static_cast<double>(bsi_q->dot(bsi_k));
+        uint64_t t1 = timeSinceEpoch();
+        dot_ns += (t1 - t0);
+        const int totalDecimals = bsi_q->decimals + bsi_k->decimals;
+        double scale = (totalDecimals > 0) ? std::pow(10.0, totalDecimals) : 1.0;
+        out_a[r] = raw / scale;
+    }
+
+    uint64_t total_ns = dot_ns;
+    uint64_t mem_q = bsi_q->getSizeInMemory();
+    return pybind11::make_tuple(out, total_ns, static_cast<uint64_t>(0), dot_ns, mem_q);
+}
+
 pybind11::tuple keyset_size_on_disk(pybind11::capsule keyset_cap) {
     auto* keys = capsule_to_keys(keyset_cap);
     TORCH_CHECK(keys != nullptr, "Invalid BSI keys capsule");
@@ -696,6 +775,11 @@ PYBIND11_MODULE(bsi_ops, m) {
          "Prebuild BSI keys for a weight matrix; returns a capsule and total memory in bytes");
     m.def("batch_dot_product_prebuilt", &batch_dot_product_prebuilt, pybind11::arg("q"), pybind11::arg("keyset_cap"), pybind11::arg("query_threshold") = -1.0f,
          "Batch dot product using prebuilt BSI keys with optional query compression threshold");
+    m.def("build_bsi_query", &build_bsi_query, pybind11::arg("q"), pybind11::arg("decimal_places"), pybind11::arg("compress_threshold") = 0.2f,
+         "Build a BSI query vector and return a capsule plus metadata");
+    m.def("batch_dot_product_prebuilt_capsule", &batch_dot_product_prebuilt_capsule,
+         pybind11::arg("query_cap"), pybind11::arg("keyset_cap"),
+         "Batch dot product using prebuilt query and key capsules");
     m.def("keyset_slice_stats", &keyset_slice_stats, pybind11::arg("keyset_cap"),
          "Aggregate slice statistics for a prebuilt BSI key capsule");
     m.def("tensor_slice_stats", &tensor_slice_stats, pybind11::arg("tensor"), pybind11::arg("decimal_places"),

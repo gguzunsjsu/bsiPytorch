@@ -3,6 +3,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import math
+import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -13,6 +14,7 @@ import bsi_ops
 import gc
 import numpy as np
 from typing import Dict, Any, List, Union, Tuple
+from collections import OrderedDict
 
 def get_device():
     """Auto-detect best available device"""
@@ -103,6 +105,8 @@ class BSIQuantizedLinear(torch.nn.Module):
         self.reset_error_stats()
         self.build_ns_total = 0
         self.build_calls = 0
+        self._query_cache: OrderedDict = OrderedDict()
+        self.max_query_cache = 512
 
     def reset_error_stats(self):
         self.mse_sum = 0.0
@@ -110,6 +114,33 @@ class BSIQuantizedLinear(torch.nn.Module):
         self.cosine_sum = 0.0
         self.max_abs_error = 0.0
         self.samples_tracked = 0
+
+    def clear_query_cache(self):
+        self._query_cache.clear()
+
+    def _query_cache_key(self, tensor: torch.Tensor):
+        storage = tensor.untyped_storage()
+        return (
+            int(storage.data_ptr()),
+            tensor.storage_offset(),
+            tensor.numel(),
+            str(tensor.dtype),
+            tensor.device.type,
+            int(tensor._version)
+        )
+
+    def _query_cache_get(self, key):
+        entry = self._query_cache.get(key)
+        if entry is not None:
+            self._query_cache.move_to_end(key)
+        return entry
+
+    def _query_cache_set(self, key, value):
+        cache = self._query_cache
+        cache[key] = value
+        cache.move_to_end(key)
+        if len(cache) > self.max_query_cache:
+            cache.popitem(last=False)
 
     def forward(self, x):
         original_device = x.device
@@ -136,15 +167,53 @@ class BSIQuantizedLinear(torch.nn.Module):
                 print(f"  Input vec stats: min={input_vec.min():.4f}, max={input_vec.max():.4f}, mean={input_vec.mean():.4f}, std={input_vec.std():.4f}")
                 print(f"  Decimal Places used: {self.decimalPlaces}")
             
-            # Prefer CUDA path if available, otherwise CPU
-            if self._bsi_keys_cuda is not None and hasattr(bsi_ops, 'batch_dot_product_prebuilt_cuda_keys') and torch.cuda.is_available():
-                scores, time_taken_ns, build_ns, dot_ns, _query_bsi_size = bsi_ops.batch_dot_product_prebuilt_cuda_keys(
-                    input_vec,
-                    self._bsi_keys_cuda,
-                    float(self.query_compress_threshold)
+            use_cuda = (
+                self._bsi_keys_cuda is not None
+                and hasattr(bsi_ops, 'build_bsi_query_cuda')
+                and hasattr(bsi_ops, 'batch_dot_product_prebuilt_cuda_caps')
+                and torch.cuda.is_available()
+            )
+
+            cache_key = self._query_cache_key(input_vec)
+            cached_entry = self._query_cache_get(cache_key)
+            build_ns_python = 0
+            if cached_entry is None:
+                t_build = time.perf_counter_ns()
+                if use_cuda:
+                    query_capsule, query_mem, _, _ = bsi_ops.build_bsi_query_cuda(
+                        input_vec
+                    )
+                else:
+                    if input_vec_cpu is None:
+                        input_vec_cpu = input_vec.cpu()
+                    query_capsule, query_mem, _ = bsi_ops.build_bsi_query(
+                        input_vec_cpu,
+                        self.decimalPlaces,
+                        float(self.query_compress_threshold)
+                    )
+                build_ns_python = time.perf_counter_ns() - t_build
+                self._query_cache_set(cache_key, (query_capsule, query_mem))
+            else:
+                query_capsule, query_mem = cached_entry
+
+            if build_ns_python:
+                self.build_ns_total += build_ns_python
+                self.build_calls += 1
+
+            if use_cuda:
+                scores, time_taken_ns, build_ns_cpp, dot_ns, _query_bsi_size = bsi_ops.batch_dot_product_prebuilt_cuda_caps(
+                    query_capsule,
+                    self._bsi_keys_cuda
+                )
+            elif hasattr(bsi_ops, 'batch_dot_product_prebuilt_capsule'):
+                if input_vec_cpu is None:
+                    input_vec_cpu = input_vec.cpu()
+                scores, time_taken_ns, build_ns_cpp, dot_ns, _query_bsi_size = bsi_ops.batch_dot_product_prebuilt_capsule(
+                    query_capsule,
+                    self._bsi_keys
                 )
             elif hasattr(bsi_ops, 'batch_dot_product_prebuilt_cuda') and torch.cuda.is_available():
-                scores, time_taken_ns, build_ns, dot_ns, _query_bsi_size = bsi_ops.batch_dot_product_prebuilt_cuda(
+                scores, time_taken_ns, build_ns_cpp, dot_ns, _query_bsi_size = bsi_ops.batch_dot_product_prebuilt_cuda(
                     input_vec,
                     self._bsi_keys,
                     float(self.query_compress_threshold)
@@ -152,11 +221,14 @@ class BSIQuantizedLinear(torch.nn.Module):
             else:
                 if input_vec_cpu is None:
                     input_vec_cpu = input_vec.cpu()
-                scores, time_taken_ns, build_ns, dot_ns, _query_bsi_size = bsi_ops.batch_dot_product_prebuilt(
+                scores, time_taken_ns, build_ns_cpp, dot_ns, _query_bsi_size = bsi_ops.batch_dot_product_prebuilt(
                     input_vec_cpu,
                     self._bsi_keys,
                     float(self.query_compress_threshold)
                 )
+            if build_ns_cpp:
+                self.build_ns_total += int(build_ns_cpp)
+                self.build_calls += 1
             
             # Debug: Check raw scores from C++
             if debug_first and i == 0:
@@ -244,6 +316,7 @@ def reset_bsi_dot_counters(model: nn.Module):
             m.dot_calls = 0
             m.build_ns_total = 0
             m.build_calls = 0
+            m.clear_query_cache()
 
 def sum_bsi_dot_counters(model: nn.Module) -> int:
     total = 0

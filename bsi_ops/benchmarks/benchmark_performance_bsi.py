@@ -514,6 +514,7 @@ def main():
                     "accuracy_top1": baseline_acc,
                     "accuracy_top5": baseline_top5,
                     "avg_forward_ms": baseline_latency,
+                    "avg_build_ms": None,
                     "avg_dot_ms": None,
                     "peak_mem_mb": baseline_peak_mem,
                     "summary": {
