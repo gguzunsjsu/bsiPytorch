@@ -12,6 +12,7 @@ cpu_sources = [
 # CUDA sources include the CUDA wrapper
 cuda_sources = [
     'bsiFunctions.cpp',
+    'csrc/cuda/bsi_vector_cuda.cpp',
     'csrc/cuda/bsi_cuda.cpp',
     'csrc/cuda/bsi_cuda_kernels.cu',
 ]

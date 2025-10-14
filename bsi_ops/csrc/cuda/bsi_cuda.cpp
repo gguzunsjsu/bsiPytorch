@@ -16,6 +16,8 @@
 #include "../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h"
 #include "../../../bsiCPP/bsi/hybridBitmap/runninglengthword.h"
 
+#include "bsi_vector_cuda.h"
+
 using u64 = uint64_t;
 
 // kernel launcher decls (implemented in .cu)
@@ -49,44 +51,6 @@ static inline uint64_t now_ns() {
 }
 
 // Flatten one HybridBitmap (compressed or verbatim) to verbatim word buffer of length W words
-static void hb_to_verbatim_words(const HybridBitmap<u64>& hb, int64_t rows, std::vector<u64>& out_words) {
-    const int word_bits = 8 * sizeof(u64); // 64
-    const int64_t W = (rows + word_bits - 1) / word_bits;
-    out_words.clear();
-    out_words.reserve(W);
-
-    HybridBitmapRawIterator<u64> it = hb.raw_iterator();
-    HybridBitmap<u64> tmp(true);
-    size_t written = 0;
-    while (it.hasNext() && written < (size_t)W) {
-        auto& brlw = it.next();
-        size_t before = tmp.buffer.size();
-        size_t just = brlw.dischargeDecompressed(tmp, (size_t)W - written);
-        written += just;
-        // if nothing written (should not happen), break to avoid infinite loop
-        if (tmp.buffer.size() == before && just == 0) break;
-    }
-    // pad to W
-    out_words.assign(tmp.buffer.begin(), tmp.buffer.end());
-    if (out_words.size() < (size_t)W) out_words.resize((size_t)W, 0ULL);
-}
-
-// Flatten full BsiVector into [S, W] verbatim words
-static void bsi_flatten_words(const BsiVector<u64>& v, std::vector<u64>& out, int& S, int& W) {
-    const int word_bits = 8 * (int)sizeof(u64);
-    const int64_t rows = v.getNumberOfRows();
-    W = (int)((rows + word_bits - 1) / word_bits);
-    S = v.getNumberOfSlices();
-    out.clear();
-    out.resize((size_t)S * (size_t)W, 0ULL);
-
-    std::vector<u64> tmp;
-    for (int s = 0; s < S; ++s) {
-        hb_to_verbatim_words(v.bsi[s], rows, tmp);
-        std::copy(tmp.begin(), tmp.end(), out.begin() + (size_t)s * (size_t)W);
-    }
-}
-
 struct PrebuiltBSIKeys {
     std::vector<BsiVector<u64>*> keys;
     int decimalPlaces = 0;
@@ -141,6 +105,7 @@ struct PrebuiltBSIKeysCUDA {
     std::vector<at::Tensor> dev_words; // each [S_k, W], int64, cuda
     std::vector<at::Tensor> slice_weights; // each [S_k], float64, cuda
     std::vector<KeyMeta> metas;
+    std::vector<BsiVectorCudaData> device_views;
     int W = 0;
     int64_t d = 0;
     int64_t num_keys = 0;
@@ -154,7 +119,8 @@ static PrebuiltBSIKeysCUDA* capsule_to_keys_cuda(const pybind11::capsule& cap) {
 
 struct PrebuiltBSIQueryCUDA {
     BsiVector<u64>* vec = nullptr;
-    at::Tensor dev_words;      // [S, W]
+    BsiVectorCudaData device_view;
+    at::Tensor dev_words;      // alias of device_view.words
     at::Tensor slice_weights;  // [S]
     int S = 0;
     int W = 0;
@@ -229,8 +195,8 @@ static pybind11::tuple dot_product_decimal_cuda(torch::Tensor q, torch::Tensor k
     // Flatten to words [S,W]
     std::vector<u64> A_host, B_host;
     int Sa=0, Wa=0, Sb=0, Wb=0;
-    bsi_flatten_words(*bsi_q, A_host, Sa, Wa);
-    bsi_flatten_words(*bsi_k, B_host, Sb, Wb);
+    bsi_flatten_words_gpu_helper(*bsi_q, A_host, Sa, Wa);
+    bsi_flatten_words_gpu_helper(*bsi_k, B_host, Sb, Wb);
     TORCH_CHECK(Wa == Wb, "word count mismatch");
 
     // Device buffers
@@ -289,14 +255,13 @@ static pybind11::tuple build_bsi_query_cuda(torch::Tensor q, int decimalPlaces, 
     holder->vec->setFirstSliceFlag(true);
     holder->vec->setLastSliceFlag(true);
 
-    std::vector<u64> words_host;
-    int Sa = 0;
-    int Wa = 0;
-    bsi_flatten_words(*holder->vec, words_host, Sa, Wa);
-    holder->S = Sa;
-    holder->W = Wa;
-    auto dev = torch::from_blob(words_host.data(), {Sa, Wa}, torch::dtype(torch::kInt64)).clone().to(torch::kCUDA);
-    holder->dev_words = dev;
+    auto device = torch::Device(torch::kCUDA, torch::cuda::current_device());
+    bool verbose = bsi_cuda_should_log();
+    holder->device_view = create_bsi_vector_cuda_from_cpu(*holder->vec, device, verbose);
+    holder->S = holder->device_view.slices;
+    holder->W = holder->device_view.words_per_slice;
+    holder->dev_words = holder->device_view.words;
+    int Sa = holder->S;
     holder->slice_weights = make_slice_weights_cuda(Sa, holder->vec->offset, holder->vec->twosComplement);
     holder->mem_bytes = holder->vec->getSizeInMemory();
 
@@ -338,7 +303,7 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda(torch::Tensor q, pybind11
 
     // Flatten query
     std::vector<u64> A_host; int Sa=0, Wa=0;
-    bsi_flatten_words(*bsi_q, A_host, Sa, Wa);
+    bsi_flatten_words_gpu_helper(*bsi_q, A_host, Sa, Wa);
     auto A_dev = torch::from_blob(A_host.data(), {Sa, Wa}, torch::dtype(torch::kInt64)).clone().to(torch::kCUDA);
 
     // Prepare output scores (CPU double)
@@ -352,7 +317,7 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda(torch::Tensor q, pybind11
 
         // Flatten key
         std::vector<u64> B_host; int Sb=0, Wb=0;
-        bsi_flatten_words(*bsi_k, B_host, Sb, Wb);
+        bsi_flatten_words_gpu_helper(*bsi_k, B_host, Sb, Wb);
         TORCH_CHECK(Wb == Wa, "word count mismatch");
         auto B_dev = torch::from_blob(B_host.data(), {Sb, Wa}, torch::dtype(torch::kInt64)).clone().to(torch::kCUDA);
         auto counts_dev = torch::empty({Sb, Sa}, torch::device(torch::kCUDA).dtype(torch::kInt64));
@@ -475,13 +440,14 @@ void register_bsi_cuda(pybind11::module& m) {
             std::vector<double> tmp_row; tmp_row.reserve(d);
             for (int64_t c=0;c<d;++c) tmp_row.push_back(static_cast<double>(Ka[0][c]));
             BsiSigned<u64> b; BsiVector<u64>* t = b.buildBsiVector(tmp_row, decimalPlaces, compress_threshold);
-            int S0, W0; std::vector<u64> tmp_words; bsi_flatten_words(*t, tmp_words, S0, W0);
+            int S0, W0; std::vector<u64> tmp_words; bsi_flatten_words_gpu_helper(*t, tmp_words, S0, W0);
             holder->W = W0; delete t;
         }
 
         holder->dev_words.reserve(num_keys);
         holder->slice_weights.reserve(num_keys);
         holder->metas.reserve(num_keys);
+        holder->device_views.reserve(num_keys);
         size_t total_mem = 0;
         for (int64_t r=0;r<num_keys;++r) {
             std::vector<double> kv; kv.reserve(d);
@@ -489,45 +455,12 @@ void register_bsi_cuda(pybind11::module& m) {
             BsiSigned<u64> b;
             BsiVector<u64>* bsi_k = b.buildBsiVector(kv, decimalPlaces, compress_threshold);
             bsi_k->setPartitionID(0); bsi_k->setFirstSliceFlag(true); bsi_k->setLastSliceFlag(true);
-            // Allocate device matrix [S, W]
-            int Sb = bsi_k->getNumberOfSlices();
-            int Wb = holder->W;
-            auto B_dev = torch::zeros({Sb, Wb}, torch::device(torch::kCUDA).dtype(torch::kInt64));
-            // Fill each slice
-            for (int s=0; s<Sb; ++s) {
-                const auto& hb = bsi_k->bsi[s];
-                auto* row_ptr = reinterpret_cast<unsigned long long*>(B_dev.data_ptr<int64_t>() + (size_t)s * (size_t)Wb);
-                if (hb.isVerbatim()) {
-                    // verbatim: copy host words -> device row
-                    size_t n = hb.buffer.size();
-                    if (n > (size_t)Wb) n = (size_t)Wb;
-                    if (n > 0) {
-                        auto stream0 = at::cuda::getCurrentCUDAStream();
-                        cudaMemcpyAsync(
-                            row_ptr,
-                            hb.buffer.data(),
-                            n * sizeof(unsigned long long),
-                            cudaMemcpyHostToDevice,
-                            stream0.stream());
-                    }
-                    // remaining elements already zeros in B_dev
-                } else {
-                    // compressed: upload buffer and decompress on device to row
-                    int in_len = static_cast<int>(hb.buffer.size());
-                    if (in_len > 0) {
-                        at::Tensor in_dev = torch::from_blob((void*)hb.buffer.data(), {(long long)in_len}, torch::TensorOptions().dtype(torch::kInt64)).clone().to(torch::kCUDA);
-                        auto stream = at::cuda::getCurrentCUDAStream();
-                        launch_ewah_decompress(
-                            reinterpret_cast<const unsigned long long*>(in_dev.data_ptr<int64_t>()),
-                            in_len,
-                            Wb,
-                            row_ptr,
-                            stream.stream());
-                        // a cudaDeviceSynchronize is not strictly needed here; rely on later ops
-                    }
-                }
-            }
-            holder->dev_words.push_back(B_dev);
+            auto device = torch::Device(torch::kCUDA, torch::cuda::current_device());
+            auto dev_view = create_bsi_vector_cuda_from_cpu(*bsi_k, device, bsi_cuda_should_log());
+            TORCH_CHECK(dev_view.words_per_slice == holder->W,
+                        "word count mismatch while building CUDA keys");
+            holder->device_views.push_back(dev_view);
+            holder->dev_words.push_back(dev_view.words);
             holder->slice_weights.push_back(make_slice_weights_cuda(Sb, bsi_k->offset, bsi_k->twosComplement));
             KeyMeta meta; meta.S = Sb; meta.offset = bsi_k->offset; meta.twos = bsi_k->twosComplement; meta.decimals = bsi_k->decimals;
             holder->metas.push_back(meta);
@@ -563,7 +496,7 @@ void register_bsi_cuda(pybind11::module& m) {
         BsiVector<u64>* bsi_q = b.buildBsiVector(qv, decimals, thr);
         bsi_q->setPartitionID(0); bsi_q->setFirstSliceFlag(true); bsi_q->setLastSliceFlag(true);
         uint64_t build_ns = now_ns() - t0;
-        int Sa, Wa; std::vector<u64> A_host; bsi_flatten_words(*bsi_q, A_host, Sa, Wa);
+        int Sa, Wa; std::vector<u64> A_host; bsi_flatten_words_gpu_helper(*bsi_q, A_host, Sa, Wa);
         TORCH_CHECK(Wa == keys->W, "word count mismatch (q vs keys)");
         auto A_dev = torch::from_blob(A_host.data(), {Sa, Wa}, torch::dtype(torch::kInt64)).clone().to(torch::kCUDA);
 
