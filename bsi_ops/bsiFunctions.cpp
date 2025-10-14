@@ -5,6 +5,7 @@
 #include <cmath>
 #include <torch/extension.h>
 #include <filesystem>
+#include "csrc/cuda/bsi_vector_utils.h"
 // #include <ATen/ATen.h>
 
 #include <vector>
@@ -729,6 +730,31 @@ pybind11::tuple batch_dot_product_prebuilt_capsule(pybind11::capsule query_cap, 
     return pybind11::make_tuple(out, total_ns, static_cast<uint64_t>(0), dot_ns, mem_q);
 }
 
+pybind11::tuple debug_bsi_query_words(pybind11::capsule query_cap) {
+    auto* query = capsule_to_query(query_cap);
+    TORCH_CHECK(query != nullptr && query->vec != nullptr, "Invalid BSI query capsule");
+
+    std::vector<uint64_t> words;
+    int slices = 0;
+    int words_per_slice = 0;
+    bsi_flatten_words_gpu_helper<uint64_t>(*query->vec, words, slices, words_per_slice);
+
+    auto tensor = torch::from_blob(
+                      words.data(),
+                      {slices, words_per_slice},
+                      torch::TensorOptions().dtype(torch::kInt64))
+                      .clone();
+    tensor = tensor.contiguous();
+
+    int64_t rows = query->vec->getNumberOfRows();
+    return pybind11::make_tuple(
+        tensor,
+        rows,
+        query->vec->offset,
+        query->vec->decimals,
+        static_cast<bool>(query->vec->twosComplement));
+}
+
 pybind11::tuple keyset_size_on_disk(pybind11::capsule keyset_cap) {
     auto* keys = capsule_to_keys(keyset_cap);
     TORCH_CHECK(keys != nullptr, "Invalid BSI keys capsule");
@@ -793,4 +819,8 @@ PYBIND11_MODULE(bsi_ops, m) {
     void register_bsi_cuda(pybind11::module&);
     register_bsi_cuda(m);
 #endif
+
+    m.def("debug_bsi_query_words", &debug_bsi_query_words,
+          pybind11::arg("query_cap"),
+          "Return verbatim words and metadata for a CPU-built BSI query capsule");
 }

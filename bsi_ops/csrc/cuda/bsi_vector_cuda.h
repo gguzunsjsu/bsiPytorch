@@ -21,6 +21,11 @@ struct BsiVectorCudaData {
 
 bool bsi_cuda_should_log();
 
+BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& values,
+                                                     int decimal_places,
+                                                     const torch::Device& device,
+                                                     bool verbose = false);
+
 BsiVectorCudaData create_bsi_vector_cuda_from_cpu(const BsiVector<uint64_t>& src,
                                                   const torch::Device& device,
                                                   bool verbose = false);

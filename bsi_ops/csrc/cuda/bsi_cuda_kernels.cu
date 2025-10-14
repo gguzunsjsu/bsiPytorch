@@ -114,6 +114,34 @@ void ewah_decompress_kernel(
     while (out_idx < W) out[out_idx++] = 0ULL;
 }
 
+extern "C" __global__
+void pack_bits_all_kernel(
+    const long long* __restrict__ values,
+    int64_t n,
+    int slices,
+    int words_per_slice,
+    unsigned long long value_mask,
+    unsigned long long* __restrict__ out)
+{
+    int total = slices * words_per_slice;
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= total) return;
+
+    int slice = idx / words_per_slice;
+    int word_idx = idx % words_per_slice;
+    int64_t base_row = static_cast<int64_t>(word_idx) * 64;
+
+    unsigned long long word = 0ULL;
+    for (int bit = 0; bit < 64; ++bit) {
+        int64_t row = base_row + bit;
+        if (row >= n) break;
+        unsigned long long v = static_cast<unsigned long long>(values[row]) & value_mask;
+        unsigned long long bit_val = (v >> slice) & 1ULL;
+        word |= (bit_val << bit);
+    }
+    out[idx] = word;
+}
+
 // Host-callable launchers (called from C++ host code)
 extern "C" void launch_popcount_pairwise(
     const unsigned long long* A,
@@ -147,4 +175,28 @@ extern "C" void launch_ewah_decompress(
     unsigned long long* out,
     cudaStream_t stream) {
     ewah_decompress_kernel<<<1,1,0,stream>>>(in, in_len, W, out);
+}
+
+extern "C" void launch_pack_bits_all(
+    const long long* values,
+    int64_t n,
+    int slices,
+    int words_per_slice,
+    unsigned long long value_mask,
+    unsigned long long* out,
+    cudaStream_t stream)
+{
+    int total = slices * words_per_slice;
+    if (total <= 0) {
+        return;
+    }
+    int threads = 128;
+    int blocks = (total + threads - 1) / threads;
+    pack_bits_all_kernel<<<blocks, threads, 0, stream>>>(
+        values,
+        n,
+        slices,
+        words_per_slice,
+        value_mask,
+        out);
 }

@@ -237,34 +237,21 @@ static pybind11::tuple dot_product_decimal_cuda(torch::Tensor q, torch::Tensor k
 
 static pybind11::tuple build_bsi_query_cuda(torch::Tensor q, int decimalPlaces, float compress_threshold = 0.2f) {
     TORCH_CHECK(q.dim() == 1, "q must be 1D [d]");
-
-    auto q_cpu = q.detach().to(torch::kFloat32).cpu().contiguous();
-    auto qa = q_cpu.accessor<float, 1>();
-    const int64_t d = qa.size(0);
-
-    std::vector<double> values;
-    values.reserve(d);
-    for (int64_t i = 0; i < d; ++i) {
-        values.push_back(static_cast<double>(qa[i]));
-    }
+    (void)compress_threshold;
 
     auto* holder = new PrebuiltBSIQueryCUDA();
-    BsiSigned<u64> builder;
-    holder->vec = builder.buildBsiVector(values, decimalPlaces, compress_threshold);
-    TORCH_CHECK(holder->vec != nullptr, "Failed to build BSI query vector");
-    holder->vec->setPartitionID(0);
-    holder->vec->setFirstSliceFlag(true);
-    holder->vec->setLastSliceFlag(true);
+    holder->vec = nullptr;
 
     auto device = torch::Device(torch::kCUDA, c10::cuda::current_device());
     bool verbose = bsi_cuda_should_log();
-    holder->device_view = create_bsi_vector_cuda_from_cpu(*holder->vec, device, verbose);
+    holder->device_view = build_bsi_vector_from_float_tensor(q.detach(), decimalPlaces, device, verbose);
     holder->S = holder->device_view.slices;
     holder->W = holder->device_view.words_per_slice;
     holder->dev_words = holder->device_view.words;
-    int Sa = holder->S;
-    holder->slice_weights = make_slice_weights_cuda(Sa, holder->vec->offset, holder->vec->twosComplement);
-    holder->mem_bytes = holder->vec->getSizeInMemory();
+    holder->slice_weights = make_slice_weights_cuda(holder->S,
+                                                    holder->device_view.offset,
+                                                    holder->device_view.twos_complement);
+    holder->mem_bytes = static_cast<size_t>(holder->dev_words.numel() * holder->dev_words.element_size());
 
     pybind11::capsule cap(holder, "PrebuiltBSIQueryCUDA",
         [](PyObject* capsule) {
@@ -354,7 +341,7 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda(torch::Tensor q, pybind11
 static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule query_cap,
                                                             pybind11::capsule keyset_cuda_cap) {
     auto* query = capsule_to_query_cuda(query_cap);
-    TORCH_CHECK(query != nullptr && query->vec != nullptr, "Invalid BSI query capsule");
+    TORCH_CHECK(query != nullptr, "Invalid BSI query capsule");
     auto* keys = capsule_to_keys_cuda(keyset_cuda_cap);
     TORCH_CHECK(keys != nullptr, "Invalid CUDA keys capsule");
 
@@ -403,7 +390,7 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
     for (int64_t r = 0; r < keys->num_keys; ++r) {
         const auto& km = keys->metas[r];
         double raw = out_cpu_a[r];
-        int totalDecimals = query->vec->decimals + km.decimals;
+        int totalDecimals = query->device_view.decimals + km.decimals;
         double scale = (totalDecimals > 0) ? std::pow(10.0, totalDecimals) : 1.0;
         out_a[r] = raw / scale;
     }
@@ -543,4 +530,17 @@ void register_bsi_cuda(pybind11::module& m) {
         return pybind11::make_tuple(out, total_ns, build_ns, dot_ns, (uint64_t)mem_q);
     }, pybind11::arg("q"), pybind11::arg("keyset_cuda_cap"), pybind11::arg("query_threshold") = -1.0f,
        "Batch dot using prepacked CUDA keys and CUDA popcount kernel");
+
+    m.def("debug_bsi_query_cuda", [](pybind11::capsule query_cap) {
+        auto* query = capsule_to_query_cuda(query_cap);
+        TORCH_CHECK(query != nullptr, "Invalid BSI CUDA query capsule");
+        auto words_cpu = query->dev_words.to(torch::kCPU).clone();
+        return pybind11::make_tuple(
+            words_cpu,
+            query->device_view.rows,
+            query->device_view.offset,
+            query->device_view.decimals,
+            query->device_view.twos_complement);
+    }, pybind11::arg("query_cap"),
+       "Return words and metadata for a GPU-built BSI query capsule (words copied to CPU)");
 }
