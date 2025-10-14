@@ -8,7 +8,6 @@
 
 #include <c10/cuda/CUDAStream.h>
 #include <ATen/ops/bitwise_right_shift.h>
-#include <ATen/ops/floor_divide.h>
 
 namespace {
 inline torch::Tensor make_words_tensor(const std::vector<uint64_t>& words,
@@ -27,7 +26,7 @@ inline torch::Tensor make_words_tensor(const std::vector<uint64_t>& words,
 }
 } // namespace
 
-extern "C" void launch_pack_bits_all(const long long* values,
+extern "C" void launch_pack_bits_all(const int64_t* values,
                                      int64_t n,
                                      int slices,
                                      int words_per_slice,
@@ -124,7 +123,7 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& input,
             : ((1ULL << stored_slices) - 1ULL);
         auto stream = at::cuda::getCurrentCUDAStream();
         launch_pack_bits_all(
-            shifted.data_ptr<long long>(),
+            shifted.data_ptr<int64_t>(),
             rows,
             stored_slices,
             words_per_slice,

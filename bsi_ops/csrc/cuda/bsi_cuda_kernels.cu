@@ -116,7 +116,7 @@ void ewah_decompress_kernel(
 
 extern "C" __global__
 void pack_bits_all_kernel(
-    const long long* __restrict__ values,
+    const int64_t* __restrict__ values,
     int64_t n,
     int slices,
     int words_per_slice,
@@ -178,7 +178,7 @@ extern "C" void launch_ewah_decompress(
 }
 
 extern "C" void launch_pack_bits_all(
-    const long long* values,
+    const int64_t* values,
     int64_t n,
     int slices,
     int words_per_slice,
