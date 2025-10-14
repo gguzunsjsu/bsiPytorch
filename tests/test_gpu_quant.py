@@ -4,7 +4,6 @@ import torch
 bsi_ops = pytest.importorskip("bsi_ops")
 
 
-@pytest.mark.cuda
 def test_gpu_quant_matches_cpu():
     if not torch.cuda.is_available():
         pytest.skip("CUDA is required for GPU quantisation parity test")

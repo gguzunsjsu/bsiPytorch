@@ -7,7 +7,10 @@
 #include <iostream>
 
 #include <c10/cuda/CUDAStream.h>
+#include <ATen/ops/abs.h>
 #include <ATen/ops/bitwise_right_shift.h>
+#include <ATen/ops/floor.h>
+#include <ATen/ops/sign.h>
 
 namespace {
 inline torch::Tensor make_words_tensor(const std::vector<uint64_t>& words,
@@ -69,7 +72,9 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& input,
     auto values = input.to(device, torch::kFloat64, /*non_blocking=*/true).contiguous();
 
     const double scale = std::pow(10.0, static_cast<double>(decimal_places));
-    auto scaled = torch::round(values * scale).to(torch::kInt64);
+    auto scaled_fp = values * scale;
+    auto rounded = torch::sign(scaled_fp) * torch::floor(torch::abs(scaled_fp) + 0.5);
+    auto scaled = rounded.to(torch::kInt64);
     const int64_t rows = scaled.size(0);
 
     bool any_non_zero = (rows > 0) && scaled.ne(0).any().item<bool>();
