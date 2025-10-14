@@ -10,7 +10,7 @@ from datasets import load_dataset
 import time
 from verify_accuracy_bsi import (
     quantize_model_bsi, summarize_bsi_model,
-    reset_bsi_dot_counters, sum_bsi_dot_counters,
+    reset_bsi_dot_counters, sum_bsi_dot_counters, sum_bsi_build_counters,
     enable_bsi_error_stats, collect_bsi_error_stats,
     print_compression_summary, save_bsi_model, bsi_full_model_static_bytes
 )
