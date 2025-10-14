@@ -200,6 +200,7 @@ class BSIQuantizedLinear(torch.nn.Module):
                 self.build_ns_total += build_ns_python
                 self.build_calls += 1
 
+            build_ns_cpp = 0
             if use_cuda:
                 scores, time_taken_ns, build_ns_cpp, dot_ns, _query_bsi_size = bsi_ops.batch_dot_product_prebuilt_cuda_caps(
                     query_capsule,
@@ -259,8 +260,6 @@ class BSIQuantizedLinear(torch.nn.Module):
 
             output_list.append(scores)
             dot_ns_this_forward += int(dot_ns)
-            self.build_ns_total += int(build_ns)
-            self.build_calls += 1
 
             if self.collect_stats:
                 if input_vec_cpu is None:
