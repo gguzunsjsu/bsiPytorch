@@ -96,11 +96,13 @@ class BSIQuantizedLinear(torch.nn.Module):
         self.weight_verbatim_pct = float(self.weight_slice_stats.get("verbatim_pct", 0.0))
         self.total_bsi_static_bytes = self.weight_bsi_memory_bytes + self.bias_memory_bytes
         # Debug/verbosity flag: when True, prints one-time diagnostics on first forward
-        self.verbose = True
+        self.verbose = False
 
         # Error tracking fields toggled via enable_bsi_error_stats.
         self.collect_stats = False
         self.reset_error_stats()
+        self.build_ns_total = 0
+        self.build_calls = 0
 
     def reset_error_stats(self):
         self.mse_sum = 0.0
@@ -185,6 +187,8 @@ class BSIQuantizedLinear(torch.nn.Module):
 
             output_list.append(scores)
             dot_ns_this_forward += int(dot_ns)
+            self.build_ns_total += int(build_ns)
+            self.build_calls += 1
 
             if self.collect_stats:
                 if input_vec_cpu is None:
@@ -238,12 +242,21 @@ def reset_bsi_dot_counters(model: nn.Module):
         if isinstance(m, BSIQuantizedLinear):
             m.dot_ns_total = 0
             m.dot_calls = 0
+            m.build_ns_total = 0
+            m.build_calls = 0
 
 def sum_bsi_dot_counters(model: nn.Module) -> int:
     total = 0
     for m in model.modules():
         if isinstance(m, BSIQuantizedLinear):
             total += int(m.dot_ns_total)
+    return total
+
+def sum_bsi_build_counters(model: nn.Module) -> int:
+    total = 0
+    for m in model.modules():
+        if isinstance(m, BSIQuantizedLinear):
+            total += int(m.build_ns_total)
     return total
 
 
