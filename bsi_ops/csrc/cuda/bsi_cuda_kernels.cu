@@ -44,6 +44,44 @@ void popcount_pairwise_kernel(
     }
 }
 
+extern "C" __global__
+void popcount_weighted_kernel(
+    const unsigned long long* __restrict__ A, // [Sa * W]
+    const double* __restrict__ Aw,            // [Sa]
+    int Sa, int W,
+    const unsigned long long* __restrict__ B, // [Sb * W]
+    const double* __restrict__ Bw,            // [Sb]
+    int Sb,
+    double* __restrict__ out)
+{
+    int i = blockIdx.x;
+    int j = blockIdx.y;
+    if (i >= Sa || j >= Sb) return;
+
+    const unsigned long long* a = A + (size_t)i * W;
+    const unsigned long long* b = B + (size_t)j * W;
+
+    unsigned long long partial = 0;
+    for (int w = threadIdx.x; w < W; w += blockDim.x) {
+        partial += __popcll(a[w] & b[w]);
+    }
+
+    __shared__ unsigned long long smem[32];
+    unsigned long long warp = warp_reduce_sum_ull(partial);
+    if ((threadIdx.x & 31) == 0) smem[threadIdx.x >> 5] = warp;
+    __syncthreads();
+
+    unsigned long long block_sum = 0;
+    int num_warps = blockDim.x >> 5;
+    if (threadIdx.x < num_warps) block_sum = smem[threadIdx.x];
+    block_sum = warp_reduce_sum_ull(block_sum);
+
+    if (threadIdx.x == 0) {
+        double contrib = static_cast<double>(block_sum) * Aw[i] * Bw[j];
+        atomicAdd(out, contrib);
+    }
+}
+
 // EWAH decompress: interpret buffer of RLWs and literal words into W literal words.
 // Assumes u64 words and runninglengthbits = 32, literalbits = 31.
 extern "C" __global__
@@ -86,6 +124,20 @@ extern "C" void launch_popcount_pairwise(
     dim3 grid(Sa, Sb);
     dim3 block(256);
     popcount_pairwise_kernel<<<grid, block, 0, stream>>>(A, B, Sa, Sb, W, out);
+}
+
+extern "C" void launch_popcount_weighted(
+    const unsigned long long* A,
+    const double* Aw,
+    int Sa, int W,
+    const unsigned long long* B,
+    const double* Bw,
+    int Sb,
+    double* out,
+    cudaStream_t stream) {
+    dim3 grid(Sa, Sb);
+    dim3 block(256);
+    popcount_weighted_kernel<<<grid, block, 0, stream>>>(A, Aw, Sa, W, B, Bw, Sb, out);
 }
 
 extern "C" void launch_ewah_decompress(

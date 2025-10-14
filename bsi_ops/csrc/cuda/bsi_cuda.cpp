@@ -33,6 +33,16 @@ extern "C" void launch_ewah_decompress(
     unsigned long long* out,
     cudaStream_t stream);
 
+extern "C" void launch_popcount_weighted(
+    const unsigned long long* A,
+    const double* Aw,
+    int Sa, int W,
+    const unsigned long long* B,
+    const double* Bw,
+    int Sb,
+    double* out,
+    cudaStream_t stream);
+
 static inline uint64_t now_ns() {
     using namespace std::chrono;
     return duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
@@ -384,43 +394,52 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
 
     TORCH_CHECK(query->W == keys->W, "Word count mismatch between query and keys");
 
-    auto out = torch::zeros({keys->num_keys}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
+    auto out_dev = torch::zeros({keys->num_keys}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
+    const auto* query_words = reinterpret_cast<const unsigned long long*>(query->dev_words.data_ptr<int64_t>());
+    const auto* query_weights = query->slice_weights.data_ptr<double>();
+
+    cudaEvent_t start_evt, end_evt;
+    cudaEventCreate(&start_evt);
+    cudaEventCreate(&end_evt);
 
     float total_kernel_ms = 0.0f;
     for (int64_t r = 0; r < keys->num_keys; ++r) {
         const auto& B_dev = keys->dev_words[r];
         const auto& km = keys->metas[r];
         const auto& key_weights = keys->slice_weights[r];
-        auto counts_dev = torch::empty({km.S, query->S}, torch::device(torch::kCUDA).dtype(torch::kInt64));
 
-        dim3 grid(query->S, km.S);
-        dim3 block(256);
-        cudaEvent_t start, end;
-        cudaEventCreate(&start);
-        cudaEventCreate(&end);
-        cudaEventRecord(start);
         auto stream = at::cuda::getCurrentCUDAStream();
-        launch_popcount_pairwise(
-            reinterpret_cast<const unsigned long long*>(query->dev_words.data_ptr<int64_t>()),
+        cudaEventRecord(start_evt, stream.stream());
+        launch_popcount_weighted(
+            query_words,
+            query_weights,
+            query->S,
+            query->W,
             reinterpret_cast<const unsigned long long*>(B_dev.data_ptr<int64_t>()),
-            query->S, km.S, query->W,
-            reinterpret_cast<unsigned long long*>(counts_dev.data_ptr<int64_t>()),
+            key_weights.data_ptr<double>(),
+            km.S,
+            out_dev.data_ptr<double>() + r,
             stream.stream());
-        cudaEventRecord(end);
-        cudaEventSynchronize(end);
+        cudaEventRecord(end_evt, stream.stream());
+        cudaEventSynchronize(end_evt);
         float kernel_ms = 0.0f;
-        cudaEventElapsedTime(&kernel_ms, start, end);
-        cudaEventDestroy(start);
-        cudaEventDestroy(end);
+        cudaEventElapsedTime(&kernel_ms, start_evt, end_evt);
         total_kernel_ms += kernel_ms;
+    }
 
-        auto counts_fp = counts_dev.to(torch::kFloat64);
-        auto weighted = counts_fp.mul(query->slice_weights.view({1, query->S}));
-        auto slice_sums = weighted.sum(1);
-        auto raw_tensor = slice_sums.mul(key_weights).sum();
+    cudaEventDestroy(start_evt);
+    cudaEventDestroy(end_evt);
+
+    auto out_cpu = out_dev.to(torch::kCPU);
+    auto out = torch::empty({keys->num_keys}, torch::TensorOptions().dtype(torch::kFloat64));
+    auto out_a = out.accessor<double, 1>();
+    auto out_cpu_a = out_cpu.accessor<double, 1>();
+    for (int64_t r = 0; r < keys->num_keys; ++r) {
+        const auto& km = keys->metas[r];
+        double raw = out_cpu_a[r];
         int totalDecimals = query->vec->decimals + km.decimals;
         double scale = (totalDecimals > 0) ? std::pow(10.0, totalDecimals) : 1.0;
-        out.index_put_({r}, raw_tensor / scale);
+        out_a[r] = raw / scale;
     }
 
     uint64_t dot_ns = static_cast<uint64_t>(total_kernel_ms * 1.0e6);
