@@ -77,7 +77,7 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& input,
 
     long long max_abs = 0;
     if (any_non_zero) {
-        max_abs = scaled.abs().max().item<long long>();
+        max_abs = scaled.abs().max().item<int64_t>();
     }
 
     int magnitude_bits = any_non_zero
