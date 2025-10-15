@@ -10,6 +10,7 @@
 #include <ATen/ops/bitwise_right_shift.h>
 #include <ATen/ops/floor.h>
 #include <ATen/ops/where.h>
+#include <torch/indexing.h>
 
 namespace {
 inline torch::Tensor make_words_tensor(const std::vector<uint64_t>& words,
@@ -198,4 +199,26 @@ static void maybe_log_scaled(const torch::Tensor& scaled) {
     std::cout << "[BSI_CUDA] scaled_ints:";
     for (int64_t i=0;i<n;++i) std::cout << ' ' << (long long)acc[i];
     std::cout << std::endl;
+}
+
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
+bsi_cuda_quantize_debug(const torch::Tensor& input,
+                        int decimal_places,
+                        const torch::Device& device,
+                        int64_t k) {
+    using namespace torch::indexing;
+    auto values = input.to(device, torch::kFloat64, /*non_blocking=*/true).contiguous();
+    const double scale = std::pow(10.0, static_cast<double>(decimal_places));
+    auto x = values * scale;
+    auto rounded = torch::where(
+        x.ge(0),
+        torch::floor(x + 0.5),
+        -torch::floor(-x + 0.5)
+    );
+    auto ints = rounded.to(torch::kInt64);
+    auto take = std::min<int64_t>(x.numel(), k);
+    auto x_head = x.index({Slice(0, take)}).to(torch::kCPU).contiguous();
+    auto r_head = rounded.index({Slice(0, take)}).to(torch::kCPU).contiguous();
+    auto i_head = ints.index({Slice(0, take)}).to(torch::kCPU).contiguous();
+    return std::make_tuple(x_head, r_head, i_head);
 }

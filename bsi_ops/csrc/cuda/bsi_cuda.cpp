@@ -401,6 +401,10 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
 }
 
 void register_bsi_cuda(pybind11::module& m) {
+    // Version/signature to verify the loaded .so
+    const std::string version = std::string("CUDA_BUILDER_PHASE2_ROUNDING_V2 ") + __DATE__ + " " + __TIME__;
+    m.attr("CUDA_BUILDER_VERSION") = version;
+    m.def("cuda_builder_version", [version]() { return version; });
     m.def("dot_product_decimal_cuda", &dot_product_decimal_cuda, "BSI dot (decimal) computed on CUDA");
     m.def("batch_dot_product_prebuilt_cuda", &batch_dot_product_prebuilt_cuda,
           pybind11::arg("q"), pybind11::arg("keyset_cap"), pybind11::arg("query_threshold") = -1.0f,
@@ -550,4 +554,12 @@ void register_bsi_cuda(pybind11::module& m) {
         return bsi_cuda_quantize_to_int64(x, decimal_places, device);
     }, pybind11::arg("x"), pybind11::arg("decimal_places"),
        "Quantize input tensor to int64 using GPU parity rounding (half-away-from-zero)");
+
+    // Expose detailed quantizer internals (first k elements): (scaled_fp, rounded_fp, staged_int)
+    m.def("debug_quantize_details_cuda", [](torch::Tensor x, int decimal_places, int64_t k) {
+        auto device = x.device().is_cuda() ? x.device() : torch::kCUDA;
+        auto tup = bsi_cuda_quantize_debug(x, decimal_places, device, k);
+        return pybind11::make_tuple(std::get<0>(tup), std::get<1>(tup), std::get<2>(tup));
+    }, pybind11::arg("x"), pybind11::arg("decimal_places"), pybind11::arg("k") = 8,
+       "Return (scaled_fp, rounded_fp, staged_int) heads to verify rounding/parity");
 }

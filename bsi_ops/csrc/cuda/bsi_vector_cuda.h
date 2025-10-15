@@ -3,6 +3,7 @@
 #include <torch/extension.h>
 
 #include <cstdint>
+#include <tuple>
 
 #include "bsi_vector_utils.h"
 
@@ -30,6 +31,13 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& values
 torch::Tensor bsi_cuda_quantize_to_int64(const torch::Tensor& values,
                                          int decimal_places,
                                          const torch::Device& device);
+
+// Debug helper: return (scaled_fp, rounded_fp, staged_int) heads (first k elements) on CPU
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
+bsi_cuda_quantize_debug(const torch::Tensor& values,
+                        int decimal_places,
+                        const torch::Device& device,
+                        int64_t k = 8);
 
 BsiVectorCudaData create_bsi_vector_cuda_from_cpu(const BsiVector<uint64_t>& src,
                                                   const torch::Device& device,
