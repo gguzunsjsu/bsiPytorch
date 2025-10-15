@@ -68,15 +68,8 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& input,
                                                      const torch::Device& device,
                                                      bool verbose) {
     TORCH_CHECK(input.dim() == 1, "build_bsi_vector_from_float_tensor expects 1D tensor");
-    auto values = input.to(device, torch::kFloat64, /*non_blocking=*/true).contiguous();
-
-    const double scale = std::pow(10.0, static_cast<double>(decimal_places));
-    auto scaled_fp = values * scale;
-    auto rounded = torch::where(
-        scaled_fp.ge(0),
-        torch::floor(scaled_fp + 0.5),
-        -torch::floor(-scaled_fp + 0.5));
-    auto scaled = rounded.to(torch::kInt64);
+    auto scaled = bsi_cuda_quantize_to_int64(input, decimal_places, device);
+    maybe_log_scaled(scaled);
     const int64_t rows = scaled.size(0);
 
     bool any_non_zero = (rows > 0) && scaled.ne(0).any().item<bool>();
@@ -178,4 +171,29 @@ BsiVectorCudaData create_bsi_vector_cuda_from_cpu(const BsiVector<uint64_t>& src
         data.log("create_bsi_vector_cuda_from_cpu");
     }
     return data;
+}
+
+torch::Tensor bsi_cuda_quantize_to_int64(const torch::Tensor& input,
+                                         int decimal_places,
+                                         const torch::Device& device) {
+    auto values = input.to(device, torch::kFloat64, /*non_blocking=*/true).contiguous();
+    const double scale = std::pow(10.0, static_cast<double>(decimal_places));
+    auto x = values * scale;
+    // std::round (half away from zero): floor(x+0.5) if x>=0; -floor(-x+0.5) if x<0
+    auto rounded = torch::where(
+        x.ge(0),
+        torch::floor(x + 0.5),
+        -torch::floor(-x + 0.5)
+    );
+    return rounded.to(torch::kInt64).contiguous();
+}
+
+static void maybe_log_scaled(const torch::Tensor& scaled) {
+    if (!bsi_cuda_should_log()) return;
+    auto n = std::min<int64_t>(scaled.numel(), 8);
+    auto cpu = scaled.to(torch::kCPU);
+    auto acc = cpu.accessor<int64_t,1>();
+    std::cout << "[BSI_CUDA] scaled_ints:";
+    for (int64_t i=0;i<n;++i) std::cout << ' ' << (long long)acc[i];
+    std::cout << std::endl;
 }

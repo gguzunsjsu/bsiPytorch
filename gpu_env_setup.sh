@@ -7,3 +7,6 @@ export CXXFLAGS="-I${CUDA_HOME}/include ${CXXFLAGS}"
 export CC=/usr/bin/gcc
 export CXX=/usr/bin/g++
 export FORCE_CUDA=1
+export CC=/usr/bin/gcc
+export CXX=/usr/bin/g++
+export CUDAHOSTCXX=/usr/bin/g++

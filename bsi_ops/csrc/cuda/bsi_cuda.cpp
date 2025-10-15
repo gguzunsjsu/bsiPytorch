@@ -543,4 +543,11 @@ void register_bsi_cuda(pybind11::module& m) {
             query->device_view.twos_complement);
     }, pybind11::arg("query_cap"),
        "Return words and metadata for a GPU-built BSI query capsule (words copied to CPU)");
+
+    // Expose quantizer for debugging parity (returns int64 tensor on device, contiguous)
+    m.def("debug_quantize_int64_cuda", [](torch::Tensor x, int decimal_places) {
+        auto device = x.device().is_cuda() ? x.device() : torch::kCUDA;
+        return bsi_cuda_quantize_to_int64(x, decimal_places, device);
+    }, pybind11::arg("x"), pybind11::arg("decimal_places"),
+       "Quantize input tensor to int64 using GPU parity rounding (half-away-from-zero)");
 }
