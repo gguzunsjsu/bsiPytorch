@@ -76,6 +76,7 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& input,
 
     bool any_non_zero = (rows > 0) && scaled.ne(0).any().item<bool>();
     bool has_negative = (rows > 0) && scaled.lt(0).any().item<bool>();
+    bool all_zero = (rows > 0) && !any_non_zero;
 
     long long max_abs = 0;
     if (any_non_zero) {
@@ -88,7 +89,8 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& input,
     int total_slices = std::min(64, magnitude_bits + 2);
 
     if (!any_non_zero) {
-        total_slices = 1;
+        // Match CPU decimals builder: slices = bit_width(0) + 2 = 2
+        total_slices = 2;
         has_negative = false;
     }
 
@@ -122,7 +124,8 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& input,
     data.words_per_slice = words_per_slice;
     data.offset = offset;
     data.decimals = decimal_places;
-    data.twos_complement = has_negative;
+    // CPU builder reports twosComplement=true for some all-zero cases; align here.
+    data.twos_complement = has_negative || all_zero;
     data.words = words;
     data.metadata = torch::empty({stored_slices, 0},
                                  torch::TensorOptions().dtype(torch::kInt32).device(device));
