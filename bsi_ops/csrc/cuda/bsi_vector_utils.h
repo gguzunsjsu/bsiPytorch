@@ -13,23 +13,11 @@ inline void hb_to_verbatim_words_gpu_helper(const HybridBitmap<U>& hb,
     const int word_bits = 8 * sizeof(U);
     const int64_t W = (rows + word_bits - 1) / word_bits;
     out_words.clear();
-    out_words.reserve(W);
-
-    HybridBitmapRawIterator<U> it = hb.raw_iterator();
-    HybridBitmap<U> tmp(true);
-    size_t written = 0;
-    while (it.hasNext() && written < static_cast<size_t>(W)) {
-        auto& brlw = it.next();
-        size_t before = tmp.buffer.size();
-        size_t just = brlw.dischargeDecompressed(tmp, static_cast<size_t>(W) - written);
-        written += just;
-        if (tmp.buffer.size() == before && just == 0) {
-            break;
-        }
-    }
-    out_words.assign(tmp.buffer.begin(), tmp.buffer.end());
-    if (out_words.size() < static_cast<size_t>(W)) {
-        out_words.resize(static_cast<size_t>(W), static_cast<U>(0));
+    out_words.resize(static_cast<size_t>(W), static_cast<U>(0));
+    // Read literal words directly via getWord, which returns the decompressed
+    // literal word at index, regardless of hybrid/compressed storage.
+    for (int64_t i = 0; i < W; ++i) {
+        out_words[static_cast<size_t>(i)] = hb.getWord(static_cast<size_t>(i));
     }
 }
 
