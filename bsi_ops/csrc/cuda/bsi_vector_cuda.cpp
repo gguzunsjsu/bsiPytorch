@@ -10,7 +10,6 @@
 #include <ATen/ops/bitwise_right_shift.h>
 #include <ATen/ops/floor.h>
 #include <ATen/ops/where.h>
-#include <torch/indexing.h>
 
 namespace {
 inline torch::Tensor make_words_tensor(const std::vector<uint64_t>& words,
@@ -206,7 +205,6 @@ bsi_cuda_quantize_debug(const torch::Tensor& input,
                         int decimal_places,
                         const torch::Device& device,
                         int64_t k) {
-    using namespace torch::indexing;
     auto values = input.to(device, torch::kFloat64, /*non_blocking=*/true).contiguous();
     const double scale = std::pow(10.0, static_cast<double>(decimal_places));
     auto x = values * scale;
@@ -217,8 +215,8 @@ bsi_cuda_quantize_debug(const torch::Tensor& input,
     );
     auto ints = rounded.to(torch::kInt64);
     auto take = std::min<int64_t>(x.numel(), k);
-    auto x_head = x.index({Slice(0, take)}).to(torch::kCPU).contiguous();
-    auto r_head = rounded.index({Slice(0, take)}).to(torch::kCPU).contiguous();
-    auto i_head = ints.index({Slice(0, take)}).to(torch::kCPU).contiguous();
+    auto x_head = x.narrow(0, 0, take).to(torch::kCPU).contiguous();
+    auto r_head = rounded.narrow(0, 0, take).to(torch::kCPU).contiguous();
+    auto i_head = ints.narrow(0, 0, take).to(torch::kCPU).contiguous();
     return std::make_tuple(x_head, r_head, i_head);
 }
