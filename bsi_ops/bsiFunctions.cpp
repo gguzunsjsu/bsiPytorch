@@ -755,6 +755,23 @@ pybind11::tuple debug_bsi_query_words(pybind11::capsule query_cap) {
         static_cast<bool>(query->vec->twosComplement));
 }
 
+// Debug: CPU quantization to int64 mirroring std::round semantics used in CPU builder
+torch::Tensor debug_quantize_int64_cpu(torch::Tensor q, int decimalPlaces) {
+    TORCH_CHECK(q.dim() == 1, "q must be 1D [d]");
+    auto q_cpu = q.detach().to(torch::kFloat32).cpu().contiguous();
+    auto a = q_cpu.accessor<float,1>();
+    const int64_t n = a.size(0);
+    std::vector<int64_t> out; out.reserve(n);
+    const double scale = std::pow(10.0, static_cast<double>(decimalPlaces));
+    for (int64_t i=0;i<n;++i) {
+        double v = static_cast<double>(a[i]) * scale;
+        long long r = static_cast<long long>(std::round(v));
+        out.push_back(static_cast<int64_t>(r));
+    }
+    auto t = torch::from_blob(out.data(), {n}, torch::TensorOptions().dtype(torch::kInt64)).clone();
+    return t;
+}
+
 pybind11::tuple keyset_size_on_disk(pybind11::capsule keyset_cap) {
     auto* keys = capsule_to_keys(keyset_cap);
     TORCH_CHECK(keys != nullptr, "Invalid BSI keys capsule");
@@ -823,4 +840,7 @@ PYBIND11_MODULE(bsi_ops, m) {
     m.def("debug_bsi_query_words", &debug_bsi_query_words,
           pybind11::arg("query_cap"),
           "Return verbatim words and metadata for a CPU-built BSI query capsule");
+    m.def("debug_quantize_int64_cpu", &debug_quantize_int64_cpu,
+          pybind11::arg("q"), pybind11::arg("decimal_places"),
+          "Quantize on CPU to int64 using std::round (half-away-from-zero) for parity checks");
 }
