@@ -124,9 +124,8 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& input,
     data.words_per_slice = words_per_slice;
     data.offset = offset;
     data.decimals = decimal_places;
-    // Align with CPU behaviour in decimals path: treat as two's-complement layout.
-    // This is safe even for all-positive vectors because the sign slice will be zero.
-    data.twos_complement = true;
+    // Match CPU decimals builder: two's complement only when negatives present
+    data.twos_complement = has_negative;
     data.words = words;
     data.metadata = torch::empty({stored_slices, 0},
                                  torch::TensorOptions().dtype(torch::kInt32).device(device));
