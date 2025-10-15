@@ -44,6 +44,8 @@ bool bsi_cuda_should_log() {
     return cached;
 }
 
+static void maybe_log_scaled(const torch::Tensor& scaled);
+
 void BsiVectorCudaData::log(const char* tag) const {
     if (!bsi_cuda_should_log()) {
         return;
