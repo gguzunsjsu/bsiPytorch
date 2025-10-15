@@ -92,28 +92,10 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& input,
         has_negative = false;
     }
 
+    // For parity with CPU decimal builder, do not trim low zero bitplanes.
     int offset = 0;
-    if (any_non_zero) {
-        auto abs_vals = scaled.abs();
-        for (int candidate = 0; candidate < total_slices - 1; ++candidate) {
-            if (abs_vals.bitwise_and(1).ne(0).any().item<bool>()) {
-                break;
-            }
-            abs_vals = at::bitwise_right_shift(abs_vals, 1);
-            ++offset;
-        }
-        // Avoid dropping all slices; keep at least the sign slice.
-        if (offset >= total_slices) {
-            offset = total_slices - 1;
-        }
-    }
-
-    int stored_slices = std::max(1, total_slices - offset);
-    torch::Tensor shifted = scaled;
-    if (offset > 0 && rows > 0) {
-        shifted = at::bitwise_right_shift(scaled, offset);
-    }
-    shifted = shifted.contiguous();
+    int stored_slices = std::max(1, total_slices);
+    torch::Tensor shifted = scaled.contiguous();
 
     const int words_per_slice = rows > 0 ? static_cast<int>((rows + 63) / 64) : 1;
     auto words = torch::zeros({stored_slices, words_per_slice},
