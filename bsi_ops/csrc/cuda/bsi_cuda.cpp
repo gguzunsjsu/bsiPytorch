@@ -569,6 +569,24 @@ void register_bsi_cuda(pybind11::module& m) {
         auto offsets_cpu = query->device_view.comp_offsets.to(torch::kCPU).clone();
         auto lengths_cpu = query->device_view.comp_lengths.to(torch::kCPU).clone();
         auto stats_cpu = query->device_view.comp_stats.to(torch::kCPU).clone();
+        if (bsi_cuda_should_log()) {
+            std::cout << "[BSI_CUDA] compressed S=" << query->device_view.slices
+                      << " W=" << query->device_view.words_per_slice << std::endl;
+            auto S = query->device_view.slices;
+            auto print_s = std::min<int64_t>(S, 4);
+            auto off_a = offsets_cpu.accessor<int,1>();
+            auto len_a = lengths_cpu.accessor<int,1>();
+            auto cw_a = cwords_cpu.accessor<long long,1>();
+            for (int64_t s = 0; s < print_s; ++s) {
+                int off = off_a[s];
+                int ln = len_a[s];
+                std::cout << "  slice " << s << ": off=" << off << " len=" << ln;
+                int toprint = std::min(8, ln);
+                std::cout << " first_words=";
+                for (int i=0;i<toprint;++i) std::cout << (unsigned long long)cw_a[off+i] << ' ';
+                std::cout << std::endl;
+            }
+        }
         return pybind11::make_tuple(cwords_cpu, offsets_cpu, lengths_cpu,
                                     stats_cpu,
                                     query->device_view.slices,
@@ -592,6 +610,18 @@ void register_bsi_cuda(pybind11::module& m) {
             S, W,
             reinterpret_cast<unsigned long long*>(out.data_ptr<int64_t>()),
             stream.stream());
+        if (bsi_cuda_should_log()) {
+            auto out_cpu = out.to(torch::kCPU);
+            auto acc = out_cpu.accessor<long long,2>();
+            int ps = std::min(S, 4);
+            std::cout << "[BSI_CUDA] decompressed first slice words:" << std::endl;
+            for (int s=0;s<ps;++s) {
+                std::cout << "  slice " << s << ": ";
+                int pw = std::min(W, 4);
+                for (int w=0; w<pw; ++w) std::cout << (unsigned long long)acc[s][w] << ' ';
+                std::cout << std::endl;
+            }
+        }
         return out.to(torch::kCPU).contiguous();
     }, pybind11::arg("query_cap"),
        "Decompress GPU-compressed EWAH view to words [S,W] on CPU");

@@ -235,28 +235,29 @@ void ewah_compress_slices_kernel(
     unsigned long long run_words = 0;
     unsigned long long lit_words = 0;
 
-    unsigned long long rlw = 0ULL;
     unsigned long long cur_run_bit = 0ULL; // 0 or 1
     unsigned long long run_len = 0ULL;
     unsigned long long litcnt = 0ULL;
     bool have_rlw = false;
+    int header_idx = -1; // index where RLW header is reserved
 
     auto flush_rlw = [&]() {
-        // write RLW header if we opened one
         if (!have_rlw) return;
         // pack: bit0=cur_run_bit, bits[1..32]=run_len, bits[33..63]=litcnt
         unsigned long long hdr = 0ULL;
         if (cur_run_bit) hdr |= 1ULL;
         hdr |= (run_len & RUNLEN_MAX) << 1;
         hdr |= (litcnt & LITCNT_MAX) << (1 + 32);
-        out[out_idx++] = hdr;
+        out[header_idx] = hdr; // write header at reserved slot
         run_words += run_len;
         have_rlw = false;
-        run_len = 0ULL; litcnt = 0ULL; cur_run_bit = 0ULL;
+        run_len = 0ULL; litcnt = 0ULL; cur_run_bit = 0ULL; header_idx = -1;
     };
 
     auto start_rlw = [&](unsigned long long bit) {
-        rlw = 0ULL; cur_run_bit = bit; run_len = 0ULL; litcnt = 0ULL; have_rlw = true;
+        cur_run_bit = bit; run_len = 0ULL; litcnt = 0ULL; have_rlw = true;
+        header_idx = out_idx; // reserve space for header
+        out[out_idx++] = 0ULL; // placeholder to be patched on flush
     };
 
     int i = 0;
@@ -292,7 +293,7 @@ void ewah_compress_slices_kernel(
             start_rlw(0ULL);
         }
         ++litcnt;
-        out[out_idx++] = w; // literal word follows its RLW
+        out[out_idx++] = w; // literal word follows its RLW header
         ++lit_words;
         ++i;
         // after literals, next iteration will handle clean/literal transitions
