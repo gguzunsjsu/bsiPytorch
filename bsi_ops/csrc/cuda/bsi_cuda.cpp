@@ -415,6 +415,19 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
         auto B_stacked = torch::stack(words_list, 0).contiguous(); // [R, Sb, W]
         auto Bw_stacked = torch::cat(weights_list, 0).contiguous(); // [R, Sb]
         auto out_slice = torch::zeros({R}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
+        // Precompute scale factors on device: divide by 10^(dec_q + dec_k)
+        auto scales = torch::empty({R}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
+        {
+            std::vector<double> h_scales(R, 1.0);
+            for (int i = 0; i < R; ++i) {
+                int64_t r = idxs[i];
+                const auto& km = keys->metas[r];
+                int totalDecimals = query->device_view.decimals + km.decimals;
+                h_scales[i] = (totalDecimals > 0) ? std::pow(10.0, totalDecimals) : 1.0;
+            }
+            auto tmp = torch::from_blob(h_scales.data(), {R}, torch::TensorOptions().dtype(torch::kFloat64)).clone();
+            scales.copy_(tmp.to(torch::kCUDA));
+        }
 
         auto stream = at::cuda::getCurrentCUDAStream();
         cudaEventRecord(start_evt, stream.stream());
@@ -434,31 +447,21 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
         float kernel_ms = 0.0f; cudaEventElapsedTime(&kernel_ms, start_evt, end_evt);
         total_kernel_ms += kernel_ms;
 
-        // Scatter to out_dev
-        for (int i = 0; i < R; ++i) {
-            int64_t r = idxs[i];
-            out_dev.index_put_({r}, out_slice[i]);
-        }
+        // Scale and scatter to out_dev on device
+        out_slice = out_slice / scales;
+        // Build index tensor on CPU then copy to CUDA for scatter
+        auto idx_cpu = torch::from_blob(const_cast<int64_t*>(idxs.data()), {R}, torch::TensorOptions().dtype(torch::kInt64)).clone();
+        auto idx_dev = idx_cpu.to(torch::kCUDA);
+        out_dev.index_put_({idx_dev}, out_slice);
     }
 
     cudaEventDestroy(start_evt);
     cudaEventDestroy(end_evt);
 
-    auto out_cpu = out_dev.to(torch::kCPU);
-    auto out = torch::empty({keys->num_keys}, torch::TensorOptions().dtype(torch::kFloat64));
-    auto out_a = out.accessor<double, 1>();
-    auto out_cpu_a = out_cpu.accessor<double, 1>();
-    for (int64_t r = 0; r < keys->num_keys; ++r) {
-        const auto& km = keys->metas[r];
-        double raw = out_cpu_a[r];
-        int totalDecimals = query->device_view.decimals + km.decimals;
-        double scale = (totalDecimals > 0) ? std::pow(10.0, totalDecimals) : 1.0;
-        out_a[r] = raw / scale;
-    }
-
+    // Return GPU scores directly
     uint64_t dot_ns = static_cast<uint64_t>(total_kernel_ms * 1.0e6);
     uint64_t total_ns = dot_ns;
-    return pybind11::make_tuple(out, total_ns, static_cast<uint64_t>(0), dot_ns, static_cast<uint64_t>(query->mem_bytes));
+    return pybind11::make_tuple(out_dev, total_ns, static_cast<uint64_t>(0), dot_ns, static_cast<uint64_t>(query->mem_bytes));
 }
 
 void register_bsi_cuda(pybind11::module& m) {

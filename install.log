@@ -1,0 +1,1356 @@
+Using pip 25.2 from /home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/pip (python 3.12)
+Processing /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops
+  Preparing metadata (setup.py): started
+  Running command python setup.py egg_info
+  running egg_info
+  creating /tmp/pip-pip-egg-info-p7x1_qxt/bsi_ops.egg-info
+  writing /tmp/pip-pip-egg-info-p7x1_qxt/bsi_ops.egg-info/PKG-INFO
+  writing dependency_links to /tmp/pip-pip-egg-info-p7x1_qxt/bsi_ops.egg-info/dependency_links.txt
+  writing top-level names to /tmp/pip-pip-egg-info-p7x1_qxt/bsi_ops.egg-info/top_level.txt
+  writing manifest file '/tmp/pip-pip-egg-info-p7x1_qxt/bsi_ops.egg-info/SOURCES.txt'
+  reading manifest file '/tmp/pip-pip-egg-info-p7x1_qxt/bsi_ops.egg-info/SOURCES.txt'
+  writing manifest file '/tmp/pip-pip-egg-info-p7x1_qxt/bsi_ops.egg-info/SOURCES.txt'
+  Preparing metadata (setup.py): finished with status 'done'
+Building wheels for collected packages: bsi_ops
+  DEPRECATION: Building 'bsi_ops' using the legacy setup.py bdist_wheel mechanism, which will be removed in a future version. pip 25.3 will enforce this behaviour change. A possible replacement is to use the standardized build interface by setting the `--use-pep517` option, (possibly combined with `--no-build-isolation`), or adding a `pyproject.toml` file to the source tree of 'bsi_ops'. Discussion can be found at https://github.com/pypa/pip/issues/6334
+  Building wheel for bsi_ops (setup.py): started
+  Running command python setup.py bdist_wheel
+  running bdist_wheel
+  running build
+  running build_ext
+  /home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/torch/utils/cpp_extension.py:490: UserWarning: There are no /usr/bin/g++ version bounds defined for CUDA version 12.6
+    warnings.warn(f'There are no {compiler_name} version bounds defined for CUDA version {cuda_str_version}')
+  building 'bsi_ops' extension
+  creating /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/build/temp.linux-x86_64-cpython-312
+  creating /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/build/temp.linux-x86_64-cpython-312/csrc
+  creating /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/build/temp.linux-x86_64-cpython-312/csrc/cuda
+  /home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/torch/utils/cpp_extension.py:2356: UserWarning: TORCH_CUDA_ARCH_LIST is not set, all archs for visible cards are included for compilation.
+  If this is not desired, please set os.environ['TORCH_CUDA_ARCH_LIST'].
+    warnings.warn(
+  Emitting ninja build file /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/build/temp.linux-x86_64-cpython-312/build.ninja...
+  Compiling objects...
+  Allowing ninja to set a default number of workers... (overridable by setting the environment variable MAX_JOBS=N)
+  [1/4] /opt/ohpc/pub/apps/nvidia/nvhpc/24.11/Linux_x86_64/24.11/cuda/bin/nvcc --generate-dependencies-with-compile --dependency-output /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/build/temp.linux-x86_64-cpython-312/csrc/cuda/bsi_cuda_kernels.o.d -DBSI_WITH_CUDA=1 -I/fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsiCPP -I/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/torch/include -I/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -I/opt/ohpc/pub/apps/nvidia/nvhpc/24.11/Linux_x86_64/24.11/cuda/include -I/home/017510883/miniconda3/envs/bsiPytorch/include/python3.12 -c -c /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda_kernels.cu -o /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/build/temp.linux-x86_64-cpython-312/csrc/cuda/bsi_cuda_kernels.o -D__CUDA_NO_HALF_OPERATORS__ -D__CUDA_NO_HALF_CONVERSIONS__ -D__CUDA_NO_BFLOAT16_CONVERSIONS__ -D__CUDA_NO_HALF2_OPERATORS__ --expt-relaxed-constexpr --compiler-options ''"'"'-fPIC'"'"'' -O3 -std=c++20 -DTORCH_API_INCLUDE_EXTENSION_H '-DPYBIND11_COMPILER_TYPE="_gcc"' '-DPYBIND11_STDLIB="_libstdcpp"' '-DPYBIND11_BUILD_ABI="_cxxabi1016"' -DTORCH_EXTENSION_NAME=bsi_ops -D_GLIBCXX_USE_CXX11_ABI=1 -gencode=arch=compute_90,code=compute_90 -gencode=arch=compute_90,code=sm_90 -ccbin /usr/bin/gcc
+  [2/4] /usr/bin/g++ -MMD -MF /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/build/temp.linux-x86_64-cpython-312/csrc/cuda/bsi_cuda.o.d -fno-strict-overflow -Wsign-compare -DNDEBUG -O2 -Wall -fPIC -O2 -isystem /home/017510883/miniconda3/envs/bsiPytorch/include -fPIC -O2 -isystem /home/017510883/miniconda3/envs/bsiPytorch/include -I/opt/ohpc/pub/apps/nvidia/nvhpc/24.11/Linux_x86_64/24.11/cuda/include -fPIC -DBSI_WITH_CUDA=1 -I/fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsiCPP -I/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/torch/include -I/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -I/opt/ohpc/pub/apps/nvidia/nvhpc/24.11/Linux_x86_64/24.11/cuda/include -I/home/017510883/miniconda3/envs/bsiPytorch/include/python3.12 -c -c /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp -o /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/build/temp.linux-x86_64-cpython-312/csrc/cuda/bsi_cuda.o -O3 -std=c++20 -DTORCH_API_INCLUDE_EXTENSION_H '-DPYBIND11_COMPILER_TYPE="_gcc"' '-DPYBIND11_STDLIB="_libstdcpp"' '-DPYBIND11_BUILD_ABI="_cxxabi1016"' -DTORCH_EXTENSION_NAME=bsi_ops -D_GLIBCXX_USE_CXX11_ABI=1
+  FAILED: [code=1] /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/build/temp.linux-x86_64-cpython-312/csrc/cuda/bsi_cuda.o
+  /usr/bin/g++ -MMD -MF /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/build/temp.linux-x86_64-cpython-312/csrc/cuda/bsi_cuda.o.d -fno-strict-overflow -Wsign-compare -DNDEBUG -O2 -Wall -fPIC -O2 -isystem /home/017510883/miniconda3/envs/bsiPytorch/include -fPIC -O2 -isystem /home/017510883/miniconda3/envs/bsiPytorch/include -I/opt/ohpc/pub/apps/nvidia/nvhpc/24.11/Linux_x86_64/24.11/cuda/include -fPIC -DBSI_WITH_CUDA=1 -I/fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsiCPP -I/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/torch/include -I/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -I/opt/ohpc/pub/apps/nvidia/nvhpc/24.11/Linux_x86_64/24.11/cuda/include -I/home/017510883/miniconda3/envs/bsiPytorch/include/python3.12 -c -c /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp -o /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/build/temp.linux-x86_64-cpython-312/csrc/cuda/bsi_cuda.o -O3 -std=c++20 -DTORCH_API_INCLUDE_EXTENSION_H '-DPYBIND11_COMPILER_TYPE="_gcc"' '-DPYBIND11_STDLIB="_libstdcpp"' '-DPYBIND11_BUILD_ABI="_cxxabi1016"' -DTORCH_EXTENSION_NAME=bsi_ops -D_GLIBCXX_USE_CXX11_ABI=1
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp: In function ‘pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule, pybind11::capsule)’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp:398:9: error: ‘launch_popcount_weighted_batch’ was not declared in this scope; did you mean ‘launch_popcount_weighted’?
+    398 |         launch_popcount_weighted_batch(
+        |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        |         launch_popcount_weighted
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp:15:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiVector.hpp: In instantiation of ‘BsiVector<uword>* BsiVector<uword>::buildBsiVector(std::vector<double, std::allocator<double> >, int, double) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp:205:51:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiVector.hpp:631:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+    631 |                 for(int j=1; j<bitSlices[i].size()-1; j++){
+        |                              ~^~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiVector.hpp:655:22: warning: unused variable ‘totalSlices’ [-Wunused-variable]
+    655 |         const size_t totalSlices = compressedSlices + verbatimSlices;
+        |                      ^~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiVector.hpp:686:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+    686 |                 for(int j=1; j<bitSlices[i].size()-1; j++){
+        |                              ~^~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiVector.hpp:713:22: warning: unused variable ‘totalSlices’ [-Wunused-variable]
+    713 |         const size_t totalSlices = compressedSlices + verbatimSlices;
+        |                      ^~~~~~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp:15:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘HybridBitmap<uword>::HybridBitmap(bool) [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiVector.hpp:641:37:   required from ‘BsiVector<uword>* BsiVector<uword>::buildBsiVector(std::vector<double, std::allocator<double> >, int, double) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp:205:51:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:1244:12: warning: ‘HybridBitmap<long unsigned int>::lastRLW’ will be initialized after [-Wreorder]
+   1244 |     size_t lastRLW;
+        |            ^~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp:15:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:36:10: warning:   ‘bool HybridBitmap<long unsigned int>::verbatim’ [-Wreorder]
+     36 |     bool verbatim = false;
+        |          ^~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:57:5: warning:   when initialized here [-Wreorder]
+     57 |     HybridBitmap(bool verbatim) : buffer(1, 0), sizeinbits(0), lastRLW(0), verbatim(verbatim) {
+        |     ^~~~~~~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp:15:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘HybridBitmap<uword>::HybridBitmap(const HybridBitmap<uword>&) [with uword = long unsigned int]’:
+  /usr/include/c++/11/bits/stl_construct.h:97:14:   required from ‘constexpr decltype (::new(void*(0)) _Tp) std::construct_at(_Tp*, _Args&& ...) [with _Tp = HybridBitmap<long unsigned int>; _Args = {const HybridBitmap<long unsigned int>&}; decltype (::new(void*(0)) _Tp) = HybridBitmap<long unsigned int>*]’
+  /usr/include/c++/11/bits/alloc_traits.h:518:4:   required from ‘static constexpr void std::allocator_traits<std::allocator<_Up> >::construct(std::allocator_traits<std::allocator<_Up> >::allocator_type&, _Up*, _Args&& ...) [with _Up = HybridBitmap<long unsigned int>; _Args = {const HybridBitmap<long unsigned int>&}; _Tp = HybridBitmap<long unsigned int>; std::allocator_traits<std::allocator<_Up> >::allocator_type = std::allocator<HybridBitmap<long unsigned int> >]’
+  /usr/include/c++/11/bits/stl_vector.h:1192:30:   required from ‘void std::vector<_Tp, _Alloc>::push_back(const value_type&) [with _Tp = HybridBitmap<long unsigned int>; _Alloc = std::allocator<HybridBitmap<long unsigned int> >; std::vector<_Tp, _Alloc>::value_type = HybridBitmap<long unsigned int>]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiVector.hpp:280:18:   required from ‘void BsiVector<uword>::addSlice(const HybridBitmap<uword>&) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiVector.hpp:638:22:   required from ‘BsiVector<uword>* BsiVector<uword>::buildBsiVector(std::vector<double, std::allocator<double> >, int, double) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp:205:51:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:1244:12: warning: ‘HybridBitmap<long unsigned int>::lastRLW’ will be initialized after [-Wreorder]
+   1244 |     size_t lastRLW;
+        |            ^~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp:15:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:36:10: warning:   ‘bool HybridBitmap<long unsigned int>::verbatim’ [-Wreorder]
+     36 |     bool verbatim = false;
+        |          ^~~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp:15:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:65:5: warning:   when initialized here [-Wreorder]
+     65 |     HybridBitmap(const HybridBitmap &other)
+        |     ^~~~~~~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp:15:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:36:10: warning: ‘HybridBitmap<long unsigned int>::verbatim’ will be initialized after [-Wreorder]
+     36 |     bool verbatim = false;
+        |          ^~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:35:12: warning:   ‘double HybridBitmap<long unsigned int>::density’ [-Wreorder]
+     35 |     double density=0;
+        |            ^~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp:15:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:65:5: warning:   when initialized here [-Wreorder]
+     65 |     HybridBitmap(const HybridBitmap &other)
+        |     ^~~~~~~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp:17:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp: In instantiation of ‘BsiVector<uword>* BsiUnsigned<uword>::multiplyByConstantNew(int) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:1041:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:1065:26: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<HybridBitmap<long unsigned int>, std::allocator<HybridBitmap<long unsigned int> > >::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1065 |                 while (k >= res->bsi.size()) {
+        |                        ~~^~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:1077:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<HybridBitmap<long unsigned int>, std::allocator<HybridBitmap<long unsigned int> > >::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1077 |                 for (i = 1; i < this->bsi.size(); i++) {
+        |                             ~~^~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:1079:36: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<HybridBitmap<long unsigned int>, std::allocator<HybridBitmap<long unsigned int> > >::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1079 |                     while ((i + k) >= res->bsi.size()) {
+        |                            ~~~~~~~~^~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:1080:32: warning: unused variable ‘buffersize’ [-Wunused-variable]
+   1080 |                         size_t buffersize = this->bsi[0].bufferSize();
+        |                                ^~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:1092:53: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<HybridBitmap<long unsigned int>, std::allocator<HybridBitmap<long unsigned int> > >::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1092 |                 for (int j = this->numSlices + k; j < res->bsi.size(); j++) {
+        |                                                   ~~^~~~~~~~~~~~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp:17:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp: In instantiation of ‘BsiVector<uword>* BsiUnsigned<uword>::multiplyWithBsiHorizontal(const BsiVector<uword>*, int) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:2027:20:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:2043:19: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   2043 |     for(int i=0; i< this->bsi[0].bufferSize(); i++){
+        |                  ~^~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:2054:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   2054 |         for(int j=0; j< answer.size() ; j++){
+        |                      ~^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:2028:9: warning: unused variable ‘precisionInBits’ [-Wunused-variable]
+   2028 |     int precisionInBits = 3*precision +1;
+        |         ^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp: In instantiation of ‘BsiVector<uword>* BsiUnsigned<uword>::multiplyWithBsiHorizontal(const BsiVector<uword>*) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:2066:20:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:2081:19: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   2081 |     for(int i=0; i< this->bsi[0].bufferSize(); i++){
+        |                  ~^~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:2092:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   2092 |         for(int j=0; j< answer.size() ; j++){
+        |                      ~^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp: In instantiation of ‘long int BsiUnsigned<uword>::dotProduct(BsiVector<uword>*) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:1631:6:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:1654:25: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1654 |     for (int bu = 0; bu < this->bsi[0].bufferSize(); bu++)
+        |                      ~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:1667:27: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1667 |         for (int i = 0; i < a.size(); i++)
+        |                         ~~^~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:1671:34: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1671 |         for (int i = a.size(); i < b.size() + a.size(); i++)
+        |                                ~~^~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:1679:29: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1679 |         for (int it = 1; it < b.size(); it++)
+        |                          ~~~^~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:1688:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1688 |             for (int i = 1; i < a.size(); i++)
+        |                             ~~^~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:1738:28: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1738 |         for (auto n = 0; n < answer.size(); n++)
+        |                          ~~^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp: In instantiation of ‘bool BsiUnsigned<uword>::append(long int) [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:2831:6:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:2835:19: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<HybridBitmap<long unsigned int>, std::allocator<HybridBitmap<long unsigned int> > >::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   2835 |     for (int i=0;i<this->bsi.size(); i++){
+        |                  ~^~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:2842:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<HybridBitmap<long unsigned int>, std::allocator<HybridBitmap<long unsigned int> > >::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   2842 |         for(int i=0; i<this->bsi.size(); i++){
+        |                      ~^~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:2847:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<HybridBitmap<long unsigned int>, std::allocator<HybridBitmap<long unsigned int> > >::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   2847 |         for(int i=0; i<this->bsi.size(); i++){
+        |                      ~^~~~~~~~~~~~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp:16:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiSigned.hpp: In instantiation of ‘BsiVector<uword>* BsiSigned<uword>::multiplyWithBsiHorizontal(const BsiVector<uword>*, int) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiSigned.hpp:1311:20:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiSigned.hpp:1327:19: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1327 |     for(int i=0; i< this->bsi[0].bufferSize(); i++){
+        |                  ~^~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiSigned.hpp:1338:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1338 |         for(int j=0; j< answer.size() ; j++){
+        |                      ~^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiSigned.hpp:1343:13: warning: unused variable ‘temp’ [-Wunused-variable]
+   1343 |         int temp = res->bsi[j].numberOfOnes();
+        |             ^~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiSigned.hpp:1312:9: warning: unused variable ‘precisionInBits’ [-Wunused-variable]
+   1312 |     int precisionInBits = 3*precision +1;
+        |         ^~~~~~~~~~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp:15:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘size_t HybridBitmap<uword>::numberOfOnes() const [with uword = long unsigned int; size_t = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:205:27:   required from ‘HybridBitmap<uword> BsiUnsigned<uword>::topKMax(int) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:193:21:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:1772:24: warning: unused variable ‘temp’ [-Wunused-variable]
+   1772 |                 size_t temp = buffer.size();
+        |                        ^~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:1787:27: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1787 |         for (int i = 0; i < bufferSize(); i++) {
+        |                         ~~^~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:1792:20: warning: unused variable ‘temp’ [-Wunused-variable]
+   1792 |             size_t temp = buffer.size();
+        |                    ^~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:1812:24: warning: unused variable ‘temp’ [-Wunused-variable]
+   1812 |                 size_t temp = buffer.size();
+        |                        ^~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘HybridBitmap<uword>::HybridBitmap(HybridBitmap<uword>&&) [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:222:12:   required from ‘HybridBitmap<uword> BsiUnsigned<uword>::topKMax(int) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:193:21:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:1244:12: warning: ‘HybridBitmap<long unsigned int>::lastRLW’ will be initialized after [-Wreorder]
+   1244 |     size_t lastRLW;
+        |            ^~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp:15:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:36:10: warning:   ‘bool HybridBitmap<long unsigned int>::verbatim’ [-Wreorder]
+     36 |     bool verbatim = false;
+        |          ^~~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp:15:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:74:5: warning:   when initialized here [-Wreorder]
+     74 |     HybridBitmap(HybridBitmap &&other)
+        |     ^~~~~~~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp:15:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:36:10: warning: ‘HybridBitmap<long unsigned int>::verbatim’ will be initialized after [-Wreorder]
+     36 |     bool verbatim = false;
+        |          ^~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:35:12: warning:   ‘double HybridBitmap<long unsigned int>::density’ [-Wreorder]
+     35 |     double density=0;
+        |            ^~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp:15:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:74:5: warning:   when initialized here [-Wreorder]
+     74 |     HybridBitmap(HybridBitmap &&other)
+        |     ^~~~~~~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp:17:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp: In instantiation of ‘int BsiUnsigned<uword>::sliceLengthFinder(uword) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:385:23:   required from ‘BsiVector<uword>* BsiUnsigned<uword>::SUM(long int) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:384:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:372:22: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+    372 |     for(int i = 0; i < sizeof(uword) * 8; i++)
+        |                    ~~^~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:374:15: warning: unused variable ‘ai’ [-Wunused-variable]
+    374 |         uword ai = (static_cast<uword>(1) << i);
+        |               ^~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp:17:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp: In instantiation of ‘void BsiUnsigned<uword>::multiply(std::vector<T>&, std::vector<T>&, std::vector<T>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:2050:15:   required from ‘BsiVector<uword>* BsiUnsigned<uword>::multiplyWithBsiHorizontal(const BsiVector<uword>*, int) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:2027:20:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:1909:19: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1909 |     for(int i=0; i<a.size(); i++){
+        |                  ~^~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:1912:28: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1912 |     for(int i = a.size(); i< b.size() + a.size(); i++){
+        |                           ~^~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:1917:21: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1917 |     for(int it=1; it<b.size(); it++){
+        |                   ~~^~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:1927:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1927 |         for(int i=1; i<a.size(); i++){
+        |                      ~^~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:1905:9: warning: unused variable ‘startPosition’ [-Wunused-variable]
+   1905 |     int startPosition = b.size() + a.size() - ans.size();
+        |         ^~~~~~~~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp:16:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiSigned.hpp: In instantiation of ‘BsiVector<uword>* BsiSigned<uword>::SUMunsigned(BsiVector<uword>*) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiSigned.hpp:264:18:   required from ‘BsiVector<uword>* BsiSigned<uword>::SUM(BsiVector<uword>*) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiSigned.hpp:253:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiSigned.hpp:717:13: warning: unused variable ‘x’ [-Wunused-variable]
+    717 |         int x = C.numberOfOnes();
+        |             ^
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp:15:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘HybridBitmap<uword>::HybridBitmap(bool, size_t) [with uword = long unsigned int; size_t = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiSigned.hpp:1226:25:   required from ‘BsiVector<uword>* BsiSigned<uword>::multiplyByConstant(int) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiSigned.hpp:1178:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:1244:12: warning: ‘HybridBitmap<long unsigned int>::lastRLW’ will be initialized after [-Wreorder]
+   1244 |     size_t lastRLW;
+        |            ^~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp:15:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:36:10: warning:   ‘bool HybridBitmap<long unsigned int>::verbatim’ [-Wreorder]
+     36 |     bool verbatim = false;
+        |          ^~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:61:5: warning:   when initialized here [-Wreorder]
+     61 |     HybridBitmap(bool verbatim, size_t buffersize) : buffer(buffersize, 0), sizeinbits(buffersize*wordinbits), lastRLW(0), verbatim(verbatim) {
+        |     ^~~~~~~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp:15:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::selectMultiplicationInPlace(const HybridBitmap<uword>&, const HybridBitmap<uword>&) [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiSigned.hpp:2423:48:   required from ‘BsiVector<uword>* BsiSigned<uword>::multiplyBSI(BsiVector<uword>*) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiSigned.hpp:2404:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3208:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   3208 |     for (int i = 0; i < buffer.size(); i++) {
+        |                     ~~^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::logicalnot(HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:1165:19:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::logicalnot() const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:399:52:   required from ‘BsiVector<uword>* BsiUnsigned<uword>::SUM(long int) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:384:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:1873:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1873 |         for(int i=0; i < bufferSize(); i++){
+        |                      ~~^~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::inPlaceXorHybrid(const HybridBitmap<uword>&) [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3778:9:   required from ‘void HybridBitmap<uword>::XorInPlace(const HybridBitmap<uword>&) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:1484:21:   required from ‘BsiVector<uword>* BsiUnsigned<uword>::multiplyBSI(BsiVector<uword>*) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:1466:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4710:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4710 |         while (i < bufferSize()) {
+        |                ~~^~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4721:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4721 |             for( j=0; j<rlwa.getNumberOfLiteralWords(); j++){
+        |                       ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4735:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4735 |         while (i < a.bufferSize()) {
+        |                ~~^~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4744:27: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4744 |                     if (i >= a.bufferSize()) break;
+        |                         ~~^~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4750:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4750 |             for( j=0; j<rlw.getNumberOfLiteralWords(); j++){
+        |                       ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::andVerbatimCompressInPlace(const HybridBitmap<uword>&) [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3305:17:   required from ‘void HybridBitmap<uword>::AndInPlace(const HybridBitmap<uword>&) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:1507:29:   required from ‘BsiVector<uword>* BsiUnsigned<uword>::multiplyBSI(BsiVector<uword>*) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:1466:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3334:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   3334 |     for (int i = 0; i < buffer.size(); i++) {
+        |                     ~~^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::andVerbatimInPlace(const HybridBitmap<uword>&) [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3308:13:   required from ‘void HybridBitmap<uword>::AndInPlace(const HybridBitmap<uword>&) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:1507:29:   required from ‘BsiVector<uword>* BsiUnsigned<uword>::multiplyBSI(BsiVector<uword>*) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:1466:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3344:19: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   3344 |     for(int i=0; i<buffer.size();i++){
+        |                  ~^~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::andHybridCompressInPlace(const HybridBitmap<uword>&) [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3315:13:   required from ‘void HybridBitmap<uword>::AndInPlace(const HybridBitmap<uword>&) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:1507:29:   required from ‘BsiVector<uword>* BsiUnsigned<uword>::multiplyBSI(BsiVector<uword>*) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:1466:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3361:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   3361 |         while (i < buffer.size()) {
+        |                ~~^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3371:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   3371 |                 for (j = 0; j < rlwa.getRunningLength(); j++) {
+        |                             ~~^~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3381:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   3381 |             for( j=0; j<rlwa.getNumberOfLiteralWords(); j++){
+        |                       ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3399:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   3399 |         while (i < a.buffer.size()) {
+        |                ~~^~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3401:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   3401 |                 for (j = 0; j < rlw.getRunningLength(); j++) {
+        |                             ~~^~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3408:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   3408 |                 for (j = 0; j < rlw.getRunningLength(); j++) {
+        |                             ~~^~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3418:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   3418 |             for( j=0; j<rlw.getNumberOfLiteralWords(); j++){
+        |                       ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::andVerbatim(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:477:20:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::andVerbatim(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:2677:54:   required from ‘long long int BsiUnsigned<uword>::dot_withoutCompression(BsiVector<uword>*) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:2671:15:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3921:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   3921 |     for (int i = 0; i < buffer.size(); i++) {
+        |                     ~~^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::andVerbatimCompress(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3274:36:   required from ‘void HybridBitmap<uword>::And(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:433:12:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::And(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:203:19:   required from ‘HybridBitmap<uword> BsiUnsigned<uword>::topKMax(int) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:193:21:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3653:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   3653 |     for (int i = 0; i < buffer.size(); i++) {
+        |                     ~~^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::andHybridCompress(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3279:30:   required from ‘void HybridBitmap<uword>::And(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:433:12:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::And(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:203:19:   required from ‘HybridBitmap<uword> BsiUnsigned<uword>::topKMax(int) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:193:21:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4020:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4020 |         while (i < buffer.size()) {
+        |                ~~^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4022:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4022 |                 for (j = 0; j < rlwa.getRunningLength(); j++) {
+        |                             ~~^~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4033:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4033 |             for( j=0; j<rlwa.getNumberOfLiteralWords(); j++){
+        |                       ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4053:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4053 |         while (i < a.buffer.size()) {
+        |                ~~^~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4055:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4055 |                 for (j = 0; j < rlw.getRunningLength(); j++) {
+        |                             ~~^~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4065:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4065 |             for( j=0; j<rlw.getNumberOfLiteralWords(); j++){
+        |                       ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::orVerbatimCompress(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3682:31:   required from ‘void HybridBitmap<uword>::Or(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:439:11:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::Or(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:204:17:   required from ‘HybridBitmap<uword> BsiUnsigned<uword>::topKMax(int) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:193:21:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3716:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   3716 |     for (int i = 0; i < buffer.size(); i++) {
+        |                     ~~^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::orVerbatim(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3684:23:   required from ‘void HybridBitmap<uword>::Or(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:439:11:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::Or(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:204:17:   required from ‘HybridBitmap<uword> BsiUnsigned<uword>::topKMax(int) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:193:21:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3935:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   3935 |     for (int i = 0; i < buffer.size(); i++) {
+        |                     ~~^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::orHybridCompress(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3689:29:   required from ‘void HybridBitmap<uword>::Or(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:439:11:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::Or(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:204:17:   required from ‘HybridBitmap<uword> BsiUnsigned<uword>::topKMax(int) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:193:21:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3954:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   3954 |         while (i <buffer.size()) {
+        |                ~~^~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3960:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   3960 |                 for (j = 0; j < rlwa.getRunningLength(); j++) {
+        |                             ~~^~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3966:27: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   3966 |             for (j = 0; j < rlwa.getNumberOfLiteralWords(); j++) {
+        |                         ~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3981:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   3981 |         while (i < a.bufferSize()) {
+        |                ~~^~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3987:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   3987 |                 for (j = 0; j < rlw.getRunningLength(); j++) {
+        |                             ~~^~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3993:27: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   3993 |             for (j = 0; j < rlw.getNumberOfLiteralWords(); j++) {
+        |                         ~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::orHybrid(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3691:21:   required from ‘void HybridBitmap<uword>::Or(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:439:11:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::Or(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:204:17:   required from ‘HybridBitmap<uword> BsiUnsigned<uword>::topKMax(int) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:193:21:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4453:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4453 |         while (i < bufferSize()) {
+        |                ~~^~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4467:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4467 |             for( j=0; j<rlwa.getNumberOfLiteralWords(); j++){
+        |                       ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4482:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4482 |         while (i < a.bufferSize()) {
+        |                ~~^~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4497:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4497 |             for( j=0; j<rlw.getNumberOfLiteralWords(); j++){
+        |                       ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::logicalorDecompress(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3696:13:   required from ‘void HybridBitmap<uword>::Or(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:439:11:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::Or(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:204:17:   required from ‘HybridBitmap<uword> BsiUnsigned<uword>::topKMax(int) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:193:21:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:2604:33: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   2604 |                 for(int i = 0; i< predator.getRunningLength(); i++){
+        |                                ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:2618:49: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   2618 |                 for(int i = actualsizeinwords; i< actualsizeinwords+predator.getRunningLength() - index; i++){
+        |                                                ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::andNotVerbatimCompress(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3467:39:   required from ‘void HybridBitmap<uword>::andNot(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:683:15:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::andNot(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:211:25:   required from ‘HybridBitmap<uword> BsiUnsigned<uword>::topKMax(int) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:193:21:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3446:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   3446 |     for (int i = 0; i < bufferSize(); i++) {
+        |                     ~~^~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::andNotVerbatim(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3471:27:   required from ‘void HybridBitmap<uword>::andNot(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:683:15:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::andNot(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:211:25:   required from ‘HybridBitmap<uword> BsiUnsigned<uword>::topKMax(int) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:193:21:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4325:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4325 |     for (int i = 0; i < bufferSize(); i++) {
+        |                     ~~^~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::andNotHybridCompress(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3481:33:   required from ‘void HybridBitmap<uword>::andNot(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:683:15:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::andNot(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:211:25:   required from ‘HybridBitmap<uword> BsiUnsigned<uword>::topKMax(int) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:193:21:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4123:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4123 |         while (i < buffer.size()) {
+        |                ~~^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4127:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4127 |                 for (j = 0; j < rlwa.getRunningLength(); j++) {
+        |                             ~~^~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4133:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4133 |                 for (j = 0; j < rlwa.getRunningLength(); j++) {
+        |                             ~~^~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4139:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4139 |             for( j=0; j<rlwa.getNumberOfLiteralWords(); j++){
+        |                       ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4145:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4145 |                 while(i<buffer.size()) {
+        |                       ~^~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4158:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4158 |         while (i < a.bufferSize()) {
+        |                ~~^~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4160:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4160 |                 for (j = 0; j < rlw.getRunningLength(); j++) {
+        |                             ~~^~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4168:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4168 |             for( j=0; j<rlw.getNumberOfLiteralWords(); j++){
+        |                       ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::maj(const HybridBitmap<uword>&, const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:393:12:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::maj(const HybridBitmap<uword>&, const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiVector.hpp:811:21:   required from ‘HybridBitmap<uword> BsiVector<uword>::maj(const HybridBitmap<uword>&, const HybridBitmap<uword>&, const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:811:33:   required from ‘BsiVector<uword>* BsiUnsigned<uword>::SUMsigned(BsiVector<uword>*) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:752:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3165:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   3165 |     for (int i = 0; i < buffer.size(); i++) {
+        |                     ~~^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::xorHybrid(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3746:18:   required from ‘void HybridBitmap<uword>::Xor(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:451:12:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::Xor(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:829:52:   required from ‘BsiVector<uword>* BsiUnsigned<uword>::SUMsigned(BsiVector<uword>*) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:752:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4633:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4633 |         while (i < bufferSize()) {
+        |                ~~^~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4647:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4647 |             for( j=0; j<rlwa.getNumberOfLiteralWords(); j++){
+        |                       ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4667:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4667 |         while (i < a.bufferSize()) {
+        |                ~~^~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4681:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4681 |             for( j=0; j<rlw.getNumberOfLiteralWords(); j++){
+        |                       ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::logicalxorDecompress(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3750:13:   required from ‘void HybridBitmap<uword>::Xor(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:451:12:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::Xor(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:829:52:   required from ‘BsiVector<uword>* BsiUnsigned<uword>::SUMsigned(BsiVector<uword>*) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:752:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4859:11: warning: unused variable ‘actualsizeinwords’ [-Wunused-variable]
+   4859 |     uword actualsizeinwords = 0;
+        |           ^~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::xorNotVerbatim(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3853:23:   required from ‘void HybridBitmap<uword>::xorNot(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:457:15:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::xorNot(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:406:41:   required from ‘BsiVector<uword>* BsiUnsigned<uword>::SUM(long int) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:384:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4533:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4533 |     for (int i = 0; i < bufferSize(); i++) {
+        |                     ~~^~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::xorNotHybrid(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3855:21:   required from ‘void HybridBitmap<uword>::xorNot(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:457:15:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::xorNot(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:406:41:   required from ‘BsiVector<uword>* BsiUnsigned<uword>::SUM(long int) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:384:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4779:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4779 |         while (i < bufferSize()) {
+        |                ~~^~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4792:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4792 |             for( j=0; j<rlwa.getNumberOfLiteralWords(); j++){
+        |                       ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4806:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4806 |         while (i < a.bufferSize()) {
+        |                ~~^~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4820:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4820 |             for( j=0; j<rlw.getNumberOfLiteralWords(); j++){
+        |                       ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:11,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp:15:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/runninglengthword.h: In instantiation of ‘size_t BufferedRunningLengthWord<uword>::dischargeDecompressed(HybridBitmap<uword>&, size_t) [with uword = long unsigned int; size_t = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:2615:51:   required from ‘void HybridBitmap<uword>::logicalorDecompress(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3696:13:   required from ‘void HybridBitmap<uword>::Or(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:439:11:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::Or(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:204:17:   required from ‘HybridBitmap<uword> BsiUnsigned<uword>::topKMax(int) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:193:21:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/runninglengthword.h:385:29: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+    385 |             for(int i = 0; i< pl; i++){
+        |                            ~^~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/runninglengthword.h:389:29: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+    389 |             for(int i = 0; i< pl; i++){
+        |                            ~^~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:11,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp:15:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/runninglengthword.h: In instantiation of ‘size_t BufferedRunningLengthWord<uword>::dischargeNegatedDecompressed(HybridBitmap<uword>&, size_t) [with uword = long unsigned int; size_t = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4886:58:   required from ‘void HybridBitmap<uword>::logicalxorDecompress(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3750:13:   required from ‘void HybridBitmap<uword>::Xor(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:451:12:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::Xor(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:829:52:   required from ‘BsiVector<uword>* BsiUnsigned<uword>::SUMsigned(BsiVector<uword>*) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:752:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/hybridBitmap/runninglengthword.h:421:29: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+    421 |             for(int i = 0; i< pl; i++){
+        |                            ~^~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_cuda.cpp:17:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp: In member function ‘BsiVector<uword>* BsiUnsigned<uword>::multiply_bsi(BsiVector<uword>*) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/../../../bsiCPP/bsi/BsiUnsigned.hpp:1463:1: warning: control reaches end of non-void function [-Wreturn-type]
+   1463 | };
+        | ^
+  [3/4] /usr/bin/g++ -MMD -MF /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/build/temp.linux-x86_64-cpython-312/csrc/cuda/bsi_vector_cuda.o.d -fno-strict-overflow -Wsign-compare -DNDEBUG -O2 -Wall -fPIC -O2 -isystem /home/017510883/miniconda3/envs/bsiPytorch/include -fPIC -O2 -isystem /home/017510883/miniconda3/envs/bsiPytorch/include -I/opt/ohpc/pub/apps/nvidia/nvhpc/24.11/Linux_x86_64/24.11/cuda/include -fPIC -DBSI_WITH_CUDA=1 -I/fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsiCPP -I/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/torch/include -I/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -I/opt/ohpc/pub/apps/nvidia/nvhpc/24.11/Linux_x86_64/24.11/cuda/include -I/home/017510883/miniconda3/envs/bsiPytorch/include/python3.12 -c -c /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_vector_cuda.cpp -o /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/build/temp.linux-x86_64-cpython-312/csrc/cuda/bsi_vector_cuda.o -O3 -std=c++20 -DTORCH_API_INCLUDE_EXTENSION_H '-DPYBIND11_COMPILER_TYPE="_gcc"' '-DPYBIND11_STDLIB="_libstdcpp"' '-DPYBIND11_BUILD_ABI="_cxxabi1016"' -DTORCH_EXTENSION_NAME=bsi_ops -D_GLIBCXX_USE_CXX11_ABI=1
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_vector_cuda.cpp: In function ‘BsiVectorCudaData build_bsi_vector_from_float_tensor(const at::Tensor&, int, const c10::Device&, bool)’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/csrc/cuda/bsi_vector_cuda.cpp:92:10: warning: unused variable ‘all_zero’ [-Wunused-variable]
+     92 |     bool all_zero = (rows > 0) && !any_non_zero;
+        |          ^~~~~~~~
+  [4/4] /usr/bin/g++ -MMD -MF /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/build/temp.linux-x86_64-cpython-312/bsiFunctions.o.d -fno-strict-overflow -Wsign-compare -DNDEBUG -O2 -Wall -fPIC -O2 -isystem /home/017510883/miniconda3/envs/bsiPytorch/include -fPIC -O2 -isystem /home/017510883/miniconda3/envs/bsiPytorch/include -I/opt/ohpc/pub/apps/nvidia/nvhpc/24.11/Linux_x86_64/24.11/cuda/include -fPIC -DBSI_WITH_CUDA=1 -I/fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsiCPP -I/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/torch/include -I/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -I/opt/ohpc/pub/apps/nvidia/nvhpc/24.11/Linux_x86_64/24.11/cuda/include -I/home/017510883/miniconda3/envs/bsiPytorch/include/python3.12 -c -c /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp -o /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/build/temp.linux-x86_64-cpython-312/bsiFunctions.o -O3 -std=c++20 -DTORCH_API_INCLUDE_EXTENSION_H '-DPYBIND11_COMPILER_TYPE="_gcc"' '-DPYBIND11_STDLIB="_libstdcpp"' '-DPYBIND11_BUILD_ABI="_cxxabi1016"' -DTORCH_EXTENSION_NAME=bsi_ops -D_GLIBCXX_USE_CXX11_ABI=1
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp: In function ‘RandomNumberDotProduct random_number_dot_vector(at::Tensor, at::Tensor)’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:110:20: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+    110 |     for(auto i=0; i<vec1.size(); i++){
+        |                   ~^~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp: In function ‘VectorDotProductResult dot_product_vector(at::Tensor, at::Tensor, float)’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:177:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+    177 |     for(int i=0;i<vec1.size(); i++){
+        |                 ~^~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp: In function ‘VectorDotProductResult dot_product_vector_noPrecision(at::Tensor, at::Tensor)’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:229:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<short int, std::allocator<short int> >::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+    229 |     for(int i=0;i<vec1.size(); i++){
+        |                 ~^~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp: In function ‘DotProductResult dot_product(at::Tensor, at::Tensor, float)’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:251:14: warning: unused variable ‘start’ [-Wunused-variable]
+    251 |     uint64_t start = timeSinceEpoch();
+        |              ^~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:272:15: warning: unused variable ‘end’ [-Wunused-variable]
+    272 |     u_int64_t end = timeSinceEpoch();
+        |               ^~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:278:12: warning: unused variable ‘m_v_mb’ [-Wunused-variable]
+    278 |     double m_v_mb = static_cast<double>(m_v_bytes) / (1<<20);
+        |            ^~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:279:12: warning: unused variable ‘n_v_mb’ [-Wunused-variable]
+    279 |     double n_v_mb = static_cast<double>(n_v_bytes) / (1<<20);
+        |            ^~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:324:14: warning: unused variable ‘bsiMemory’ [-Wunused-variable]
+    324 |     uint64_t bsiMemory = 0;
+        |              ^~~~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:1:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp: In instantiation of ‘BsiVector<uword>* BsiVector<uword>::buildBsiVector(std::vector<long int>, double) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:138:31:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp:494:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+    494 |                 for(int j=1; j<bitSlices[i].size()-1; j++){
+        |                              ~^~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp:518:22: warning: unused variable ‘totalSlices’ [-Wunused-variable]
+    518 |         const size_t totalSlices = compressedSlices + verbatimSlices;
+        |                      ^~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp:548:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+    548 |                 for(int j=1; j<bitSlices[i].size()-1; j++){
+        |                              ~^~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp:575:22: warning: unused variable ‘totalSlices’ [-Wunused-variable]
+    575 |         const size_t totalSlices = compressedSlices + verbatimSlices;
+        |                      ^~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp: In instantiation of ‘BsiVector<uword>* BsiVector<uword>::buildBsiVector(std::vector<double>, int, double) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:358:31:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp:631:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+    631 |                 for(int j=1; j<bitSlices[i].size()-1; j++){
+        |                              ~^~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp:655:22: warning: unused variable ‘totalSlices’ [-Wunused-variable]
+    655 |         const size_t totalSlices = compressedSlices + verbatimSlices;
+        |                      ^~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp:686:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+    686 |                 for(int j=1; j<bitSlices[i].size()-1; j++){
+        |                              ~^~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp:713:22: warning: unused variable ‘totalSlices’ [-Wunused-variable]
+    713 |         const size_t totalSlices = compressedSlices + verbatimSlices;
+        |                      ^~~~~~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:1:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘HybridBitmap<uword>::HybridBitmap(bool) [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp:504:37:   required from ‘BsiVector<uword>* BsiVector<uword>::buildBsiVector(std::vector<long int>, double) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:138:31:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:1244:12: warning: ‘HybridBitmap<long unsigned int>::lastRLW’ will be initialized after [-Wreorder]
+   1244 |     size_t lastRLW;
+        |            ^~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:1:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:36:10: warning:   ‘bool HybridBitmap<long unsigned int>::verbatim’ [-Wreorder]
+     36 |     bool verbatim = false;
+        |          ^~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:57:5: warning:   when initialized here [-Wreorder]
+     57 |     HybridBitmap(bool verbatim) : buffer(1, 0), sizeinbits(0), lastRLW(0), verbatim(verbatim) {
+        |     ^~~~~~~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:1:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘HybridBitmap<uword>::HybridBitmap(const HybridBitmap<uword>&) [with uword = long unsigned int]’:
+  /usr/include/c++/11/bits/stl_construct.h:97:14:   required from ‘constexpr decltype (::new(void*(0)) _Tp) std::construct_at(_Tp*, _Args&& ...) [with _Tp = HybridBitmap<long unsigned int>; _Args = {const HybridBitmap<long unsigned int>&}; decltype (::new(void*(0)) _Tp) = HybridBitmap<long unsigned int>*]’
+  /usr/include/c++/11/bits/alloc_traits.h:518:4:   required from ‘static constexpr void std::allocator_traits<std::allocator<_CharT> >::construct(std::allocator_traits<std::allocator<_CharT> >::allocator_type&, _Up*, _Args&& ...) [with _Up = HybridBitmap<long unsigned int>; _Args = {const HybridBitmap<long unsigned int>&}; _Tp = HybridBitmap<long unsigned int>; std::allocator_traits<std::allocator<_CharT> >::allocator_type = std::allocator<HybridBitmap<long unsigned int> >]’
+  /usr/include/c++/11/bits/stl_vector.h:1192:30:   required from ‘void std::vector<_Tp, _Alloc>::push_back(const value_type&) [with _Tp = HybridBitmap<long unsigned int>; _Alloc = std::allocator<HybridBitmap<long unsigned int> >; std::vector<_Tp, _Alloc>::value_type = HybridBitmap<long unsigned int>]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp:280:18:   required from ‘void BsiVector<uword>::addSlice(const HybridBitmap<uword>&) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp:501:22:   required from ‘BsiVector<uword>* BsiVector<uword>::buildBsiVector(std::vector<long int>, double) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:138:31:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:1244:12: warning: ‘HybridBitmap<long unsigned int>::lastRLW’ will be initialized after [-Wreorder]
+   1244 |     size_t lastRLW;
+        |            ^~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:1:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:36:10: warning:   ‘bool HybridBitmap<long unsigned int>::verbatim’ [-Wreorder]
+     36 |     bool verbatim = false;
+        |          ^~~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:1:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:65:5: warning:   when initialized here [-Wreorder]
+     65 |     HybridBitmap(const HybridBitmap &other)
+        |     ^~~~~~~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:1:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:36:10: warning: ‘HybridBitmap<long unsigned int>::verbatim’ will be initialized after [-Wreorder]
+     36 |     bool verbatim = false;
+        |          ^~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:35:12: warning:   ‘double HybridBitmap<long unsigned int>::density’ [-Wreorder]
+     35 |     double density=0;
+        |            ^~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:1:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:65:5: warning:   when initialized here [-Wreorder]
+     65 |     HybridBitmap(const HybridBitmap &other)
+        |     ^~~~~~~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:2:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp: In instantiation of ‘BsiVector<uword>* BsiUnsigned<uword>::multiplyByConstantNew(int) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1041:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1065:26: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<HybridBitmap<long unsigned int>, std::allocator<HybridBitmap<long unsigned int> > >::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1065 |                 while (k >= res->bsi.size()) {
+        |                        ~~^~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1077:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<HybridBitmap<long unsigned int>, std::allocator<HybridBitmap<long unsigned int> > >::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1077 |                 for (i = 1; i < this->bsi.size(); i++) {
+        |                             ~~^~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1079:36: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<HybridBitmap<long unsigned int>, std::allocator<HybridBitmap<long unsigned int> > >::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1079 |                     while ((i + k) >= res->bsi.size()) {
+        |                            ~~~~~~~~^~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1080:32: warning: unused variable ‘buffersize’ [-Wunused-variable]
+   1080 |                         size_t buffersize = this->bsi[0].bufferSize();
+        |                                ^~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1092:53: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<HybridBitmap<long unsigned int>, std::allocator<HybridBitmap<long unsigned int> > >::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1092 |                 for (int j = this->numSlices + k; j < res->bsi.size(); j++) {
+        |                                                   ~~^~~~~~~~~~~~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:2:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp: In instantiation of ‘BsiVector<uword>* BsiUnsigned<uword>::multiplyWithBsiHorizontal(const BsiVector<uword>*, int) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:2027:20:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:2043:19: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   2043 |     for(int i=0; i< this->bsi[0].bufferSize(); i++){
+        |                  ~^~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:2054:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   2054 |         for(int j=0; j< answer.size() ; j++){
+        |                      ~^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:2028:9: warning: unused variable ‘precisionInBits’ [-Wunused-variable]
+   2028 |     int precisionInBits = 3*precision +1;
+        |         ^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp: In instantiation of ‘BsiVector<uword>* BsiUnsigned<uword>::multiplyWithBsiHorizontal(const BsiVector<uword>*) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:2066:20:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:2081:19: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   2081 |     for(int i=0; i< this->bsi[0].bufferSize(); i++){
+        |                  ~^~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:2092:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   2092 |         for(int j=0; j< answer.size() ; j++){
+        |                      ~^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp: In instantiation of ‘long int BsiUnsigned<uword>::dotProduct(BsiVector<uword>*) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1631:6:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1654:25: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1654 |     for (int bu = 0; bu < this->bsi[0].bufferSize(); bu++)
+        |                      ~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1667:27: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1667 |         for (int i = 0; i < a.size(); i++)
+        |                         ~~^~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1671:34: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1671 |         for (int i = a.size(); i < b.size() + a.size(); i++)
+        |                                ~~^~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1679:29: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1679 |         for (int it = 1; it < b.size(); it++)
+        |                          ~~~^~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1688:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1688 |             for (int i = 1; i < a.size(); i++)
+        |                             ~~^~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1738:28: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1738 |         for (auto n = 0; n < answer.size(); n++)
+        |                          ~~^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp: In instantiation of ‘bool BsiUnsigned<uword>::append(long int) [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:2831:6:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:2835:19: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<HybridBitmap<long unsigned int>, std::allocator<HybridBitmap<long unsigned int> > >::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   2835 |     for (int i=0;i<this->bsi.size(); i++){
+        |                  ~^~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:2842:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<HybridBitmap<long unsigned int>, std::allocator<HybridBitmap<long unsigned int> > >::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   2842 |         for(int i=0; i<this->bsi.size(); i++){
+        |                      ~^~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:2847:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<HybridBitmap<long unsigned int>, std::allocator<HybridBitmap<long unsigned int> > >::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   2847 |         for(int i=0; i<this->bsi.size(); i++){
+        |                      ~^~~~~~~~~~~~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:3:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp: In instantiation of ‘BsiUnsigned<uword>* BsiSigned<uword>::absScale(double) [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:497:21:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:500:9: warning: variable ‘resSize’ set but not used [-Wunused-but-set-variable]
+    500 |     int resSize=0;
+        |         ^~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp: In instantiation of ‘BsiVector<uword>* BsiSigned<uword>::multiplyWithBsiHorizontal(const BsiVector<uword>*, int) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:1311:20:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:1327:19: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1327 |     for(int i=0; i< this->bsi[0].bufferSize(); i++){
+        |                  ~^~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:1338:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1338 |         for(int j=0; j< answer.size() ; j++){
+        |                      ~^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:1343:13: warning: unused variable ‘temp’ [-Wunused-variable]
+   1343 |         int temp = res->bsi[j].numberOfOnes();
+        |             ^~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:1312:9: warning: unused variable ‘precisionInBits’ [-Wunused-variable]
+   1312 |     int precisionInBits = 3*precision +1;
+        |         ^~~~~~~~~~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:1:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘size_t HybridBitmap<uword>::numberOfOnes() const [with uword = long unsigned int; size_t = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:205:27:   required from ‘HybridBitmap<uword> BsiUnsigned<uword>::topKMax(int) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:193:21:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:1772:24: warning: unused variable ‘temp’ [-Wunused-variable]
+   1772 |                 size_t temp = buffer.size();
+        |                        ^~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:1787:27: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1787 |         for (int i = 0; i < bufferSize(); i++) {
+        |                         ~~^~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:1792:20: warning: unused variable ‘temp’ [-Wunused-variable]
+   1792 |             size_t temp = buffer.size();
+        |                    ^~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:1812:24: warning: unused variable ‘temp’ [-Wunused-variable]
+   1812 |                 size_t temp = buffer.size();
+        |                        ^~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘HybridBitmap<uword>::HybridBitmap(HybridBitmap<uword>&&) [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:222:12:   required from ‘HybridBitmap<uword> BsiUnsigned<uword>::topKMax(int) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:193:21:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:1244:12: warning: ‘HybridBitmap<long unsigned int>::lastRLW’ will be initialized after [-Wreorder]
+   1244 |     size_t lastRLW;
+        |            ^~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:1:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:36:10: warning:   ‘bool HybridBitmap<long unsigned int>::verbatim’ [-Wreorder]
+     36 |     bool verbatim = false;
+        |          ^~~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:1:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:74:5: warning:   when initialized here [-Wreorder]
+     74 |     HybridBitmap(HybridBitmap &&other)
+        |     ^~~~~~~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:1:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:36:10: warning: ‘HybridBitmap<long unsigned int>::verbatim’ will be initialized after [-Wreorder]
+     36 |     bool verbatim = false;
+        |          ^~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:35:12: warning:   ‘double HybridBitmap<long unsigned int>::density’ [-Wreorder]
+     35 |     double density=0;
+        |            ^~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:1:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:74:5: warning:   when initialized here [-Wreorder]
+     74 |     HybridBitmap(HybridBitmap &&other)
+        |     ^~~~~~~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:2:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp: In instantiation of ‘int BsiUnsigned<uword>::sliceLengthFinder(uword) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:385:23:   required from ‘BsiVector<uword>* BsiUnsigned<uword>::SUM(long int) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:384:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:372:22: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+    372 |     for(int i = 0; i < sizeof(uword) * 8; i++)
+        |                    ~~^~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:374:15: warning: unused variable ‘ai’ [-Wunused-variable]
+    374 |         uword ai = (static_cast<uword>(1) << i);
+        |               ^~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:2:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp: In instantiation of ‘void BsiUnsigned<uword>::multiply(std::vector<_Tp>&, std::vector<_Tp>&, std::vector<_Tp>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:2050:15:   required from ‘BsiVector<uword>* BsiUnsigned<uword>::multiplyWithBsiHorizontal(const BsiVector<uword>*, int) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:2027:20:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1909:19: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1909 |     for(int i=0; i<a.size(); i++){
+        |                  ~^~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1912:28: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1912 |     for(int i = a.size(); i< b.size() + a.size(); i++){
+        |                           ~^~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1917:21: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1917 |     for(int it=1; it<b.size(); it++){
+        |                   ~~^~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1927:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1927 |         for(int i=1; i<a.size(); i++){
+        |                      ~^~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1905:9: warning: unused variable ‘startPosition’ [-Wunused-variable]
+   1905 |     int startPosition = b.size() + a.size() - ans.size();
+        |         ^~~~~~~~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:3:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp: In instantiation of ‘BsiVector<uword>* BsiSigned<uword>::SUMunsigned(BsiVector<uword>*) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:264:18:   required from ‘BsiVector<uword>* BsiSigned<uword>::SUM(BsiVector<uword>*) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:253:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:717:13: warning: unused variable ‘x’ [-Wunused-variable]
+    717 |         int x = C.numberOfOnes();
+        |             ^
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:1:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘HybridBitmap<uword>::HybridBitmap(bool, size_t) [with uword = long unsigned int; size_t = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:1226:25:   required from ‘BsiVector<uword>* BsiSigned<uword>::multiplyByConstant(int) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:1178:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:1244:12: warning: ‘HybridBitmap<long unsigned int>::lastRLW’ will be initialized after [-Wreorder]
+   1244 |     size_t lastRLW;
+        |            ^~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:1:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:36:10: warning:   ‘bool HybridBitmap<long unsigned int>::verbatim’ [-Wreorder]
+     36 |     bool verbatim = false;
+        |          ^~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:61:5: warning:   when initialized here [-Wreorder]
+     61 |     HybridBitmap(bool verbatim, size_t buffersize) : buffer(buffersize, 0), sizeinbits(buffersize*wordinbits), lastRLW(0), verbatim(verbatim) {
+        |     ^~~~~~~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:1:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::selectMultiplicationInPlace(const HybridBitmap<uword>&, const HybridBitmap<uword>&) [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:2423:48:   required from ‘BsiVector<uword>* BsiSigned<uword>::multiplyBSI(BsiVector<uword>*) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:2404:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3208:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   3208 |     for (int i = 0; i < buffer.size(); i++) {
+        |                     ~~^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::logicalnot(HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:1165:19:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::logicalnot() const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:399:52:   required from ‘BsiVector<uword>* BsiUnsigned<uword>::SUM(long int) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:384:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:1873:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   1873 |         for(int i=0; i < bufferSize(); i++){
+        |                      ~~^~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::inPlaceXorHybrid(const HybridBitmap<uword>&) [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3778:9:   required from ‘void HybridBitmap<uword>::XorInPlace(const HybridBitmap<uword>&) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1484:21:   required from ‘BsiVector<uword>* BsiUnsigned<uword>::multiplyBSI(BsiVector<uword>*) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1466:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4710:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4710 |         while (i < bufferSize()) {
+        |                ~~^~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4721:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4721 |             for( j=0; j<rlwa.getNumberOfLiteralWords(); j++){
+        |                       ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4735:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4735 |         while (i < a.bufferSize()) {
+        |                ~~^~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4744:27: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4744 |                     if (i >= a.bufferSize()) break;
+        |                         ~~^~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4750:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4750 |             for( j=0; j<rlw.getNumberOfLiteralWords(); j++){
+        |                       ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::andVerbatimCompressInPlace(const HybridBitmap<uword>&) [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3305:17:   required from ‘void HybridBitmap<uword>::AndInPlace(const HybridBitmap<uword>&) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1507:29:   required from ‘BsiVector<uword>* BsiUnsigned<uword>::multiplyBSI(BsiVector<uword>*) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1466:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3334:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   3334 |     for (int i = 0; i < buffer.size(); i++) {
+        |                     ~~^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::andVerbatimInPlace(const HybridBitmap<uword>&) [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3308:13:   required from ‘void HybridBitmap<uword>::AndInPlace(const HybridBitmap<uword>&) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1507:29:   required from ‘BsiVector<uword>* BsiUnsigned<uword>::multiplyBSI(BsiVector<uword>*) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1466:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3344:19: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   3344 |     for(int i=0; i<buffer.size();i++){
+        |                  ~^~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::andHybridCompressInPlace(const HybridBitmap<uword>&) [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3315:13:   required from ‘void HybridBitmap<uword>::AndInPlace(const HybridBitmap<uword>&) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1507:29:   required from ‘BsiVector<uword>* BsiUnsigned<uword>::multiplyBSI(BsiVector<uword>*) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1466:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3361:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   3361 |         while (i < buffer.size()) {
+        |                ~~^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3371:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   3371 |                 for (j = 0; j < rlwa.getRunningLength(); j++) {
+        |                             ~~^~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3381:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   3381 |             for( j=0; j<rlwa.getNumberOfLiteralWords(); j++){
+        |                       ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3399:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   3399 |         while (i < a.buffer.size()) {
+        |                ~~^~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3401:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   3401 |                 for (j = 0; j < rlw.getRunningLength(); j++) {
+        |                             ~~^~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3408:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   3408 |                 for (j = 0; j < rlw.getRunningLength(); j++) {
+        |                             ~~^~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3418:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   3418 |             for( j=0; j<rlw.getNumberOfLiteralWords(); j++){
+        |                       ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::andVerbatim(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:477:20:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::andVerbatim(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:2677:54:   required from ‘long long int BsiUnsigned<uword>::dot_withoutCompression(BsiVector<uword>*) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:2671:15:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3921:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   3921 |     for (int i = 0; i < buffer.size(); i++) {
+        |                     ~~^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::andVerbatimCompress(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3274:36:   required from ‘void HybridBitmap<uword>::And(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:433:12:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::And(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:203:19:   required from ‘HybridBitmap<uword> BsiUnsigned<uword>::topKMax(int) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:193:21:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3653:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   3653 |     for (int i = 0; i < buffer.size(); i++) {
+        |                     ~~^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::andHybridCompress(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3279:30:   required from ‘void HybridBitmap<uword>::And(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:433:12:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::And(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:203:19:   required from ‘HybridBitmap<uword> BsiUnsigned<uword>::topKMax(int) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:193:21:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4020:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4020 |         while (i < buffer.size()) {
+        |                ~~^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4022:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4022 |                 for (j = 0; j < rlwa.getRunningLength(); j++) {
+        |                             ~~^~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4033:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4033 |             for( j=0; j<rlwa.getNumberOfLiteralWords(); j++){
+        |                       ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4053:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4053 |         while (i < a.buffer.size()) {
+        |                ~~^~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4055:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4055 |                 for (j = 0; j < rlw.getRunningLength(); j++) {
+        |                             ~~^~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4065:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4065 |             for( j=0; j<rlw.getNumberOfLiteralWords(); j++){
+        |                       ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::orVerbatimCompress(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3682:31:   required from ‘void HybridBitmap<uword>::Or(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:439:11:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::Or(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:204:17:   required from ‘HybridBitmap<uword> BsiUnsigned<uword>::topKMax(int) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:193:21:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3716:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   3716 |     for (int i = 0; i < buffer.size(); i++) {
+        |                     ~~^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::orVerbatim(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3684:23:   required from ‘void HybridBitmap<uword>::Or(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:439:11:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::Or(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:204:17:   required from ‘HybridBitmap<uword> BsiUnsigned<uword>::topKMax(int) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:193:21:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3935:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   3935 |     for (int i = 0; i < buffer.size(); i++) {
+        |                     ~~^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::orHybridCompress(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3689:29:   required from ‘void HybridBitmap<uword>::Or(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:439:11:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::Or(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:204:17:   required from ‘HybridBitmap<uword> BsiUnsigned<uword>::topKMax(int) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:193:21:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3954:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   3954 |         while (i <buffer.size()) {
+        |                ~~^~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3960:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   3960 |                 for (j = 0; j < rlwa.getRunningLength(); j++) {
+        |                             ~~^~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3966:27: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   3966 |             for (j = 0; j < rlwa.getNumberOfLiteralWords(); j++) {
+        |                         ~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3981:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   3981 |         while (i < a.bufferSize()) {
+        |                ~~^~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3987:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   3987 |                 for (j = 0; j < rlw.getRunningLength(); j++) {
+        |                             ~~^~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3993:27: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   3993 |             for (j = 0; j < rlw.getNumberOfLiteralWords(); j++) {
+        |                         ~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::orHybrid(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3691:21:   required from ‘void HybridBitmap<uword>::Or(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:439:11:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::Or(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:204:17:   required from ‘HybridBitmap<uword> BsiUnsigned<uword>::topKMax(int) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:193:21:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4453:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4453 |         while (i < bufferSize()) {
+        |                ~~^~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4467:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4467 |             for( j=0; j<rlwa.getNumberOfLiteralWords(); j++){
+        |                       ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4482:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4482 |         while (i < a.bufferSize()) {
+        |                ~~^~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4497:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4497 |             for( j=0; j<rlw.getNumberOfLiteralWords(); j++){
+        |                       ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::logicalorDecompress(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3696:13:   required from ‘void HybridBitmap<uword>::Or(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:439:11:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::Or(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:204:17:   required from ‘HybridBitmap<uword> BsiUnsigned<uword>::topKMax(int) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:193:21:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:2604:33: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   2604 |                 for(int i = 0; i< predator.getRunningLength(); i++){
+        |                                ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:2618:49: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   2618 |                 for(int i = actualsizeinwords; i< actualsizeinwords+predator.getRunningLength() - index; i++){
+        |                                                ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::andNotVerbatimCompress(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3467:39:   required from ‘void HybridBitmap<uword>::andNot(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:683:15:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::andNot(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:211:25:   required from ‘HybridBitmap<uword> BsiUnsigned<uword>::topKMax(int) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:193:21:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3446:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   3446 |     for (int i = 0; i < bufferSize(); i++) {
+        |                     ~~^~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::andNotVerbatim(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3471:27:   required from ‘void HybridBitmap<uword>::andNot(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:683:15:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::andNot(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:211:25:   required from ‘HybridBitmap<uword> BsiUnsigned<uword>::topKMax(int) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:193:21:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4325:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4325 |     for (int i = 0; i < bufferSize(); i++) {
+        |                     ~~^~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::andNotHybridCompress(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3481:33:   required from ‘void HybridBitmap<uword>::andNot(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:683:15:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::andNot(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:211:25:   required from ‘HybridBitmap<uword> BsiUnsigned<uword>::topKMax(int) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:193:21:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4123:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4123 |         while (i < buffer.size()) {
+        |                ~~^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4127:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4127 |                 for (j = 0; j < rlwa.getRunningLength(); j++) {
+        |                             ~~^~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4133:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4133 |                 for (j = 0; j < rlwa.getRunningLength(); j++) {
+        |                             ~~^~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4139:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4139 |             for( j=0; j<rlwa.getNumberOfLiteralWords(); j++){
+        |                       ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4145:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4145 |                 while(i<buffer.size()) {
+        |                       ~^~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4158:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4158 |         while (i < a.bufferSize()) {
+        |                ~~^~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4160:31: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4160 |                 for (j = 0; j < rlw.getRunningLength(); j++) {
+        |                             ~~^~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4168:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4168 |             for( j=0; j<rlw.getNumberOfLiteralWords(); j++){
+        |                       ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::maj(const HybridBitmap<uword>&, const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:393:12:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::maj(const HybridBitmap<uword>&, const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp:811:21:   required from ‘HybridBitmap<uword> BsiVector<uword>::maj(const HybridBitmap<uword>&, const HybridBitmap<uword>&, const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:811:33:   required from ‘BsiVector<uword>* BsiUnsigned<uword>::SUMsigned(BsiVector<uword>*) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:752:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3165:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<long unsigned int>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+   3165 |     for (int i = 0; i < buffer.size(); i++) {
+        |                     ~~^~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::xorHybrid(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3746:18:   required from ‘void HybridBitmap<uword>::Xor(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:451:12:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::Xor(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:829:52:   required from ‘BsiVector<uword>* BsiUnsigned<uword>::SUMsigned(BsiVector<uword>*) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:752:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4633:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4633 |         while (i < bufferSize()) {
+        |                ~~^~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4647:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4647 |             for( j=0; j<rlwa.getNumberOfLiteralWords(); j++){
+        |                       ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4667:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4667 |         while (i < a.bufferSize()) {
+        |                ~~^~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4681:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4681 |             for( j=0; j<rlw.getNumberOfLiteralWords(); j++){
+        |                       ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::logicalxorDecompress(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3750:13:   required from ‘void HybridBitmap<uword>::Xor(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:451:12:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::Xor(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:829:52:   required from ‘BsiVector<uword>* BsiUnsigned<uword>::SUMsigned(BsiVector<uword>*) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:752:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4859:11: warning: unused variable ‘actualsizeinwords’ [-Wunused-variable]
+   4859 |     uword actualsizeinwords = 0;
+        |           ^~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::xorNotVerbatim(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3853:23:   required from ‘void HybridBitmap<uword>::xorNot(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:457:15:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::xorNot(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:406:41:   required from ‘BsiVector<uword>* BsiUnsigned<uword>::SUM(long int) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:384:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4533:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4533 |     for (int i = 0; i < bufferSize(); i++) {
+        |                     ~~^~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h: In instantiation of ‘void HybridBitmap<uword>::xorNotHybrid(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3855:21:   required from ‘void HybridBitmap<uword>::xorNot(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:457:15:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::xorNot(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:406:41:   required from ‘BsiVector<uword>* BsiUnsigned<uword>::SUM(long int) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:384:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4779:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4779 |         while (i < bufferSize()) {
+        |                ~~^~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4792:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4792 |             for( j=0; j<rlwa.getNumberOfLiteralWords(); j++){
+        |                       ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4806:18: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+   4806 |         while (i < a.bufferSize()) {
+        |                ~~^~~~~~~~~~~~~~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4820:24: warning: comparison of integer expressions of different signedness: ‘int’ and ‘long unsigned int’ [-Wsign-compare]
+   4820 |             for( j=0; j<rlw.getNumberOfLiteralWords(); j++){
+        |                       ~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:11,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:1:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/runninglengthword.h: In instantiation of ‘size_t BufferedRunningLengthWord<uword>::dischargeDecompressed(HybridBitmap<uword>&, size_t) [with uword = long unsigned int; size_t = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:2615:51:   required from ‘void HybridBitmap<uword>::logicalorDecompress(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3696:13:   required from ‘void HybridBitmap<uword>::Or(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:439:11:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::Or(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:204:17:   required from ‘HybridBitmap<uword> BsiUnsigned<uword>::topKMax(int) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:193:21:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/runninglengthword.h:385:29: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+    385 |             for(int i = 0; i< pl; i++){
+        |                            ~^~~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/runninglengthword.h:389:29: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+    389 |             for(int i = 0; i< pl; i++){
+        |                            ~^~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:11,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiVector.hpp:14,
+                   from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:1:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/runninglengthword.h: In instantiation of ‘size_t BufferedRunningLengthWord<uword>::dischargeNegatedDecompressed(HybridBitmap<uword>&, size_t) [with uword = long unsigned int; size_t = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:4886:58:   required from ‘void HybridBitmap<uword>::logicalxorDecompress(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:3750:13:   required from ‘void HybridBitmap<uword>::Xor(const HybridBitmap<uword>&, HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/hybridbitmap.h:451:12:   required from ‘HybridBitmap<uword> HybridBitmap<uword>::Xor(const HybridBitmap<uword>&) const [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:829:52:   required from ‘BsiVector<uword>* BsiUnsigned<uword>::SUMsigned(BsiVector<uword>*) [with uword = long unsigned int]’
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:752:19:   required from here
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/hybridBitmap/runninglengthword.h:421:29: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+    421 |             for(int i = 0; i< pl; i++){
+        |                            ~^~~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:2:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp: In member function ‘BsiVector<uword>* BsiUnsigned<uword>::multiply_bsi(BsiVector<uword>*) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:1463:1: warning: control reaches end of non-void function [-Wreturn-type]
+   1463 | };
+        | ^
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:2:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp: In member function ‘BsiVector<uword>* BsiUnsigned<uword>::sum_Horizontal(const BsiVector<uword>*) const [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiUnsigned.hpp:654:12: warning: ‘res’ is used uninitialized [-Wuninitialized]
+    654 |     return res;
+        |            ^~~
+  In file included from /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/bsiFunctions.cpp:3:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp: In member function ‘BsiVector<uword>* BsiSigned<uword>::convertToTwos(int) [with uword = long unsigned int]’:
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:361:12: warning: function may return address of local variable [-Wreturn-local-addr]
+    361 |     return ans;
+        |            ^~~
+  /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/../bsiCPP/bsi/BsiSigned.hpp:345:15: note: declared here
+    345 |     BsiSigned res(bits);
+        |               ^~~
+  ninja: build stopped: subcommand failed.
+  Traceback (most recent call last):
+    File "/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/torch/utils/cpp_extension.py", line 2506, in _run_ninja_build
+      subprocess.run(
+    File "/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/subprocess.py", line 571, in run
+      raise CalledProcessError(retcode, process.args,
+  subprocess.CalledProcessError: Command '['ninja', '-v']' returned non-zero exit status 1.
+
+  The above exception was the direct cause of the following exception:
+
+  Traceback (most recent call last):
+    File "<string>", line 2, in <module>
+    File "<pip-setuptools-caller>", line 35, in <module>
+    File "/fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/setup.py", line 51, in <module>
+      setup(
+    File "/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/setuptools/__init__.py", line 108, in setup
+      return distutils.core.setup(**attrs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/setuptools/_distutils/core.py", line 184, in setup
+      return run_commands(dist)
+             ^^^^^^^^^^^^^^^^^^
+    File "/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/setuptools/_distutils/core.py", line 200, in run_commands
+      dist.run_commands()
+    File "/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/setuptools/_distutils/dist.py", line 970, in run_commands
+      self.run_command(cmd)
+    File "/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/setuptools/dist.py", line 945, in run_command
+      super().run_command(command)
+    File "/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/setuptools/_distutils/dist.py", line 989, in run_command
+      cmd_obj.run()
+    File "/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/setuptools/command/bdist_wheel.py", line 373, in run
+      self.run_command("build")
+    File "/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/setuptools/_distutils/cmd.py", line 316, in run_command
+      self.distribution.run_command(command)
+    File "/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/setuptools/dist.py", line 945, in run_command
+      super().run_command(command)
+    File "/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/setuptools/_distutils/dist.py", line 989, in run_command
+      cmd_obj.run()
+    File "/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/setuptools/_distutils/command/build.py", line 135, in run
+      self.run_command(cmd_name)
+    File "/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/setuptools/_distutils/cmd.py", line 316, in run_command
+      self.distribution.run_command(command)
+    File "/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/setuptools/dist.py", line 945, in run_command
+      super().run_command(command)
+    File "/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/setuptools/_distutils/dist.py", line 989, in run_command
+      cmd_obj.run()
+    File "/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/setuptools/command/build_ext.py", line 93, in run
+      _build_ext.run(self)
+    File "/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/setuptools/_distutils/command/build_ext.py", line 359, in run
+      self.build_extensions()
+    File "/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/torch/utils/cpp_extension.py", line 1010, in build_extensions
+      build_ext.build_extensions(self)
+    File "/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/setuptools/_distutils/command/build_ext.py", line 479, in build_extensions
+      self._build_extensions_serial()
+    File "/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/setuptools/_distutils/command/build_ext.py", line 505, in _build_extensions_serial
+      self.build_extension(ext)
+    File "/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/setuptools/command/build_ext.py", line 254, in build_extension
+      _build_ext.build_extension(self, ext)
+    File "/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/setuptools/_distutils/command/build_ext.py", line 560, in build_extension
+      objects = self.compiler.compile(
+                ^^^^^^^^^^^^^^^^^^^^^^
+    File "/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/torch/utils/cpp_extension.py", line 815, in unix_wrap_ninja_compile
+      _write_ninja_file_and_compile_objects(
+    File "/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/torch/utils/cpp_extension.py", line 2159, in _write_ninja_file_and_compile_objects
+      _run_ninja_build(
+    File "/home/017510883/miniconda3/envs/bsiPytorch/lib/python3.12/site-packages/torch/utils/cpp_extension.py", line 2522, in _run_ninja_build
+      raise RuntimeError(message) from e
+  RuntimeError: Error compiling objects for extension
+  error: subprocess-exited-with-error
+  
+  × python setup.py bdist_wheel did not run successfully.
+  │ exit code: 1
+  ╰─> See above for output.
+  
+  note: This error originates from a subprocess, and is likely not a problem with pip.
+  full command: /home/017510883/miniconda3/envs/bsiPytorch/bin/python3.12 -u -c '
+  exec(compile('"'"''"'"''"'"'
+  # This is <pip-setuptools-caller> -- a caller that pip uses to run setup.py
+  #
+  # - It imports setuptools before invoking setup.py, to enable projects that directly
+  #   import from `distutils.core` to work with newer packaging standards.
+  # - It provides a clear error message when setuptools is not installed.
+  # - It sets `sys.argv[0]` to the underlying `setup.py`, when invoking `setup.py` so
+  #   setuptools doesn'"'"'t think the script is `-c`. This avoids the following warning:
+  #     manifest_maker: standard file '"'"'-c'"'"' not found".
+  # - It generates a shim setup.py, for handling setup.cfg-only projects.
+  import os, sys, tokenize, traceback
+  
+  try:
+      import setuptools
+  except ImportError:
+      print(
+          "ERROR: Can not execute `setup.py` since setuptools failed to import in "
+          "the build environment with exception:",
+          file=sys.stderr,
+      )
+      traceback.print_exc()
+      sys.exit(1)
+  
+  __file__ = %r
+  sys.argv[0] = __file__
+  
+  if os.path.exists(__file__):
+      filename = __file__
+      with tokenize.open(__file__) as f:
+          setup_py_code = f.read()
+  else:
+      filename = "<auto-generated setuptools caller>"
+      setup_py_code = "from setuptools import setup; setup()"
+  
+  exec(compile(setup_py_code, filename, "exec"))
+  '"'"''"'"''"'"' % ('"'"'/fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/setup.py'"'"',), "<pip-setuptools-caller>", "exec"))' bdist_wheel -d /tmp/pip-wheel-e1tnu0g2
+  cwd: /fs/atipa/home/017510883/bsiPytorch/bsiPytorch/bsi_ops/
+  Building wheel for bsi_ops (setup.py): finished with status 'error'
+  ERROR: Failed building wheel for bsi_ops
+  Running setup.py clean for bsi_ops
+  Running command python setup.py clean
+  running clean
+  removing 'build/temp.linux-x86_64-cpython-312' (and everything under it)
+  removing 'build/lib.linux-x86_64-cpython-312' (and everything under it)
+  removing 'build/bdist.linux-x86_64' (and everything under it)
+  'build/scripts-3.12' does not exist -- can't clean it
+  removing 'build'
+Failed to build bsi_ops
+error: failed-wheel-build-for-install
+
+× Failed to build installable wheels for some pyproject.toml based projects
+╰─> bsi_ops
