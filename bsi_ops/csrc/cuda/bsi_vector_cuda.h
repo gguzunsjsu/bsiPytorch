@@ -14,13 +14,8 @@ struct BsiVectorCudaData {
     int offset = 0;
     int decimals = 0;
     bool twos_complement = false;
-    torch::Tensor words;           // [slices, words_per_slice] verbatim bitplanes (kept for compatibility)
-    // Hybrid (EWAH) compressed representation
-    torch::Tensor cwords;          // [total_compressed_words] flat buffer: RLWs + literals per slice
-    torch::Tensor comp_offsets;    // [slices] int32 offsets into cwords
-    torch::Tensor comp_lengths;    // [slices] int32 lengths (#u64) per slice
-    torch::Tensor comp_stats;      // [slices, 2] int32: {run_words, literal_words} (optional)
-    torch::Tensor metadata;        // reserved for future use
+    torch::Tensor words;      // [slices, words_per_slice]
+    torch::Tensor metadata;   // placeholder for future hybrid metadata
 
     void log(const char* tag = nullptr) const;
 };
@@ -31,9 +26,6 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& values
                                                      int decimal_places,
                                                      const torch::Device& device,
                                                      bool verbose = false);
-
-// Build EWAH-compressed representation from verbatim words in-place on device.
-void bsi_cuda_build_compressed_view(BsiVectorCudaData& data);
 
 // Exposed for tests/debug: quantise floats to int64 with CPU parity (half-away-from-zero).
 torch::Tensor bsi_cuda_quantize_to_int64(const torch::Tensor& values,

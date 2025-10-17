@@ -36,14 +36,7 @@ extern "C" void launch_ewah_decompress(
     unsigned long long* out,
     cudaStream_t stream);
 
-extern "C" void launch_ewah_decompress_slices(
-    const unsigned long long* in,
-    const int* offsets,
-    const int* lengths,
-    int S,
-    int W,
-    unsigned long long* out,
-    cudaStream_t stream);
+// no multi-slice EWAH decompress in Phase-2
 
 extern "C" void launch_popcount_weighted(
     const unsigned long long* A,
@@ -568,77 +561,7 @@ void register_bsi_cuda(pybind11::module& m) {
     }, pybind11::arg("query_cap"),
        "Return words and metadata for a GPU-built BSI query capsule (words copied to CPU)");
 
-    // Build compressed EWAH view for a GPU query capsule; returns comp_words and slice metadata on CPU
-    m.def("build_bsi_query_cuda_compressed", [](pybind11::capsule query_cap) {
-        auto* query = capsule_to_query_cuda(query_cap);
-        TORCH_CHECK(query != nullptr, "Invalid BSI CUDA query capsule");
-        // Ensure verbatim exists then compress
-        bsi_cuda_build_compressed_view(query->device_view);
-        query->dev_words = query->device_view.words; // keep alias
-        // Return compressed buffers on CPU for inspection
-        auto cwords_cpu = query->device_view.cwords.to(torch::kCPU).clone();
-        auto offsets_cpu = query->device_view.comp_offsets.to(torch::kCPU).clone();
-        auto lengths_cpu = query->device_view.comp_lengths.to(torch::kCPU).clone();
-        auto stats_cpu = query->device_view.comp_stats.to(torch::kCPU).clone();
-        if (bsi_cuda_should_log()) {
-            std::cout << "[BSI_CUDA] compressed S=" << query->device_view.slices
-                      << " W=" << query->device_view.words_per_slice << std::endl;
-            auto S = query->device_view.slices;
-            auto print_s = std::min<int64_t>(S, 4);
-            auto off_a = offsets_cpu.accessor<int,1>();
-            auto len_a = lengths_cpu.accessor<int,1>();
-            auto cw_a = cwords_cpu.accessor<long long,1>();
-            for (int64_t s = 0; s < print_s; ++s) {
-                int off = off_a[s];
-                int ln = len_a[s];
-                std::cout << "  slice " << s << ": off=" << off << " len=" << ln;
-                int toprint = std::min(8, ln);
-                std::cout << " first_words=";
-                for (int i=0;i<toprint;++i) std::cout << (unsigned long long)cw_a[off+i] << ' ';
-                std::cout << std::endl;
-            }
-        }
-        return pybind11::make_tuple(cwords_cpu, offsets_cpu, lengths_cpu,
-                                    stats_cpu,
-                                    query->device_view.slices,
-                                    query->device_view.words_per_slice);
-    }, pybind11::arg("query_cap"),
-       "Compress query words on GPU to EWAH; return (cwords, offsets, lengths, stats, S, W) on CPU");
-
-    // Decompress the compressed view on device and return words [S,W] on CPU
-    m.def("debug_bsi_query_cuda_decompress", [](pybind11::capsule query_cap) {
-        auto* query = capsule_to_query_cuda(query_cap);
-        TORCH_CHECK(query != nullptr, "Invalid BSI CUDA query capsule");
-        TORCH_CHECK(query->device_view.cwords.defined(), "Compressed view not built; call build_bsi_query_cuda_compressed first");
-        int S = query->device_view.slices;
-        int W = query->device_view.words_per_slice;
-        auto out = torch::empty({S, W}, query->device_view.cwords.options());
-        auto stream = at::cuda::getCurrentCUDAStream();
-        auto& cwords = query->device_view.cwords;
-        auto& offsets = query->device_view.comp_offsets;
-        auto& lengths = query->device_view.comp_lengths;
-        launch_ewah_decompress_slices(
-            reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(cwords)),
-            tensor_data_ptr<int>(offsets),
-            tensor_data_ptr<int>(lengths),
-            S, W,
-            reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(out)),
-            stream.stream());
-        if (bsi_cuda_should_log()) {
-            auto out_cpu = out.to(torch::kCPU);
-            auto acc = out_cpu.accessor<long long,2>();
-            int ps = std::min(S, 4);
-            std::cout << "[BSI_CUDA] decompressed first slice words:" << std::endl;
-            for (int s=0;s<ps;++s) {
-                std::cout << "  slice " << s << ": ";
-                int pw = std::min(W, 4);
-                for (int w=0; w<pw; ++w) std::cout << (unsigned long long)acc[s][w] << ' ';
-                std::cout << std::endl;
-            }
-        }
-        return out.to(torch::kCPU).contiguous();
-    }, pybind11::arg("query_cap"),
-       "Decompress GPU-compressed EWAH view to words [S,W] on CPU");
+    // Phase-3 compressed view intentionally omitted
 
     // Expose quantizer for debugging parity (returns int64 tensor on device, contiguous)
     m.def("debug_quantize_int64_cuda", [](torch::Tensor x, int decimal_places) {
