@@ -46,6 +46,14 @@ extern "C" void launch_pack_bits_all(const int64_t* values,
                                      unsigned long long value_mask,
                                      unsigned long long* out,
                                      cudaStream_t stream);
+extern "C" void launch_pack_bits_all_ballot(
+    const long long* values,
+    long long n,
+    int slices,
+    int words_per_slice,
+    unsigned long long value_mask,
+    unsigned long long* out,
+    cudaStream_t stream);
 
 // no additional externs
 
@@ -122,9 +130,10 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& input,
             : ((1ULL << stored_slices) - 1ULL);
         auto stream = at::cuda::getCurrentCUDAStream();
         auto* shifted_ptr = tensor_data_ptr<int64_t>(shifted);
-        launch_pack_bits_all(
-            shifted_ptr,
-            rows,
+        // Use warp-ballot optimized packer for faster bitplane build
+        launch_pack_bits_all_ballot(
+            reinterpret_cast<const long long*>(shifted_ptr),
+            static_cast<long long>(rows),
             stored_slices,
             words_per_slice,
             value_mask,
