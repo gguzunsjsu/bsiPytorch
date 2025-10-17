@@ -761,22 +761,23 @@ pybind11::tuple cpu_hybrid_stats(pybind11::capsule query_cap) {
     TORCH_CHECK(query != nullptr && query->vec != nullptr, "Invalid BSI query capsule");
     const auto& vec = *query->vec;
     const int S = vec.getNumberOfSlices();
-    auto run_words = torch::zeros({S}, torch::TensorOptions().dtype(torch::kInt64));
-    auto lit_words = torch::zeros({S}, torch::TensorOptions().dtype(torch::kInt64));
-    auto rlw_count = torch::zeros({S}, torch::TensorOptions().dtype(torch::kInt64));
-    auto rw = run_words.accessor<int64_t,1>();
-    auto lw = lit_words.accessor<int64_t,1>();
-    auto rc = rlw_count.accessor<int64_t,1>();
+    pybind11::list run_words;
+    pybind11::list lit_words;
+    pybind11::list rlw_count;
     for (int s = 0; s < S; ++s) {
         auto it = vec.bsi[s].raw_iterator();
-        int64_t runs = 0, lits = 0, rlws = 0;
+        int64_t runs = 0;
+        int64_t lits = 0;
+        int64_t rlws = 0;
         while (it.hasNext()) {
             auto& rle = it.next();
             runs += static_cast<int64_t>(rle.getRunningLength());
             lits += static_cast<int64_t>(rle.getNumberOfLiteralWords());
             ++rlws;
         }
-        rw[s] = runs; lw[s] = lits; rc[s] = rlws;
+        run_words.append(pybind11::int_(runs));
+        lit_words.append(pybind11::int_(lits));
+        rlw_count.append(pybind11::int_(rlws));
     }
     return pybind11::make_tuple(run_words, lit_words, rlw_count);
 }

@@ -135,13 +135,14 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& input,
             ? ~0ULL
             : ((1ULL << stored_slices) - 1ULL);
         auto stream = at::cuda::getCurrentCUDAStream();
+        auto* shifted_ptr = shifted.mutable_data_ptr<int64_t>();
         launch_pack_bits_all(
-            shifted.data_ptr<int64_t>(),
+            shifted_ptr,
             rows,
             stored_slices,
             words_per_slice,
             value_mask,
-            reinterpret_cast<unsigned long long*>(words.data_ptr<int64_t>()),
+            reinterpret_cast<unsigned long long*>(words.mutable_data_ptr<int64_t>()),
             stream.stream());
     }
 
@@ -214,12 +215,12 @@ void bsi_cuda_build_compressed_view(BsiVectorCudaData& data) {
 
     auto stream = at::cuda::getCurrentCUDAStream();
     launch_ewah_compress(
-        reinterpret_cast<const unsigned long long*>(data.words.data_ptr<int64_t>()),
+        reinterpret_cast<const unsigned long long*>(data.words.mutable_data_ptr<int64_t>()),
         S, W,
-        reinterpret_cast<unsigned long long*>(tmp.data_ptr<int64_t>()),
+        reinterpret_cast<unsigned long long*>(tmp.mutable_data_ptr<int64_t>()),
         tmp_stride,
-        lengths.data_ptr<int>(),
-        reinterpret_cast<unsigned long long*>(stats.data_ptr<int64_t>()),
+        lengths.mutable_data_ptr<int>(),
+        reinterpret_cast<unsigned long long*>(stats.mutable_data_ptr<int64_t>()),
         stream.stream());
 
     // compute offsets via exclusive scan on device
@@ -235,18 +236,19 @@ void bsi_cuda_build_compressed_view(BsiVectorCudaData& data) {
     int64_t total_words = inclusive[-1].item<int64_t>();
 
     auto cwords = torch::empty({total_words}, u64);
+    auto offsets32 = offsets64.to(torch::kInt32);
     launch_compact_copy(
-        reinterpret_cast<const unsigned long long*>(tmp.data_ptr<int64_t>()),
+        reinterpret_cast<const unsigned long long*>(tmp.mutable_data_ptr<int64_t>()),
         tmp_stride,
-        lengths.data_ptr<int>(),
-        offsets64.to(torch::kInt32).data_ptr<int>(),
+        lengths.mutable_data_ptr<int>(),
+        offsets32.mutable_data_ptr<int>(),
         S,
-        reinterpret_cast<unsigned long long*>(cwords.data_ptr<int64_t>()),
+        reinterpret_cast<unsigned long long*>(cwords.mutable_data_ptr<int64_t>()),
         stream.stream());
 
     // Save into data
     data.cwords = cwords;
-    data.comp_offsets = offsets64.to(torch::kInt32);
+    data.comp_offsets = offsets32;
     data.comp_lengths = lengths;
     data.comp_stats = stats;
 }

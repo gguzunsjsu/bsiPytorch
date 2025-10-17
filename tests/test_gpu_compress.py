@@ -29,7 +29,10 @@ def test_gpu_ewah_compression_matches_cpu():
                 # CPU verbatim words + stats
                 cpu_cap, _, _ = bsi_ops.build_bsi_query(cpu_tensor, decimals)
                 cpu_words, cpu_rows, cpu_offset, cpu_decimals, cpu_twos = bsi_ops.debug_bsi_query_words(cpu_cap)
-                cpu_runs, cpu_lits, cpu_rlws = bsi_ops.cpu_hybrid_stats(cpu_cap)
+                cpu_runs_list, cpu_lits_list, cpu_rlws_list = bsi_ops.cpu_hybrid_stats(cpu_cap)
+                cpu_runs = torch.tensor(cpu_runs_list, dtype=torch.long)
+                cpu_lits = torch.tensor(cpu_lits_list, dtype=torch.long)
+                cpu_rlws = torch.tensor(cpu_rlws_list, dtype=torch.long)
 
                 # GPU build (verbatim), then compress + decompress
                 gpu_cap, _, _, _ = bsi_ops.build_bsi_query_cuda(values, decimals)
@@ -46,9 +49,8 @@ def test_gpu_ewah_compression_matches_cpu():
                 gpu_runs = stats[:, 0]
                 gpu_lits = stats[:, 1]
                 gpu_rlws = lengths - gpu_lits
-                assert torch.equal(gpu_runs.sum(), cpu_runs.sum())
-                assert torch.equal(gpu_lits.sum(), cpu_lits.sum())
+                assert int(gpu_runs.sum().item()) == int(cpu_runs.sum().item())
+                assert int(gpu_lits.sum().item()) == int(cpu_lits.sum().item())
                 # total compressed words equals rlw_count + literal_words
                 assert int(lengths.sum().item()) == int((gpu_rlws + gpu_lits).sum().item())
                 assert int(lengths.sum().item()) == int((cpu_rlws + cpu_lits).sum().item())
-
