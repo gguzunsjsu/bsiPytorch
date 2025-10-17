@@ -7,7 +7,6 @@
 #include <iostream>
 
 #include <c10/cuda/CUDAStream.h>
-#include <c10/core/TensorImpl.h>
 #include <ATen/ops/bitwise_right_shift.h>
 #include <ATen/ops/floor.h>
 #include <ATen/ops/where.h>
@@ -15,12 +14,13 @@
 namespace {
 template <typename T>
 inline T* tensor_data_ptr(torch::Tensor& t) {
-    return t.unsafeGetTensorImpl()->data_ptr<T>();
+    return t.data_ptr<T>();
 }
 
 template <typename T>
 inline const T* tensor_data_ptr(const torch::Tensor& t) {
-    return t.unsafeGetTensorImpl()->data_ptr<T>();
+    auto& nc = const_cast<torch::Tensor&>(t);
+    return const_cast<const T*>(nc.data_ptr<T>());
 }
 
 inline torch::Tensor make_words_tensor(const std::vector<uint64_t>& words,

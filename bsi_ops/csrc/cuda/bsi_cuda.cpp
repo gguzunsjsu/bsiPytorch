@@ -9,7 +9,6 @@
 #include <iostream>
 #include <cstdint>
 #include <c10/cuda/CUDAFunctions.h>
-#include <c10/core/TensorImpl.h>
 
 // bring in BSI core (CPU) to build and access slices
 #include "../../../bsiCPP/bsi/BsiVector.hpp"
@@ -63,12 +62,13 @@ static inline uint64_t now_ns() {
 
 template <typename T>
 inline T* tensor_data_ptr(torch::Tensor& t) {
-    return t.unsafeGetTensorImpl()->data_ptr<T>();
+    return t.data_ptr<T>();
 }
 
 template <typename T>
 inline const T* tensor_data_ptr(const torch::Tensor& t) {
-    return t.unsafeGetTensorImpl()->data_ptr<T>();
+    auto& nc = const_cast<torch::Tensor&>(t);
+    return const_cast<const T*>(nc.data_ptr<T>());
 }
 
 // Flatten one HybridBitmap (compressed or verbatim) to verbatim word buffer of length W words
