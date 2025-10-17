@@ -61,6 +61,17 @@ extern "C" void launch_popcount_weighted_batch(
     double* out,
     cudaStream_t stream);
 
+extern "C" void launch_popcount_weighted_keys(
+    const unsigned long long* A,
+    const double* Aw,
+    int Sa, int W,
+    const unsigned long long* B,
+    const double* Bw,
+    int Sb,
+    int R,
+    double* out,
+    cudaStream_t stream);
+
 static inline uint64_t now_ns() {
     using namespace std::chrono;
     return duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
@@ -407,7 +418,7 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
 
         auto stream = at::cuda::getCurrentCUDAStream();
         cudaEventRecord(start_evt, stream.stream());
-        launch_popcount_weighted_batch(
+        launch_popcount_weighted_keys(
             query_words,
             query_weights,
             query->S,
