@@ -49,6 +49,18 @@ extern "C" void launch_popcount_weighted(
     double* out,
     cudaStream_t stream);
 
+// Batched weighted popcount for a group of keys with identical Sb
+extern "C" void launch_popcount_weighted_batch(
+    const unsigned long long* A,
+    const double* Aw,
+    int Sa, int W,
+    const unsigned long long* B,
+    const double* Bw,
+    int Sb,
+    int R,
+    double* out,
+    cudaStream_t stream);
+
 static inline uint64_t now_ns() {
     using namespace std::chrono;
     return duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
