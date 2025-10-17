@@ -8,6 +8,7 @@
 #include <chrono>
 #include <iostream>
 #include <cstdint>
+#include <unordered_map>
 #include <c10/cuda/CUDAFunctions.h>
 
 // bring in BSI core (CPU) to build and access slices
@@ -368,29 +369,53 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
     cudaEventCreate(&start_evt);
     cudaEventCreate(&end_evt);
 
-    float total_kernel_ms = 0.0f;
+    // Group keys by Sb to reduce launches; process each group with a single batched kernel
+    std::unordered_map<int, std::vector<int64_t>> by_Sb;
+    by_Sb.reserve(keys->num_keys);
     for (int64_t r = 0; r < keys->num_keys; ++r) {
-        const auto& B_dev = keys->dev_words[r];
-        const auto& km = keys->metas[r];
-        const auto& key_weights = keys->slice_weights[r];
+        by_Sb[keys->metas[r].S].push_back(r);
+    }
+
+    float total_kernel_ms = 0.0f;
+    for (const auto& kv : by_Sb) {
+        int Sb = kv.first;
+        const auto& idxs = kv.second;
+        int R = static_cast<int>(idxs.size());
+
+        std::vector<at::Tensor> words_list; words_list.reserve(R);
+        std::vector<at::Tensor> weights_list; weights_list.reserve(R);
+        for (int i = 0; i < R; ++i) {
+            int64_t r = idxs[i];
+            words_list.push_back(keys->dev_words[r]);             // [Sb, W]
+            weights_list.push_back(keys->slice_weights[r].view({1, Sb})); // [1, Sb]
+        }
+        auto B_stacked = torch::stack(words_list, 0).contiguous(); // [R, Sb, W]
+        auto Bw_stacked = torch::cat(weights_list, 0).contiguous(); // [R, Sb]
+        auto out_slice = torch::zeros({R}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
 
         auto stream = at::cuda::getCurrentCUDAStream();
         cudaEventRecord(start_evt, stream.stream());
-        launch_popcount_weighted(
+        launch_popcount_weighted_batch(
             query_words,
             query_weights,
             query->S,
             query->W,
-            reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(B_dev)),
-            tensor_data_ptr<double>(key_weights),
-            km.S,
-            tensor_data_ptr<double>(out_dev) + r,
+            reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(B_stacked)),
+            tensor_data_ptr<double>(Bw_stacked),
+            Sb,
+            R,
+            tensor_data_ptr<double>(out_slice),
             stream.stream());
         cudaEventRecord(end_evt, stream.stream());
         cudaEventSynchronize(end_evt);
-        float kernel_ms = 0.0f;
-        cudaEventElapsedTime(&kernel_ms, start_evt, end_evt);
+        float kernel_ms = 0.0f; cudaEventElapsedTime(&kernel_ms, start_evt, end_evt);
         total_kernel_ms += kernel_ms;
+
+        // Scatter to out_dev
+        for (int i = 0; i < R; ++i) {
+            int64_t r = idxs[i];
+            out_dev.index_put_({r}, out_slice[i]);
+        }
     }
 
     cudaEventDestroy(start_evt);

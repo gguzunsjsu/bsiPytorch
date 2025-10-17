@@ -48,7 +48,7 @@ def get_device():
 class BSIQuantizedLinear(torch.nn.Module):
     """BSI quantized linear layer using prebuilt BSI keys for efficiency and diagnostics."""
 
-    def __init__(self, original_linear, decimalPlaces=2, compress_threshold=0.2, query_threshold=None, prefer_cuda: bool=False):
+    def __init__(self, original_linear, decimalPlaces=2, compress_threshold=0.2, query_threshold=None, prefer_cuda: bool=True):
         super().__init__()
         self.decimalPlaces = int(decimalPlaces)
         self.compress_threshold = float(compress_threshold)
@@ -61,8 +61,8 @@ class BSIQuantizedLinear(torch.nn.Module):
         self.dot_ns_total = 0
         self.dot_calls = 0
 
-        dense_weight = original_linear.weight.detach().cpu().to(torch.float32)
-        self.weight_fp32 = dense_weight
+        dense_weight = original_linear.weight.detach().to(torch.float32)
+        self.weight_fp32 = dense_weight.cpu()
         self.weight_dense_memory_bytes = dense_weight.numel() * dense_weight.element_size()
 
         if original_linear.bias is not None:
@@ -75,57 +75,24 @@ class BSIQuantizedLinear(torch.nn.Module):
             self.bias_fp32 = None
             self.bias_memory_bytes = 0
 
-        self._bsi_keys = None
         self._bsi_keys_cuda = None
         with torch.no_grad():
-            if prefer_cuda and hasattr(bsi_ops, 'build_bsi_keys_cuda') and torch.cuda.is_available():
-                try:
-                    self._bsi_keys_cuda, total_mem_bytes, num_keys, d, W = bsi_ops.build_bsi_keys_cuda(
-                        dense_weight, self.decimalPlaces, float(self.compress_threshold)
-                    )
-                    assert num_keys == self.out_features and d == self.in_features
-                    # For reporting, also build CPU stats minimally via CPU helpers on demand
-                    self._bsi_keys, total_mem_bytes_cpu, _, _ = bsi_ops.build_bsi_keys(
-                        dense_weight, self.decimalPlaces, float(self.compress_threshold)
-                    )
-                    self.weight_bsi_memory_bytes = int(total_mem_bytes_cpu)
-                    mem_in_mem, mem_on_disk = bsi_ops.keyset_size_on_disk(self._bsi_keys)
-                    self.weight_bsi_disk_bytes = int(mem_on_disk)
-                    self.weight_slice_stats = dict(bsi_ops.keyset_slice_stats(self._bsi_keys))
-                except Exception:
-                    # Fallback to CPU keys entirely if CUDA build fails
-                    self._bsi_keys_cuda = None
-                    self._bsi_keys, total_mem_bytes, num_keys, d = bsi_ops.build_bsi_keys(
-                        dense_weight, self.decimalPlaces, float(self.compress_threshold)
-                    )
-                    assert num_keys == self.out_features and d == self.in_features
-                    self.weight_bsi_memory_bytes = int(total_mem_bytes)
-                    mem_in_mem, mem_on_disk = bsi_ops.keyset_size_on_disk(self._bsi_keys)
-                    self.weight_bsi_disk_bytes = int(mem_on_disk)
-                    self.weight_slice_stats = dict(bsi_ops.keyset_slice_stats(self._bsi_keys))
-            else:
-                self._bsi_keys, total_mem_bytes, num_keys, d = bsi_ops.build_bsi_keys(
-                    dense_weight, self.decimalPlaces, float(self.compress_threshold)
-                )
-                assert num_keys == self.out_features and d == self.in_features
-                self.weight_bsi_memory_bytes = int(total_mem_bytes)
-                self.weight_bsi_disk_bytes = 0
-                mem_in_mem, mem_on_disk = bsi_ops.keyset_size_on_disk(self._bsi_keys)
-                self.weight_bsi_disk_bytes = int(mem_on_disk)
-                self.weight_slice_stats = dict(bsi_ops.keyset_slice_stats(self._bsi_keys))
-        self.weight_total_slices = int(self.weight_slice_stats.get("total_slices", 0))
-        self.weight_verbatim_slices = int(self.weight_slice_stats.get("verbatim_slices", 0))
-        self.weight_compressed_slices = int(self.weight_slice_stats.get("compressed_slices", 0))
-        self.weight_compressed_pct = float(self.weight_slice_stats.get("compressed_pct", 0.0))
-        self.weight_verbatim_pct = float(self.weight_slice_stats.get("verbatim_pct", 0.0))
+            assert prefer_cuda and hasattr(bsi_ops, 'build_bsi_keys_cuda') and torch.cuda.is_available(), \
+                "CUDA path required: build_bsi_keys_cuda not available or CUDA not present"
+            # Build keys directly on CUDA (verbatim layout)
+            self._bsi_keys_cuda, total_mem_bytes, num_keys, d, W = bsi_ops.build_bsi_keys_cuda(
+                dense_weight, self.decimalPlaces, float(self.compress_threshold)
+            )
+            assert num_keys == self.out_features and d == self.in_features
+            self.weight_bsi_memory_bytes = int(total_mem_bytes)
         self.total_bsi_static_bytes = self.weight_bsi_memory_bytes + self.bias_memory_bytes
         # Debug/verbosity flag: when True, prints one-time diagnostics on first forward
         self.verbose = False
 
-        # Error tracking fields toggled via enable_bsi_error_stats.
-        self.collect_stats = False
-        self.reset_error_stats()
-        self.build_ns_total = 0
+        # Tracking: only dot time (GPU), no CPU build comparisons
+        self.dot_ns_total = 0
+        self.dot_calls = 0
+        self.build_ns_total = 0  # optional: track Python-side build time if desired
         self.build_calls = 0
         self._query_cache: OrderedDict = OrderedDict()
         self.max_query_cache = 512
@@ -173,19 +140,14 @@ class BSIQuantizedLinear(torch.nn.Module):
         x = x.to(torch.float32)
 
         output_list = []
-        dense_outputs = [] if self.collect_stats else None
+        dense_outputs = None
         dot_ns_this_forward = 0
         
         # Debug printing gated by `self.verbose` to avoid overhead in benchmarks
         debug_first = bool(self.verbose) and not hasattr(self, '_debug_printed')
         
-        use_cuda = (
-            self._bsi_keys_cuda is not None
-            and hasattr(bsi_ops, 'build_bsi_query_cuda')
-            and hasattr(bsi_ops, 'batch_dot_product_prebuilt_cuda_caps')
-            and torch.cuda.is_available()
-        )
-        device_index = torch.cuda.current_device() if use_cuda else None
+        use_cuda = True
+        device_index = torch.cuda.current_device()
 
         batch_size = x.shape[0]
         batch_inputs: List[torch.Tensor] = []
@@ -203,31 +165,19 @@ class BSIQuantizedLinear(torch.nn.Module):
             cached_entry = self._query_cache_get(cache_key)
             if cached_entry is not None:
                 cached_queries[cache_key] = cached_entry
-                if not use_cuda and input_vec.device.type != 'cpu':
-                    cpu_inputs[i] = input_vec.cpu()
                 continue
 
-            if use_cuda:
-                future_builds[cache_key] = _QUERY_BUILD_EXECUTOR.submit(
-                    _build_query_cuda,
-                    input_vec,
-                    self.decimalPlaces,
-                    float(self.query_compress_threshold),
-                    device_index,
-                )
-            else:
-                cpu_tensor = input_vec.cpu() if input_vec.device.type != 'cpu' else input_vec
-                cpu_inputs[i] = cpu_tensor
-                future_builds[cache_key] = _QUERY_BUILD_EXECUTOR.submit(
-                    _build_query_cpu,
-                    cpu_tensor,
-                    self.decimalPlaces,
-                    float(self.query_compress_threshold),
-                )
+            future_builds[cache_key] = _QUERY_BUILD_EXECUTOR.submit(
+                _build_query_cuda,
+                input_vec,
+                self.decimalPlaces,
+                float(self.query_compress_threshold),
+                device_index,
+            )
 
         for i in range(batch_size):
             input_vec = batch_inputs[i]
-            input_vec_cpu = cpu_inputs[i]
+            input_vec_cpu = None
 
             if debug_first and i == 0:
                 print(f"\n[DEBUG {self.__class__.__name__}] First forward pass diagnostics:")
@@ -241,61 +191,25 @@ class BSIQuantizedLinear(torch.nn.Module):
             else:
                 future = future_builds.pop(cache_key)
                 query_capsule, query_mem, _meta, python_build_ns = future.result()
+                # Only track python build time separately; exclude from dot latency
                 self.build_ns_total += python_build_ns
                 self.build_calls += 1
                 self._query_cache_set(cache_key, (query_capsule, query_mem))
 
             build_ns_cpp = 0
-            if use_cuda:
-                scores, time_taken_ns, build_ns_cpp, dot_ns, _query_bsi_size = bsi_ops.batch_dot_product_prebuilt_cuda_caps(
-                    query_capsule,
-                    self._bsi_keys_cuda
-                )
-            elif hasattr(bsi_ops, 'batch_dot_product_prebuilt_capsule'):
-                if input_vec_cpu is None:
-                    input_vec_cpu = input_vec.cpu()
-                    cpu_inputs[i] = input_vec_cpu
-                scores, time_taken_ns, build_ns_cpp, dot_ns, _query_bsi_size = bsi_ops.batch_dot_product_prebuilt_capsule(
-                    query_capsule,
-                    self._bsi_keys
-                )
-            elif hasattr(bsi_ops, 'batch_dot_product_prebuilt_cuda') and torch.cuda.is_available():
-                scores, time_taken_ns, build_ns_cpp, dot_ns, _query_bsi_size = bsi_ops.batch_dot_product_prebuilt_cuda(
-                    input_vec,
-                    self._bsi_keys,
-                    float(self.query_compress_threshold)
-                )
-            else:
-                if input_vec_cpu is None:
-                    input_vec_cpu = input_vec.cpu()
-                    cpu_inputs[i] = input_vec_cpu
-                scores, time_taken_ns, build_ns_cpp, dot_ns, _query_bsi_size = bsi_ops.batch_dot_product_prebuilt(
-                    input_vec_cpu,
-                    self._bsi_keys,
-                    float(self.query_compress_threshold)
-                )
+            scores, time_taken_ns, build_ns_cpp, dot_ns, _query_bsi_size = bsi_ops.batch_dot_product_prebuilt_cuda_caps(
+                query_capsule,
+                self._bsi_keys_cuda
+            )
             if build_ns_cpp:
                 self.build_ns_total += int(build_ns_cpp)
                 self.build_calls += 1
             
             # Debug: Check raw scores from C++
             if debug_first and i == 0:
-                if input_vec_cpu is None:
-                    input_vec_cpu = input_vec.cpu()
-                print(f"  Raw BSI scores from C++: shape={scores.shape}, dtype={scores.dtype}")
+                print(f"  Raw BSI scores from CUDA: shape={scores.shape}, dtype={scores.dtype}")
                 print(f"    min={scores.min():.4f}, max={scores.max():.4f}, mean={scores.mean():.4f}, std={scores.std():.4f}")
                 print(f"    First 5 values: {scores[:5].tolist()}")
-                
-                # Compare with dense computation
-                with torch.no_grad():
-                    dense_scores_debug = torch.matmul(self.weight_fp32, input_vec_cpu)
-                    print(f"  Dense scores (for comparison): shape={dense_scores_debug.shape}")
-                    print(f"    min={dense_scores_debug.min():.4f}, max={dense_scores_debug.max():.4f}, mean={dense_scores_debug.mean():.4f}, std={dense_scores_debug.std():.4f}")
-                    print(f"    First 5 values: {dense_scores_debug[:5].tolist()}")
-                    
-                    # Check if scaling is the issue
-                    ratio = scores.mean() / dense_scores_debug.mean() if dense_scores_debug.mean() != 0 else 0
-                    print(f"  Ratio of BSI to dense means: {ratio:.4f}")
                     
             
             # Add bias if present
@@ -308,13 +222,7 @@ class BSIQuantizedLinear(torch.nn.Module):
             output_list.append(scores)
             dot_ns_this_forward += int(dot_ns)
 
-            if self.collect_stats:
-                if input_vec_cpu is None:
-                    input_vec_cpu = input_vec.cpu()
-                dense_scores = torch.matmul(self.weight_fp32, input_vec_cpu)
-                if self.bias_fp32 is not None:
-                    dense_scores = dense_scores + self.bias_fp32
-                dense_outputs.append(dense_scores)
+            # No CPU accuracy comparisons in GPU-only mode
         
         # Mark that we've printed debug info
         if debug_first:
@@ -326,29 +234,7 @@ class BSIQuantizedLinear(torch.nn.Module):
 
         output = torch.stack(output_list)
 
-        if self.collect_stats and dense_outputs:
-            with torch.no_grad():
-                bsi_out = output.detach().cpu().to(torch.float32)
-                dense_out = torch.stack(dense_outputs).to(torch.float32)
-                diff = bsi_out - dense_out
-                mse = diff.pow(2).mean(dim=1)
-                mae = diff.abs().mean(dim=1)
-                cosine_vals = []
-                for idx in range(dense_out.size(0)):
-                    bsi_vec = bsi_out[idx].view(1, -1)
-                    dense_vec = dense_out[idx].view(1, -1)
-                    if torch.allclose(dense_vec, torch.zeros_like(dense_vec)) or torch.allclose(bsi_vec, torch.zeros_like(bsi_vec)):
-                        cosine_vals.append(0.0)
-                    else:
-                        cos_val = float(F.cosine_similarity(bsi_vec, dense_vec, dim=1).item())
-                        if math.isnan(cos_val):
-                            cos_val = 0.0
-                        cosine_vals.append(cos_val)
-                self.mse_sum += float(mse.mean().item())
-                self.mae_sum += float(mae.mean().item())
-                self.cosine_sum += float(np.mean(cosine_vals))
-                self.max_abs_error = max(self.max_abs_error, float(diff.abs().max().item()))
-                self.samples_tracked += dense_out.size(0)
+        # No CPU accuracy summary in GPU-only mode
 
         if len(original_shape) == 3:
             output = output.view(original_shape[0], original_shape[1], -1)

@@ -82,6 +82,66 @@ void popcount_weighted_kernel(
     }
 }
 
+// Batched: compute R keys in a single launch
+// A: [Sa, W], Aw: [Sa]
+// B: [R, Sb, W], Bw: [R, Sb]
+// out: [R]
+extern "C" __global__
+void popcount_weighted_batch_kernel(
+    const unsigned long long* __restrict__ A,
+    const double* __restrict__ Aw,
+    int Sa, int W,
+    const unsigned long long* __restrict__ B,
+    const double* __restrict__ Bw,
+    int Sb,
+    int R,
+    double* __restrict__ out)
+{
+    int i = blockIdx.x; // slice in A [0..Sa)
+    int j = blockIdx.y; // slice in B [0..Sb)
+    int r = blockIdx.z; // key index [0..R)
+    if (i >= Sa || j >= Sb || r >= R) return;
+
+    const unsigned long long* a = A + (size_t)i * W;
+    const unsigned long long* b = B + ((size_t)r * Sb + j) * W;
+
+    unsigned long long partial = 0ULL;
+    for (int w = threadIdx.x; w < W; w += blockDim.x) {
+        partial += __popcll(a[w] & b[w]);
+    }
+
+    __shared__ unsigned long long smem[32];
+    unsigned long long warp = warp_reduce_sum_ull(partial);
+    if ((threadIdx.x & 31) == 0) smem[threadIdx.x >> 5] = warp;
+    __syncthreads();
+
+    unsigned long long block_sum = 0ULL;
+    int num_warps = blockDim.x >> 5;
+    if (threadIdx.x < num_warps) block_sum = smem[threadIdx.x];
+    block_sum = warp_reduce_sum_ull(block_sum);
+
+    if (threadIdx.x == 0) {
+        double contrib = static_cast<double>(block_sum) * Aw[i] * Bw[(size_t)r * Sb + j];
+        atomicAdd(&out[r], contrib);
+    }
+}
+
+extern "C" void launch_popcount_weighted_batch(
+    const unsigned long long* A,
+    const double* Aw,
+    int Sa, int W,
+    const unsigned long long* B,
+    const double* Bw,
+    int Sb,
+    int R,
+    double* out,
+    cudaStream_t stream)
+{
+    dim3 grid(Sa, Sb, R);
+    dim3 block(256);
+    popcount_weighted_batch_kernel<<<grid, block, 0, stream>>>(A, Aw, Sa, W, B, Bw, Sb, R, out);
+}
+
 // EWAH decompress: interpret buffer of RLWs and literal words into W literal words.
 // Assumes u64 words and runninglengthbits = 32, literalbits = 31.
 extern "C" __global__
@@ -200,4 +260,3 @@ extern "C" void launch_pack_bits_all(
         value_mask,
         out);
 }
-
