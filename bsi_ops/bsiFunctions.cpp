@@ -755,6 +755,32 @@ pybind11::tuple debug_bsi_query_words(pybind11::capsule query_cap) {
         static_cast<bool>(query->vec->twosComplement));
 }
 
+// Return CPU HybridBitmap stats per slice: run_words, lit_words, rlw_count
+pybind11::tuple cpu_hybrid_stats(pybind11::capsule query_cap) {
+    auto* query = capsule_to_query(query_cap);
+    TORCH_CHECK(query != nullptr && query->vec != nullptr, "Invalid BSI query capsule");
+    const auto& vec = *query->vec;
+    const int S = vec.getNumberOfSlices();
+    auto run_words = torch::zeros({S}, torch::TensorOptions().dtype(torch::kInt64));
+    auto lit_words = torch::zeros({S}, torch::TensorOptions().dtype(torch::kInt64));
+    auto rlw_count = torch::zeros({S}, torch::TensorOptions().dtype(torch::kInt64));
+    auto rw = run_words.accessor<int64_t,1>();
+    auto lw = lit_words.accessor<int64_t,1>();
+    auto rc = rlw_count.accessor<int64_t,1>();
+    for (int s = 0; s < S; ++s) {
+        auto it = vec.bsi[s].raw_iterator();
+        int64_t runs = 0, lits = 0, rlws = 0;
+        while (it.hasNext()) {
+            auto& rle = it.next();
+            runs += static_cast<int64_t>(rle.getRunningLength());
+            lits += static_cast<int64_t>(rle.getNumberOfLiteralWords());
+            ++rlws;
+        }
+        rw[s] = runs; lw[s] = lits; rc[s] = rlws;
+    }
+    return pybind11::make_tuple(run_words, lit_words, rlw_count);
+}
+
 // Debug: CPU quantization to int64 mirroring std::round semantics used in CPU builder
 torch::Tensor debug_quantize_int64_cpu(torch::Tensor q, int decimalPlaces) {
     TORCH_CHECK(q.dim() == 1, "q must be 1D [d]");
@@ -843,4 +869,7 @@ PYBIND11_MODULE(bsi_ops, m) {
     m.def("debug_quantize_int64_cpu", &debug_quantize_int64_cpu,
           pybind11::arg("q"), pybind11::arg("decimal_places"),
           "Quantize on CPU to int64 using std::round (half-away-from-zero) for parity checks");
+    m.def("cpu_hybrid_stats", &cpu_hybrid_stats,
+          pybind11::arg("query_cap"),
+          "Return per-slice (run_words, lit_words, rlw_count) for CPU HybridBitmap");
 }

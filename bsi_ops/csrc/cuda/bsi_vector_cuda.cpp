@@ -36,6 +36,33 @@ extern "C" void launch_pack_bits_all(const int64_t* values,
                                      unsigned long long* out,
                                      cudaStream_t stream);
 
+extern "C" void launch_ewah_compress(
+    const unsigned long long* words,
+    int S, int W,
+    unsigned long long* out_tmp,
+    int tmp_stride,
+    int* out_lengths,
+    unsigned long long* out_stats,
+    cudaStream_t stream);
+
+extern "C" void launch_compact_copy(
+    const unsigned long long* tmp,
+    int tmp_stride,
+    const int* lengths,
+    const int* offsets,
+    int S,
+    unsigned long long* out,
+    cudaStream_t stream);
+
+extern "C" void launch_ewah_decompress_slices(
+    const unsigned long long* in,
+    const int* offsets,
+    const int* lengths,
+    int S,
+    int W,
+    unsigned long long* out,
+    cudaStream_t stream);
+
 bool bsi_cuda_should_log() {
     static bool cached = []() {
         const char* flag = std::getenv("BSI_DEBUG");
@@ -158,6 +185,70 @@ BsiVectorCudaData create_bsi_vector_cuda_from_cpu(const BsiVector<uint64_t>& src
         data.log("create_bsi_vector_cuda_from_cpu");
     }
     return data;
+}
+
+void bsi_cuda_build_compressed_view(BsiVectorCudaData& data) {
+    TORCH_CHECK(data.words.defined(), "verbatim words must be built first");
+    TORCH_CHECK(data.words.dtype() == torch::kInt64 && data.words.is_cuda(), "words must be CUDA int64");
+    const int S = data.slices;
+    const int W = data.words_per_slice;
+    if (S <= 0 || W <= 0) {
+        // create empty views
+        auto i32 = torch::TensorOptions().dtype(torch::kInt32).device(data.words.device());
+        data.cwords = torch::empty({0}, data.words.options());
+        data.comp_offsets = torch::zeros({S}, i32);
+        data.comp_lengths = torch::zeros({S}, i32);
+        data.comp_stats = torch::zeros({S, 2}, data.words.options());
+        return;
+    }
+
+    auto dev = data.words.device();
+    auto i32 = torch::TensorOptions().dtype(torch::kInt32).device(dev);
+    auto u64 = torch::TensorOptions().dtype(torch::kInt64).device(dev);
+
+    // staging buffer per slice with upper bound 2*W words
+    const int tmp_stride = 2 * W;
+    auto tmp = torch::empty({S, tmp_stride}, u64);
+    auto lengths = torch::empty({S}, i32);
+    auto stats = torch::empty({S, 2}, u64);
+
+    auto stream = at::cuda::getCurrentCUDAStream();
+    launch_ewah_compress(
+        reinterpret_cast<const unsigned long long*>(data.words.data_ptr<int64_t>()),
+        S, W,
+        reinterpret_cast<unsigned long long*>(tmp.data_ptr<int64_t>()),
+        tmp_stride,
+        lengths.data_ptr<int>(),
+        reinterpret_cast<unsigned long long*>(stats.data_ptr<int64_t>()),
+        stream.stream());
+
+    // compute offsets via exclusive scan on device
+    auto lengths64 = lengths.to(torch::kInt64);
+    auto inclusive = lengths64.cumsum(0);
+    auto offsets64 = torch::empty_like(inclusive);
+    if (S > 0) {
+        offsets64.index_put_({0}, 0);
+    }
+    if (S > 1) {
+        offsets64.narrow(0, 1, S - 1).copy_(inclusive.narrow(0, 0, S - 1));
+    }
+    int64_t total_words = inclusive[-1].item<int64_t>();
+
+    auto cwords = torch::empty({total_words}, u64);
+    launch_compact_copy(
+        reinterpret_cast<const unsigned long long*>(tmp.data_ptr<int64_t>()),
+        tmp_stride,
+        lengths.data_ptr<int>(),
+        offsets64.to(torch::kInt32).data_ptr<int>(),
+        S,
+        reinterpret_cast<unsigned long long*>(cwords.data_ptr<int64_t>()),
+        stream.stream());
+
+    // Save into data
+    data.cwords = cwords;
+    data.comp_offsets = offsets64.to(torch::kInt32);
+    data.comp_lengths = lengths;
+    data.comp_stats = stats;
 }
 
 torch::Tensor bsi_cuda_quantize_to_int64(const torch::Tensor& input,
