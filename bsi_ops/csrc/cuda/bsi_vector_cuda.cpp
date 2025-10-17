@@ -7,11 +7,22 @@
 #include <iostream>
 
 #include <c10/cuda/CUDAStream.h>
+#include <c10/core/TensorImpl.h>
 #include <ATen/ops/bitwise_right_shift.h>
 #include <ATen/ops/floor.h>
 #include <ATen/ops/where.h>
 
 namespace {
+template <typename T>
+inline T* tensor_data_ptr(torch::Tensor& t) {
+    return t.unsafeGetTensorImpl()->data_ptr<T>();
+}
+
+template <typename T>
+inline const T* tensor_data_ptr(const torch::Tensor& t) {
+    return t.unsafeGetTensorImpl()->data_ptr<T>();
+}
+
 inline torch::Tensor make_words_tensor(const std::vector<uint64_t>& words,
                                        int slices,
                                        int words_per_slice,
@@ -135,14 +146,14 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& input,
             ? ~0ULL
             : ((1ULL << stored_slices) - 1ULL);
         auto stream = at::cuda::getCurrentCUDAStream();
-        auto* shifted_ptr = shifted.data_ptr<int64_t>();
+        auto* shifted_ptr = tensor_data_ptr<int64_t>(shifted);
         launch_pack_bits_all(
             shifted_ptr,
             rows,
             stored_slices,
             words_per_slice,
             value_mask,
-            reinterpret_cast<unsigned long long*>(words.data_ptr<int64_t>()),
+            reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(words)),
             stream.stream());
     }
 
@@ -214,13 +225,15 @@ void bsi_cuda_build_compressed_view(BsiVectorCudaData& data) {
     auto stats = torch::empty({S, 2}, u64);
 
     auto stream = at::cuda::getCurrentCUDAStream();
+    auto& words_tensor = data.words;
+    auto* words_ptr = tensor_data_ptr<int64_t>(words_tensor);
     launch_ewah_compress(
-        reinterpret_cast<const unsigned long long*>(data.words.data_ptr<int64_t>()),
+        reinterpret_cast<const unsigned long long*>(words_ptr),
         S, W,
-        reinterpret_cast<unsigned long long*>(tmp.data_ptr<int64_t>()),
+        reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(tmp)),
         tmp_stride,
-        lengths.data_ptr<int>(),
-        reinterpret_cast<unsigned long long*>(stats.data_ptr<int64_t>()),
+        tensor_data_ptr<int>(lengths),
+        reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(stats)),
         stream.stream());
 
     // compute offsets via exclusive scan on device
@@ -238,12 +251,12 @@ void bsi_cuda_build_compressed_view(BsiVectorCudaData& data) {
     auto cwords = torch::empty({total_words}, u64);
     auto offsets32 = offsets64.to(torch::kInt32);
     launch_compact_copy(
-        reinterpret_cast<const unsigned long long*>(tmp.data_ptr<int64_t>()),
+        reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(tmp)),
         tmp_stride,
-        lengths.data_ptr<int>(),
-        offsets32.data_ptr<int>(),
+        tensor_data_ptr<int>(lengths),
+        tensor_data_ptr<int>(offsets32),
         S,
-        reinterpret_cast<unsigned long long*>(cwords.data_ptr<int64_t>()),
+        reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(cwords)),
         stream.stream());
 
     // Save into data

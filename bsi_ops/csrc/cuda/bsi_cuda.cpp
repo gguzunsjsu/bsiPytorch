@@ -9,6 +9,7 @@
 #include <iostream>
 #include <cstdint>
 #include <c10/cuda/CUDAFunctions.h>
+#include <c10/core/TensorImpl.h>
 
 // bring in BSI core (CPU) to build and access slices
 #include "../../../bsiCPP/bsi/BsiVector.hpp"
@@ -58,6 +59,16 @@ extern "C" void launch_popcount_weighted(
 static inline uint64_t now_ns() {
     using namespace std::chrono;
     return duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
+}
+
+template <typename T>
+inline T* tensor_data_ptr(torch::Tensor& t) {
+    return t.unsafeGetTensorImpl()->data_ptr<T>();
+}
+
+template <typename T>
+inline const T* tensor_data_ptr(const torch::Tensor& t) {
+    return t.unsafeGetTensorImpl()->data_ptr<T>();
 }
 
 // Flatten one HybridBitmap (compressed or verbatim) to verbatim word buffer of length W words
@@ -223,10 +234,10 @@ static pybind11::tuple dot_product_decimal_cuda(torch::Tensor q, torch::Tensor k
     cudaEventRecord(start);
     auto stream = at::cuda::getCurrentCUDAStream();
     launch_popcount_pairwise(
-        reinterpret_cast<const unsigned long long*>(A_dev.data_ptr<int64_t>()),
-        reinterpret_cast<const unsigned long long*>(B_dev.data_ptr<int64_t>()),
+        reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(A_dev)),
+        reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(B_dev)),
         Sa, Sb, Wa,
-        reinterpret_cast<unsigned long long*>(counts_dev.data_ptr<int64_t>()),
+        reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(counts_dev)),
         stream.stream());
     cudaEventRecord(end);
     cudaEventSynchronize(end);
@@ -325,10 +336,10 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda(torch::Tensor q, pybind11
         cudaEventRecord(start);
         auto stream1 = at::cuda::getCurrentCUDAStream();
         launch_popcount_pairwise(
-            reinterpret_cast<const unsigned long long*>(A_dev.data_ptr<int64_t>()),
-            reinterpret_cast<const unsigned long long*>(B_dev.data_ptr<int64_t>()),
+            reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(A_dev)),
+            reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(B_dev)),
             Sa, Sb, Wa,
-            reinterpret_cast<unsigned long long*>(counts_dev.data_ptr<int64_t>()),
+            reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(counts_dev)),
             stream1.stream());
         cudaEventRecord(end); cudaEventSynchronize(end);
         float kernel_ms = 0.0f; cudaEventElapsedTime(&kernel_ms, start, end);
@@ -357,8 +368,8 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
     TORCH_CHECK(query->W == keys->W, "Word count mismatch between query and keys");
 
     auto out_dev = torch::zeros({keys->num_keys}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
-    const auto* query_words = reinterpret_cast<const unsigned long long*>(query->dev_words.data_ptr<int64_t>());
-    const auto* query_weights = query->slice_weights.data_ptr<double>();
+    const auto* query_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(query->dev_words));
+    const auto* query_weights = tensor_data_ptr<double>(query->slice_weights);
 
     cudaEvent_t start_evt, end_evt;
     cudaEventCreate(&start_evt);
@@ -377,10 +388,10 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
             query_weights,
             query->S,
             query->W,
-            reinterpret_cast<const unsigned long long*>(B_dev.data_ptr<int64_t>()),
-            key_weights.data_ptr<double>(),
+            reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(B_dev)),
+            tensor_data_ptr<double>(key_weights),
             km.S,
-            out_dev.data_ptr<double>() + r,
+            tensor_data_ptr<double>(out_dev) + r,
             stream.stream());
         cudaEventRecord(end_evt, stream.stream());
         cudaEventSynchronize(end_evt);
@@ -516,12 +527,12 @@ void register_bsi_cuda(pybind11::module& m) {
             cudaEvent_t s,e; cudaEventCreate(&s); cudaEventCreate(&e);
             cudaEventRecord(s);
             auto stream2 = at::cuda::getCurrentCUDAStream();
-            launch_popcount_pairwise(
-            reinterpret_cast<const unsigned long long*>(A_dev.data_ptr<int64_t>()),
-            reinterpret_cast<const unsigned long long*>(B_dev.data_ptr<int64_t>()),
-                Sa, km.S, Wa,
-            reinterpret_cast<unsigned long long*>(counts_dev.data_ptr<int64_t>()),
-                stream2.stream());
+        launch_popcount_pairwise(
+            reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(A_dev)),
+            reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(B_dev)),
+            Sa, km.S, Wa,
+            reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(counts_dev)),
+            stream2.stream());
             cudaEventRecord(e); cudaEventSynchronize(e);
             float ms=0.0f; cudaEventElapsedTime(&ms,s,e); cudaEventDestroy(s); cudaEventDestroy(e);
             total_kernel_ms += ms;
@@ -603,12 +614,15 @@ void register_bsi_cuda(pybind11::module& m) {
         int W = query->device_view.words_per_slice;
         auto out = torch::empty({S, W}, query->device_view.cwords.options());
         auto stream = at::cuda::getCurrentCUDAStream();
+        auto& cwords = query->device_view.cwords;
+        auto& offsets = query->device_view.comp_offsets;
+        auto& lengths = query->device_view.comp_lengths;
         launch_ewah_decompress_slices(
-            reinterpret_cast<const unsigned long long*>(query->device_view.cwords.data_ptr<int64_t>()),
-            query->device_view.comp_offsets.data_ptr<int>(),
-            query->device_view.comp_lengths.data_ptr<int>(),
+            reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(cwords)),
+            tensor_data_ptr<int>(offsets),
+            tensor_data_ptr<int>(lengths),
             S, W,
-            reinterpret_cast<unsigned long long*>(out.data_ptr<int64_t>()),
+            reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(out)),
             stream.stream());
         if (bsi_cuda_should_log()) {
             auto out_cpu = out.to(torch::kCPU);
