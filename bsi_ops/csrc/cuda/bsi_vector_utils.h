@@ -14,10 +14,38 @@ inline void hb_to_verbatim_words_gpu_helper(const HybridBitmap<U>& hb,
     const int64_t W = (rows + word_bits - 1) / word_bits;
     out_words.clear();
     out_words.resize(static_cast<size_t>(W), static_cast<U>(0));
-    // Read literal words directly via getWord, which returns the decompressed
-    // literal word at index, regardless of hybrid/compressed storage.
-    for (int64_t i = 0; i < W; ++i) {
-        out_words[static_cast<size_t>(i)] = hb.getWord(static_cast<size_t>(i));
+
+    // Fast path for verbatim storage: words are already literal.
+    if (hb.verbatim) {
+        const size_t n = static_cast<size_t>(W);
+        for (size_t i = 0; i < n; ++i) {
+            out_words[i] = hb.getWord(i);
+        }
+        return;
+    }
+
+    // Decompress EWAH-encoded buffer into W literal words using the raw iterator.
+    auto it = hb.raw_iterator();
+    size_t out_idx = 0;
+    while (it.hasNext() && out_idx < static_cast<size_t>(W)) {
+        auto& rle = it.next();
+        const U run_len = rle.getRunningLength();
+        const bool run_bit = rle.getRunningBit();
+        // Emit run words
+        const U run_word = run_bit ? static_cast<U>(~static_cast<U>(0)) : static_cast<U>(0);
+        for (U k = 0; k < run_len && out_idx < static_cast<size_t>(W); ++k) {
+            out_words[out_idx++] = run_word;
+        }
+        // Emit literal words following the RLW
+        const U lit_words = rle.getNumberOfLiteralWords();
+        const U* dw = it.dirtyWords();
+        for (U k = 0; k < lit_words && out_idx < static_cast<size_t>(W); ++k) {
+            out_words[out_idx++] = dw[k];
+        }
+    }
+    // Pad with zeros if needed
+    while (out_idx < static_cast<size_t>(W)) {
+        out_words[out_idx++] = static_cast<U>(0);
     }
 }
 
