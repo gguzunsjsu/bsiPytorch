@@ -392,67 +392,36 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
     cudaEventCreate(&start_evt);
     cudaEventCreate(&end_evt);
 
-    // Group keys by Sb to reduce launches; process each group with a single batched kernel
-    std::unordered_map<int, std::vector<int64_t>> by_Sb;
-    by_Sb.reserve(keys->num_keys);
-    for (int64_t r = 0; r < keys->num_keys; ++r) {
-        by_Sb[keys->metas[r].S].push_back(r);
-    }
-
+    // Correctness-first: per-key pairwise counts and CPU-style accumulation
     float total_kernel_ms = 0.0f;
-    for (const auto& kv : by_Sb) {
-        int Sb = kv.first;
-        const auto& idxs = kv.second;
-        int R = static_cast<int>(idxs.size());
-
-        std::vector<at::Tensor> words_list; words_list.reserve(R);
-        std::vector<at::Tensor> weights_list; weights_list.reserve(R);
-        for (int i = 0; i < R; ++i) {
-            int64_t r = idxs[i];
-            words_list.push_back(keys->dev_words[r]);             // [Sb, W]
-            weights_list.push_back(keys->slice_weights[r].view({1, Sb})); // [1, Sb]
-        }
-        auto B_stacked = torch::stack(words_list, 0).contiguous(); // [R, Sb, W]
-        auto Bw_stacked = torch::cat(weights_list, 0).contiguous(); // [R, Sb]
-        auto out_slice = torch::zeros({R}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
-        // Precompute scale factors on device: divide by 10^(dec_q + dec_k)
-        auto scales = torch::empty({R}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
-        {
-            std::vector<double> h_scales(R, 1.0);
-            for (int i = 0; i < R; ++i) {
-                int64_t r = idxs[i];
-                const auto& km = keys->metas[r];
-                int totalDecimals = query->device_view.decimals + km.decimals;
-                h_scales[i] = (totalDecimals > 0) ? std::pow(10.0, totalDecimals) : 1.0;
-            }
-            auto tmp = torch::from_blob(h_scales.data(), {R}, torch::TensorOptions().dtype(torch::kFloat64)).clone();
-            scales.copy_(tmp.to(torch::kCUDA));
-        }
-
+    for (int64_t r = 0; r < keys->num_keys; ++r) {
+        const auto& B_dev = keys->dev_words[r];   // [Sb, W]
+        const auto& km = keys->metas[r];
+        int Sb = km.S;
+        auto counts_dev = torch::empty({Sb, query->S}, torch::device(torch::kCUDA).dtype(torch::kInt64));
         auto stream = at::cuda::getCurrentCUDAStream();
         cudaEventRecord(start_evt, stream.stream());
-        launch_popcount_weighted_keys(
+        launch_popcount_pairwise(
             query_words,
-            query_weights,
-            query->S,
-            query->W,
-            reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(B_stacked)),
-            tensor_data_ptr<double>(Bw_stacked),
-            Sb,
-            R,
-            tensor_data_ptr<double>(out_slice),
+            reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(B_dev)),
+            query->S, Sb, query->W,
+            reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(counts_dev)),
             stream.stream());
         cudaEventRecord(end_evt, stream.stream());
         cudaEventSynchronize(end_evt);
         float kernel_ms = 0.0f; cudaEventElapsedTime(&kernel_ms, start_evt, end_evt);
         total_kernel_ms += kernel_ms;
 
-        // Scale and scatter to out_dev on device
-        out_slice = out_slice / scales;
-        // Build index tensor on CPU then copy to CUDA for scatter
-        auto idx_cpu = torch::from_blob(const_cast<int64_t*>(idxs.data()), {R}, torch::TensorOptions().dtype(torch::kInt64)).clone();
-        auto idx_dev = idx_cpu.to(torch::kCUDA);
-        out_dev.index_put_({idx_dev}, out_slice);
+        auto counts_cpu = counts_dev.to(torch::kCPU).contiguous();
+        double score = accumulate_weighted_dot_meta(query->S,
+                                                   query->device_view.offset,
+                                                   query->device_view.twos_complement,
+                                                   query->device_view.decimals,
+                                                   counts_cpu,
+                                                   km);
+        // write to out_dev[r]
+        auto score_t = torch::tensor({score}, torch::TensorOptions().dtype(torch::kFloat64));
+        out_dev.index_put_({r}, score_t.to(torch::kCUDA));
     }
 
     cudaEventDestroy(start_evt);
