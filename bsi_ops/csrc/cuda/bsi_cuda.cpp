@@ -10,7 +10,6 @@
 #include <cstdint>
 #include <unordered_map>
 #include <c10/cuda/CUDAFunctions.h>
-#include <ATen/Indexing.h>
 #include <cstdlib>
 
 // bring in BSI core (CPU) to build and access slices
@@ -84,6 +83,13 @@ extern "C" void launch_popcount_weighted_keys_tiled(
     int R,
     int tiles,
     int tile_size,
+    double* out,
+    cudaStream_t stream);
+
+extern "C" void launch_scatter_set_double(
+    const long long* idx,
+    const double* src,
+    int n,
     double* out,
     cudaStream_t stream);
 
@@ -491,10 +497,14 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
         // Scale and scatter to out_dev on device
         out_slice = out_slice / scales;
         auto idx_cpu = torch::from_blob(const_cast<int64_t*>(idxs.data()), {R}, torch::TensorOptions().dtype(torch::kInt64)).clone();
-        auto idx_dev = idx_cpu.to(torch::kCUDA);
-        using at::indexing::TensorIndex;
-        std::array<TensorIndex,1> ix{ TensorIndex(idx_dev) };
-        out_dev.index_put_(ix, out_slice);
+        auto idx_dev = idx_cpu.to(torch::kCUDA).contiguous();
+        auto stream3 = at::cuda::getCurrentCUDAStream();
+        launch_scatter_set_double(
+            reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev)),
+            tensor_data_ptr<double>(out_slice),
+            R,
+            tensor_data_ptr<double>(out_dev),
+            stream3.stream());
     }
 
     cudaEventDestroy(start_evt);

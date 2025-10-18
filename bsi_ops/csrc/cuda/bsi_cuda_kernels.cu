@@ -275,6 +275,33 @@ extern "C" void launch_popcount_weighted_keys_tiled(
     popcount_weighted_keys_tiled_kernel<<<grid, block, 0, stream>>>(A, Aw, Sa, W, B, Bw, Sb, R, tile_size, out);
 }
 
+// Simple scatter: out[idx[i]] = src[i]
+extern "C" __global__
+void scatter_set_double_kernel(
+    const long long* __restrict__ idx,
+    const double* __restrict__ src,
+    int n,
+    double* __restrict__ out)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        long long j = idx[i];
+        out[j] = src[i];
+    }
+}
+
+extern "C" void launch_scatter_set_double(
+    const long long* idx,
+    const double* src,
+    int n,
+    double* out,
+    cudaStream_t stream)
+{
+    int threads = 256;
+    int blocks = (n + threads - 1) / threads;
+    scatter_set_double_kernel<<<blocks, threads, 0, stream>>>(idx, src, n, out);
+}
+
 // EWAH decompress: interpret buffer of RLWs and literal words into W literal words.
 // Assumes u64 words and runninglengthbits = 32, literalbits = 31.
 extern "C" __global__
