@@ -427,7 +427,13 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
     cudaEventCreate(&start_evt);
     cudaEventCreate(&end_evt);
 
-    // Correctness-first: per-key pairwise counts and CPU-style accumulation
+    // Group keys by Sb to reduce launches; process each group with a batched per-key kernel
+    std::unordered_map<int, std::vector<int64_t>> by_Sb;
+    by_Sb.reserve(keys->num_keys);
+    for (int64_t r = 0; r < keys->num_keys; ++r) {
+        by_Sb[keys->metas[r].S].push_back(r);
+    }
+
     float total_kernel_ms = 0.0f;
     for (const auto& kv : by_Sb) {
         int Sb = kv.first;
