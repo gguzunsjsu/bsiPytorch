@@ -72,6 +72,29 @@ extern "C" void launch_popcount_weighted_keys(
     double* out,
     cudaStream_t stream);
 
+extern "C" void launch_popcount_weighted_keys_tiled(
+    const unsigned long long* A,
+    const double* Aw,
+    int Sa, int W,
+    const unsigned long long* B,
+    const double* Bw,
+    int Sb,
+    int R,
+    int tiles,
+    int tile_size,
+    double* out,
+    cudaStream_t stream);
+
+static bool bsi_cuda_use_tiled() {
+    static int cached = -1;
+    if (cached >= 0) return cached != 0;
+    const char* v = std::getenv("BSI_TILED");
+    if (!v) { cached = 1; return true; }
+    std::string s(v);
+    for (auto& c : s) c = (char)std::tolower(c);
+    cached = (s == "1" || s == "true" || s == "yes") ? 1 : 0;
+    return cached != 0;
+}
 static inline uint64_t now_ns() {
     using namespace std::chrono;
     return duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
@@ -144,6 +167,10 @@ struct PrebuiltBSIKeysCUDA {
     std::vector<at::Tensor> slice_weights; // each [S_k], float64, cuda
     std::vector<KeyMeta> metas;
     std::vector<BsiVectorCudaData> device_views;
+    // Grouped, contiguous views by Sb to avoid per-call stacking
+    std::unordered_map<int, at::Tensor> grouped_words;   // Sb -> [R_sb, Sb, W]
+    std::unordered_map<int, at::Tensor> grouped_weights; // Sb -> [R_sb, Sb]
+    std::unordered_map<int, std::vector<int64_t>> grouped_indices; // Sb -> original key indices
     int W = 0;
     int64_t d = 0;
     int64_t num_keys = 0;
@@ -394,34 +421,76 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
 
     // Correctness-first: per-key pairwise counts and CPU-style accumulation
     float total_kernel_ms = 0.0f;
-    for (int64_t r = 0; r < keys->num_keys; ++r) {
-        const auto& B_dev = keys->dev_words[r];   // [Sb, W]
-        const auto& km = keys->metas[r];
-        int Sb = km.S;
-        auto counts_dev = torch::empty({Sb, query->S}, torch::device(torch::kCUDA).dtype(torch::kInt64));
+    for (const auto& kv : by_Sb) {
+        int Sb = kv.first;
+        const auto& idxs = kv.second;
+        int R = static_cast<int>(idxs.size());
+
+        std::vector<at::Tensor> words_list; words_list.reserve(R);
+        std::vector<at::Tensor> weights_list; weights_list.reserve(R);
+        for (int i = 0; i < R; ++i) {
+            int64_t r = idxs[i];
+            words_list.push_back(keys->dev_words[r]);             // [Sb, W]
+            weights_list.push_back(keys->slice_weights[r].view({1, Sb})); // [1, Sb]
+        }
+        auto B_stacked = torch::stack(words_list, 0).contiguous(); // [R, Sb, W]
+        auto Bw_stacked = torch::cat(weights_list, 0).contiguous(); // [R, Sb]
+        auto out_slice = torch::zeros({R}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
+        // Precompute scale factors on device: divide by 10^(dec_q + dec_k)
+        auto scales = torch::empty({R}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
+        {
+            std::vector<double> h_scales(R, 1.0);
+            for (int i = 0; i < R; ++i) {
+                int64_t r = idxs[i];
+                const auto& km = keys->metas[r];
+                int totalDecimals = query->device_view.decimals + km.decimals;
+                h_scales[i] = (totalDecimals > 0) ? std::pow(10.0, totalDecimals) : 1.0;
+            }
+            auto tmp = torch::from_blob(h_scales.data(), {R}, torch::TensorOptions().dtype(torch::kFloat64)).clone();
+            scales.copy_(tmp.to(torch::kCUDA));
+        }
+
         auto stream = at::cuda::getCurrentCUDAStream();
         cudaEventRecord(start_evt, stream.stream());
-        launch_popcount_pairwise(
-            query_words,
-            reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(B_dev)),
-            query->S, Sb, query->W,
-            reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(counts_dev)),
-            stream.stream());
+        if (bsi_cuda_use_tiled()) {
+            int tiles = 1; int tile_size = query->W;
+            if (query->W > 1024) { tiles = std::min(16, (query->W + 1023) / 1024); tile_size = (query->W + tiles - 1) / tiles; }
+            launch_popcount_weighted_keys_tiled(
+                query_words,
+                query_weights,
+                query->S,
+                query->W,
+                reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(B_stacked)),
+                tensor_data_ptr<double>(Bw_stacked),
+                Sb,
+                R,
+                tiles,
+                tile_size,
+                tensor_data_ptr<double>(out_slice),
+                stream.stream());
+        } else {
+            launch_popcount_weighted_keys(
+                query_words,
+                query_weights,
+                query->S,
+                query->W,
+                reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(B_stacked)),
+                tensor_data_ptr<double>(Bw_stacked),
+                Sb,
+                R,
+                tensor_data_ptr<double>(out_slice),
+                stream.stream());
+        }
         cudaEventRecord(end_evt, stream.stream());
         cudaEventSynchronize(end_evt);
         float kernel_ms = 0.0f; cudaEventElapsedTime(&kernel_ms, start_evt, end_evt);
         total_kernel_ms += kernel_ms;
 
-        auto counts_cpu = counts_dev.to(torch::kCPU).contiguous();
-        double score = accumulate_weighted_dot_meta(query->S,
-                                                   query->device_view.offset,
-                                                   query->device_view.twos_complement,
-                                                   query->device_view.decimals,
-                                                   counts_cpu,
-                                                   km);
-        // write to out_dev[r]
-        auto score_t = torch::tensor({score}, torch::TensorOptions().dtype(torch::kFloat64));
-        out_dev.index_put_({r}, score_t.to(torch::kCUDA));
+        // Scale and scatter to out_dev on device
+        out_slice = out_slice / scales;
+        auto idx_cpu = torch::from_blob(const_cast<int64_t*>(idxs.data()), {R}, torch::TensorOptions().dtype(torch::kInt64)).clone();
+        auto idx_dev = idx_cpu.to(torch::kCUDA);
+        out_dev.index_put_({idx_dev}, out_slice);
     }
 
     cudaEventDestroy(start_evt);
@@ -451,9 +520,10 @@ void register_bsi_cuda(pybind11::module& m) {
     // Build prepacked GPU keys
     m.def("build_bsi_keys_cuda", [](torch::Tensor K, int decimalPlaces, float compress_threshold) {
         TORCH_CHECK(K.dim() == 2, "K must be 2D [num_keys, d]");
-        auto Ka = K.accessor<float,2>();
-        int64_t num_keys = Ka.size(0);
-        int64_t d = Ka.size(1);
+        auto Kc = K.contiguous();
+        const float* Kd = static_cast<const float*>(Kc.data_ptr());
+        int64_t num_keys = Kc.size(0);
+        int64_t d = Kc.size(1);
         PrebuiltBSIKeysCUDA* holder = new PrebuiltBSIKeysCUDA();
         holder->num_keys = num_keys;
         holder->d = d;
@@ -463,7 +533,7 @@ void register_bsi_cuda(pybind11::module& m) {
         // Build one to get W
         {
             std::vector<double> tmp_row; tmp_row.reserve(d);
-            for (int64_t c=0;c<d;++c) tmp_row.push_back(static_cast<double>(Ka[0][c]));
+            for (int64_t c=0;c<d;++c) tmp_row.push_back(static_cast<double>(Kd[c]));
             BsiSigned<u64> b; BsiVector<u64>* t = b.buildBsiVector(tmp_row, decimalPlaces, compress_threshold);
             int S0, W0; std::vector<u64> tmp_words; bsi_flatten_words_gpu_helper(*t, tmp_words, S0, W0);
             holder->W = W0; delete t;
@@ -476,7 +546,8 @@ void register_bsi_cuda(pybind11::module& m) {
         size_t total_mem = 0;
         for (int64_t r=0;r<num_keys;++r) {
             std::vector<double> kv; kv.reserve(d);
-            for (int64_t c=0;c<d;++c) kv.push_back(static_cast<double>(Ka[r][c]));
+            const float* rowp = Kd + r * d;
+            for (int64_t c=0;c<d;++c) kv.push_back(static_cast<double>(rowp[c]));
             BsiSigned<u64> b;
             BsiVector<u64>* bsi_k = b.buildBsiVector(kv, decimalPlaces, compress_threshold);
             bsi_k->setPartitionID(0); bsi_k->setFirstSliceFlag(true); bsi_k->setLastSliceFlag(true);
@@ -493,6 +564,24 @@ void register_bsi_cuda(pybind11::module& m) {
             holder->metas.push_back(meta);
             total_mem += bsi_k->getSizeInMemory();
             delete bsi_k;
+        }
+        // Group contiguous tensors by Sb once
+        {
+            std::unordered_map<int, std::vector<int64_t>> groups;
+            for (int64_t r=0; r<num_keys; ++r) groups[ holder->metas[r].S ].push_back(r);
+            for (auto& kv : groups) {
+                int Sb = kv.first; const auto& idxs = kv.second; int R = static_cast<int>(idxs.size());
+                auto gw = torch::empty({R, Sb, holder->W}, torch::TensorOptions().dtype(torch::kInt64).device(torch::kCUDA));
+                auto gwt = torch::empty({R, Sb}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
+                for (int i=0; i<R; ++i) {
+                    int64_t r = idxs[i];
+                    gw[i].copy_( holder->dev_words[r] );
+                    gwt[i].copy_( holder->slice_weights[r] );
+                }
+                holder->grouped_words[Sb] = gw.contiguous();
+                holder->grouped_weights[Sb] = gwt.contiguous();
+                holder->grouped_indices[Sb] = idxs;
+            }
         }
         pybind11::capsule cap(holder, "PrebuiltBSIKeysCUDA",
             [](PyObject* capsule){

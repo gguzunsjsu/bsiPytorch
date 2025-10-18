@@ -209,6 +209,72 @@ extern "C" void launch_popcount_weighted_keys(
     popcount_weighted_keys_kernel<<<grid, block, 0, stream>>>(A, Aw, Sa, W, B, Bw, Sb, R, out);
 }
 
+// Tiled per-key kernel: grid = (R, tiles). Accumulate over W tiles and atomic add into out[r].
+extern "C" __global__
+void popcount_weighted_keys_tiled_kernel(
+    const unsigned long long* __restrict__ A,   // [Sa, W]
+    const double* __restrict__ Aw,              // [Sa]
+    int Sa, int W,
+    const unsigned long long* __restrict__ B,   // [R, Sb, W]
+    const double* __restrict__ Bw,              // [R, Sb]
+    int Sb,
+    int R,
+    int tile_size,
+    double* __restrict__ out)
+{
+    int r = blockIdx.x;
+    int tile = blockIdx.y;
+    if (r >= R) return;
+
+    int w_begin = tile * tile_size;
+    int w_end = min(W, w_begin + tile_size);
+    if (w_begin >= w_end) return;
+
+    double acc = 0.0;
+    long long total = (long long)Sa * (long long)Sb * (long long)(w_end - w_begin);
+    for (long long idx = threadIdx.x; idx < total; idx += blockDim.x) {
+        int i = static_cast<int>(idx / (Sb * (long long)(w_end - w_begin)));
+        int rem = static_cast<int>(idx % (Sb * (long long)(w_end - w_begin)));
+        int j = rem / (w_end - w_begin);
+        int w = w_begin + (rem % (w_end - w_begin));
+        const unsigned long long a = A[(size_t)i * W + w];
+        const unsigned long long b = B[(((size_t)r * Sb) + j) * W + w];
+        int cnt = __popcll(a & b);
+        acc += static_cast<double>(cnt) * Aw[i] * Bw[(size_t)r * Sb + j];
+    }
+    acc = warp_reduce_sum_double(acc);
+    __shared__ double warp_sums[32];
+    if ((threadIdx.x & 31) == 0) warp_sums[threadIdx.x >> 5] = acc;
+    __syncthreads();
+    double total_acc = 0.0;
+    if (threadIdx.x < 32) {
+        int num_warps = blockDim.x >> 5;
+        total_acc = (threadIdx.x < num_warps) ? warp_sums[threadIdx.x] : 0.0;
+        total_acc = warp_reduce_sum_double(total_acc);
+    }
+    if (threadIdx.x == 0) {
+        atomicAdd(&out[r], total_acc);
+    }
+}
+
+extern "C" void launch_popcount_weighted_keys_tiled(
+    const unsigned long long* A,
+    const double* Aw,
+    int Sa, int W,
+    const unsigned long long* B,
+    const double* Bw,
+    int Sb,
+    int R,
+    int tiles,
+    int tile_size,
+    double* out,
+    cudaStream_t stream)
+{
+    dim3 grid(R, tiles);
+    dim3 block(256);
+    popcount_weighted_keys_tiled_kernel<<<grid, block, 0, stream>>>(A, Aw, Sa, W, B, Bw, Sb, R, tile_size, out);
+}
+
 // EWAH decompress: interpret buffer of RLWs and literal words into W literal words.
 // Assumes u64 words and runninglengthbits = 32, literalbits = 31.
 extern "C" __global__
