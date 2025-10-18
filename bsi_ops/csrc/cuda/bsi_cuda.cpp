@@ -427,45 +427,23 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
     cudaEventCreate(&start_evt);
     cudaEventCreate(&end_evt);
 
-    // Group keys by Sb to reduce launches; process each group with a batched per-key kernel
-    std::unordered_map<int, std::vector<int64_t>> by_Sb;
-    by_Sb.reserve(keys->num_keys);
-    for (int64_t r = 0; r < keys->num_keys; ++r) {
-        by_Sb[keys->metas[r].S].push_back(r);
-    }
+    // Precompute single scale factor when decimals are fixed across keys (they are, per-layer)
+    const int totalDecimals = query->device_view.decimals + keys->decimals;
+    const double scale_inv = (totalDecimals > 0) ? (1.0 / std::pow(10.0, totalDecimals)) : 1.0;
 
     float total_kernel_ms = 0.0f;
-    for (const auto& kv : by_Sb) {
+    auto stream = at::cuda::getCurrentCUDAStream();
+    cudaEventRecord(start_evt, stream.stream());
+    // Use pre-built grouped tensors to avoid per-call stacking
+    for (const auto& kv : keys->grouped_words) {
         int Sb = kv.first;
-        const auto& idxs = kv.second;
-        int R = static_cast<int>(idxs.size());
+        const auto& B_stacked = kv.second;                          // [R_sb, Sb, W]
+        const auto& Bw_stacked = keys->grouped_weights.at(Sb);      // [R_sb, Sb]
+        const auto& idxs = keys->grouped_indices.at(Sb);            // vector<int64_t> size R_sb
+        const int R = static_cast<int>(idxs.size());
 
-        std::vector<at::Tensor> words_list; words_list.reserve(R);
-        std::vector<at::Tensor> weights_list; weights_list.reserve(R);
-        for (int i = 0; i < R; ++i) {
-            int64_t r = idxs[i];
-            words_list.push_back(keys->dev_words[r]);             // [Sb, W]
-            weights_list.push_back(keys->slice_weights[r].view({1, Sb})); // [1, Sb]
-        }
-        auto B_stacked = torch::stack(words_list, 0).contiguous(); // [R, Sb, W]
-        auto Bw_stacked = torch::cat(weights_list, 0).contiguous(); // [R, Sb]
         auto out_slice = torch::zeros({R}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
-        // Precompute scale factors on device: divide by 10^(dec_q + dec_k)
-        auto scales = torch::empty({R}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
-        {
-            std::vector<double> h_scales(R, 1.0);
-            for (int i = 0; i < R; ++i) {
-                int64_t r = idxs[i];
-                const auto& km = keys->metas[r];
-                int totalDecimals = query->device_view.decimals + km.decimals;
-                h_scales[i] = (totalDecimals > 0) ? std::pow(10.0, totalDecimals) : 1.0;
-            }
-            auto tmp = torch::from_blob(h_scales.data(), {R}, torch::TensorOptions().dtype(torch::kFloat64)).clone();
-            scales.copy_(tmp.to(torch::kCUDA));
-        }
 
-        auto stream = at::cuda::getCurrentCUDAStream();
-        cudaEventRecord(start_evt, stream.stream());
         if (bsi_cuda_use_tiled()) {
             int tiles = 1; int tile_size = query->W;
             if (query->W > 1024) { tiles = std::min(16, (query->W + 1023) / 1024); tile_size = (query->W + tiles - 1) / tiles; }
@@ -495,13 +473,9 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
                 tensor_data_ptr<double>(out_slice),
                 stream.stream());
         }
-        cudaEventRecord(end_evt, stream.stream());
-        cudaEventSynchronize(end_evt);
-        float kernel_ms = 0.0f; cudaEventElapsedTime(&kernel_ms, start_evt, end_evt);
-        total_kernel_ms += kernel_ms;
 
-        // Scale and scatter to out_dev on device
-        out_slice = out_slice / scales;
+        // Scale (constant per layer) and scatter to out_dev on device
+        if (scale_inv != 1.0) out_slice.mul_(scale_inv);
         auto idx_cpu = torch::from_blob(const_cast<int64_t*>(idxs.data()), {R}, torch::TensorOptions().dtype(torch::kInt64)).clone();
         auto idx_dev = idx_cpu.to(torch::kCUDA).contiguous();
         auto stream3 = at::cuda::getCurrentCUDAStream();
@@ -513,6 +487,10 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
             stream3.stream());
     }
 
+    cudaEventRecord(end_evt, stream.stream());
+    cudaEventSynchronize(end_evt);
+    float kernel_ms = 0.0f; cudaEventElapsedTime(&kernel_ms, start_evt, end_evt);
+    total_kernel_ms += kernel_ms;
     cudaEventDestroy(start_evt);
     cudaEventDestroy(end_evt);
 
@@ -537,6 +515,102 @@ void register_bsi_cuda(pybind11::module& m) {
     m.def("batch_dot_product_prebuilt_cuda_caps", &batch_dot_product_prebuilt_cuda_caps,
           pybind11::arg("query_cap"), pybind11::arg("keyset_cuda_cap"),
           "Batch dot using CUDA popcount kernel with prebuilt query and key capsules");
+
+    // Batched multi-query variant: process a Python list of query capsules in one call
+    m.def("batch_dot_product_multiquery_cuda_caps",
+        [](pybind11::list query_caps_list, pybind11::capsule keyset_cuda_cap) {
+            auto* keys = capsule_to_keys_cuda(keyset_cuda_cap);
+            TORCH_CHECK(keys != nullptr, "Invalid CUDA keys capsule");
+            const int64_t R = keys->num_keys;
+            const int64_t Q = static_cast<int64_t>(pybind11::len(query_caps_list));
+            TORCH_CHECK(R > 0 && Q > 0, "Empty keys or queries");
+
+            auto out_all = torch::zeros({Q, R}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
+
+            // Measure kernel time across all launches in this call
+            cudaEvent_t start_evt, end_evt;
+            cudaEventCreate(&start_evt);
+            cudaEventCreate(&end_evt);
+            auto stream = at::cuda::getCurrentCUDAStream();
+            cudaEventRecord(start_evt, stream.stream());
+
+            for (int64_t qi = 0; qi < Q; ++qi) {
+                auto cap_obj = query_caps_list[qi];
+                TORCH_CHECK(pybind11::isinstance<pybind11::capsule>(cap_obj), "Each item must be a capsule");
+                auto cap = pybind11::cast<pybind11::capsule>(cap_obj);
+                auto* query = capsule_to_query_cuda(cap);
+                TORCH_CHECK(query != nullptr, "Invalid BSI query capsule at index ", qi);
+                TORCH_CHECK(query->W == keys->W, "Word count mismatch between query and keys");
+
+                const auto* A = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(query->dev_words));
+                const auto* Aw = tensor_data_ptr<double>(query->slice_weights);
+                auto out_row = out_all[qi]; // [R]
+
+                // Decimals scale (constant across keys in this layer)
+                int totalDecimals = query->device_view.decimals + keys->decimals;
+                const double scale_inv = (totalDecimals > 0) ? (1.0 / std::pow(10.0, totalDecimals)) : 1.0;
+
+                // Iterate pre-grouped key tensors to avoid stacking
+                for (const auto& kv2 : keys->grouped_words) {
+                    int Sb = kv2.first;
+                    const auto& B_stacked = kv2.second;                          // [R_sb, Sb, W]
+                    const auto& Bw_stacked = keys->grouped_weights.at(Sb);      // [R_sb, Sb]
+                    const auto& idxs = keys->grouped_indices.at(Sb);            // vector<int64_t>
+                    const int Rg = static_cast<int>(idxs.size());
+
+                    auto out_slice = torch::zeros({Rg}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
+                    if (bsi_cuda_use_tiled()) {
+                        int tiles = 1; int tile_size = query->W;
+                        if (query->W > 1024) { tiles = std::min(16, (query->W + 1023) / 1024); tile_size = (query->W + tiles - 1) / tiles; }
+                        launch_popcount_weighted_keys_tiled(
+                            A,
+                            Aw,
+                            query->S,
+                            query->W,
+                            reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(B_stacked)),
+                            tensor_data_ptr<double>(Bw_stacked),
+                            Sb,
+                            Rg,
+                            tiles,
+                            tile_size,
+                            tensor_data_ptr<double>(out_slice),
+                            stream.stream());
+                    } else {
+                        launch_popcount_weighted_keys(
+                            A,
+                            Aw,
+                            query->S,
+                            query->W,
+                            reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(B_stacked)),
+                            tensor_data_ptr<double>(Bw_stacked),
+                            Sb,
+                            Rg,
+                            tensor_data_ptr<double>(out_slice),
+                            stream.stream());
+                    }
+
+                    if (scale_inv != 1.0) out_slice.mul_(scale_inv);
+                    auto idx_cpu = torch::from_blob(const_cast<int64_t*>(idxs.data()), {Rg}, torch::TensorOptions().dtype(torch::kInt64)).clone();
+                    auto idx_dev = idx_cpu.to(torch::kCUDA).contiguous();
+                    launch_scatter_set_double(
+                        reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev)),
+                        tensor_data_ptr<double>(out_slice),
+                        Rg,
+                        tensor_data_ptr<double>(out_row),
+                        stream.stream());
+                }
+            }
+
+            cudaEventRecord(end_evt, stream.stream());
+            cudaEventSynchronize(end_evt);
+            float kernel_ms = 0.0f; cudaEventElapsedTime(&kernel_ms, start_evt, end_evt);
+            cudaEventDestroy(start_evt); cudaEventDestroy(end_evt);
+
+            uint64_t dot_ns = static_cast<uint64_t>(kernel_ms * 1.0e6);
+            return pybind11::make_tuple(out_all, dot_ns);
+        },
+        pybind11::arg("query_caps_list"), pybind11::arg("keyset_cuda_cap"),
+        "Batched dot for many queries vs prepacked CUDA keys; returns [Q,R] CUDA tensor and total kernel ns");
     // Build prepacked GPU keys
     m.def("build_bsi_keys_cuda", [](torch::Tensor K, int decimalPlaces, float compress_threshold) {
         TORCH_CHECK(K.dim() == 2, "K must be 2D [num_keys, d]");

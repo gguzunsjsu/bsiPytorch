@@ -175,10 +175,10 @@ class BSIQuantizedLinear(torch.nn.Module):
                 device_index,
             )
 
+        # Materialize/query or retrieve all capsules in order
+        query_capsules = []
         for i in range(batch_size):
             input_vec = batch_inputs[i]
-            input_vec_cpu = None
-
             if debug_first and i == 0:
                 print(f"\n[DEBUG {self.__class__.__name__}] First forward pass diagnostics:")
                 print(f"  Input vec stats: min={input_vec.min():.4f}, max={input_vec.max():.4f}, mean={input_vec.mean():.4f}, std={input_vec.std():.4f}")
@@ -191,36 +191,25 @@ class BSIQuantizedLinear(torch.nn.Module):
             else:
                 future = future_builds.pop(cache_key)
                 query_capsule, query_mem, _meta, python_build_ns = future.result()
-                # Only track python build time separately; exclude from dot latency
                 self.build_ns_total += python_build_ns
                 self.build_calls += 1
                 self._query_cache_set(cache_key, (query_capsule, query_mem))
+            query_capsules.append(query_capsule)
 
-            build_ns_cpp = 0
-            scores, time_taken_ns, build_ns_cpp, dot_ns, _query_bsi_size = bsi_ops.batch_dot_product_prebuilt_cuda_caps(
-                query_capsule,
-                self._bsi_keys_cuda
-            )
-            if build_ns_cpp:
-                self.build_ns_total += int(build_ns_cpp)
-                self.build_calls += 1
-            
-            # Debug: Check raw scores from C++
-            if debug_first and i == 0:
-                print(f"  Raw BSI scores from CUDA: shape={scores.shape}, dtype={scores.dtype}")
-                print(f"    min={scores.min():.4f}, max={scores.max():.4f}, mean={scores.mean():.4f}, std={scores.std():.4f}")
-                print(f"    First 5 values: {scores[:5].tolist()}")
-                    
-            
-            # Add bias if present
-            scores = scores.to(device=original_device, dtype=original_dtype, non_blocking=scores.is_cuda and original_device.type == 'cuda')
-            if self.bias is not None:
-                scores = scores + self.bias.to(device=original_device, dtype=original_dtype)
-            if debug_first and i == 0:
-                print(f"  After adding bias: min={scores.min():.4f}, max={scores.max():.4f}, mean={scores.mean():.4f}")
+        # Single multi-query call on CUDA to compute all outputs at once
+        scores_2d, dot_ns = bsi_ops.batch_dot_product_multiquery_cuda_caps(query_capsules, self._bsi_keys_cuda)
+        dot_ns_this_forward += int(dot_ns)
 
-            output_list.append(scores)
-            dot_ns_this_forward += int(dot_ns)
+        # Add bias and cast, then split rows back
+        scores_2d = scores_2d.to(device=original_device, dtype=original_dtype, non_blocking=(scores_2d.is_cuda and original_device.type == 'cuda'))
+        if self.bias is not None:
+            scores_2d = scores_2d + self.bias.to(device=original_device, dtype=original_dtype)
+        if debug_first:
+            s0 = scores_2d[0]
+            print(f"  After adding bias (first row): min={s0.min():.4f}, max={s0.max():.4f}, mean={s0.mean():.4f}")
+
+        for i in range(batch_size):
+            output_list.append(scores_2d[i])
 
             # No CPU accuracy comparisons in GPU-only mode
         
