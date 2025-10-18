@@ -10,6 +10,8 @@
 #include <cstdint>
 #include <unordered_map>
 #include <c10/cuda/CUDAFunctions.h>
+#include <ATen/Indexing.h>
+#include <cstdlib>
 
 // bring in BSI core (CPU) to build and access slices
 #include "../../../bsiCPP/bsi/BsiVector.hpp"
@@ -490,7 +492,9 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
         out_slice = out_slice / scales;
         auto idx_cpu = torch::from_blob(const_cast<int64_t*>(idxs.data()), {R}, torch::TensorOptions().dtype(torch::kInt64)).clone();
         auto idx_dev = idx_cpu.to(torch::kCUDA);
-        out_dev.index_put_({idx_dev}, out_slice);
+        using at::indexing::TensorIndex;
+        std::array<TensorIndex,1> ix{ TensorIndex(idx_dev) };
+        out_dev.index_put_(ix, out_slice);
     }
 
     cudaEventDestroy(start_evt);
