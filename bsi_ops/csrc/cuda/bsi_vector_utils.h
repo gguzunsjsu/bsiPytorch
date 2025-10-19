@@ -69,3 +69,37 @@ inline void bsi_flatten_words_gpu_helper(const BsiVector<U>& vec,
                   out.begin() + static_cast<size_t>(s) * static_cast<size_t>(W));
     }
 }
+
+// Build an EWAH-encoded stream (RLW + literals) for one HybridBitmap slice.
+// Encoding matches ewah_decompress_kernel: bit0=runningBit; bits[1..32]=run_len; bits[33..63]=lit_count.
+template <typename U>
+inline void hb_to_ewah_stream_helper(const HybridBitmap<U>& hb,
+                                     int64_t rows,
+                                     std::vector<U>& out_words) {
+    out_words.clear();
+    const int word_bits = 8 * sizeof(U);
+    const int64_t W = (rows + word_bits - 1) / word_bits;
+
+    if (hb.verbatim) {
+        // Literal-only: single RLW with run_len=0 and lit_count=W, followed by W literal words.
+        U rlw = (U)0 | ((U)0 << 1) | ((U)W << (1 + 32));
+        out_words.push_back(rlw);
+        for (int64_t w = 0; w < W; ++w) {
+            out_words.push_back(hb.getWord((size_t)w));
+        }
+        return;
+    }
+
+    // General case: iterate raw RLW blocks and serialize to our compact format.
+    auto it = hb.raw_iterator();
+    while (it.hasNext()) {
+        auto& rle = it.next();
+        U run_len = rle.getRunningLength();
+        bool run_bit = rle.getRunningBit();
+        U lit_words = rle.getNumberOfLiteralWords();
+        const U* dw = it.dirtyWords();
+        U rlw = (U)(run_bit ? 1 : 0) | ((U)(run_len) << 1) | ((U)(lit_words) << (1 + 32));
+        out_words.push_back(rlw);
+        for (U k = 0; k < lit_words; ++k) out_words.push_back(dw[k]);
+    }
+}

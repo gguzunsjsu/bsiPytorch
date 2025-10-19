@@ -93,6 +93,29 @@ extern "C" void launch_scatter_set_double(
     double* out,
     cudaStream_t stream);
 
+// Compressed-aware helpers
+extern "C" void launch_prefix_popcount(
+    const unsigned long long* A,
+    int Sa,
+    int W,
+    int* Pc,
+    cudaStream_t stream);
+extern "C" void launch_popcount_weighted_keys_compressed(
+    const unsigned long long* A,
+    const int* Pc,
+    const double* Aw,
+    int Sa,
+    int W,
+    const unsigned long long* comp_words,
+    const long long* comp_off_abs,
+    const int* comp_len,
+    const double* Bw,
+    int Sb,
+    int R,
+    double scale_inv,
+    double* out,
+    cudaStream_t stream);
+
 static bool bsi_cuda_use_tiled() {
     static int cached = -1;
     if (cached >= 0) return cached != 0;
@@ -179,6 +202,11 @@ struct PrebuiltBSIKeysCUDA {
     std::unordered_map<int, at::Tensor> grouped_words;   // Sb -> [R_sb, Sb, W]
     std::unordered_map<int, at::Tensor> grouped_weights; // Sb -> [R_sb, Sb]
     std::unordered_map<int, std::vector<int64_t>> grouped_indices; // Sb -> original key indices
+    // Compressed grouped layout (EWAH):
+    // For each Sb group: a big 1D comp_words buffer, plus absolute per-slice offsets and lengths per key
+    std::unordered_map<int, at::Tensor> grouped_comp_words; // Sb -> [total_u64]
+    std::unordered_map<int, at::Tensor> grouped_comp_off;   // Sb -> [R_sb, Sb] (int64, absolute offsets)
+    std::unordered_map<int, at::Tensor> grouped_comp_len;   // Sb -> [R_sb, Sb] (int32)
     int W = 0;
     int64_t d = 0;
     int64_t num_keys = 0;
@@ -433,7 +461,15 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
 
     float total_kernel_ms = 0.0f;
     auto stream = at::cuda::getCurrentCUDAStream();
-    cudaEventRecord(start_evt, stream.stream());
+    // Precompute query prefix popcounts for compressed path
+    auto Pc = torch::empty({query->S, query->W + 1}, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
+    launch_prefix_popcount(
+        query_words,
+        query->S,
+        query->W,
+        Pc.data_ptr<int>(),
+        stream.stream());
+
     // Use pre-built grouped tensors to avoid per-call stacking
     for (const auto& kv : keys->grouped_words) {
         int Sb = kv.first;
@@ -442,55 +478,81 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
         const auto& idxs = keys->grouped_indices.at(Sb);            // vector<int64_t> size R_sb
         const int R = static_cast<int>(idxs.size());
 
-        auto out_slice = torch::zeros({R}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
-
-        if (bsi_cuda_use_tiled()) {
-            int tiles = 1; int tile_size = query->W;
-            if (query->W > 1024) { tiles = std::min(16, (query->W + 1023) / 1024); tile_size = (query->W + tiles - 1) / tiles; }
-            launch_popcount_weighted_keys_tiled(
+        // If compressed buffers exist for this group, use compressed-aware kernel; else fallback to verbatim
+        auto it_comp = keys->grouped_comp_words.find(Sb);
+        if (it_comp != keys->grouped_comp_words.end()) {
+            auto comp_buf = it_comp->second;                                 // [total_u64]
+            auto comp_off = keys->grouped_comp_off.at(Sb);                   // [R,Sb]
+            auto comp_len = keys->grouped_comp_len.at(Sb);                   // [R,Sb]
+            auto out_slice = torch::zeros({R}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
+            launch_popcount_weighted_keys_compressed(
                 query_words,
+                Pc.data_ptr<int>(),
                 query_weights,
                 query->S,
                 query->W,
-                reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(B_stacked)),
+                reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(comp_buf)),
+                comp_off.data_ptr<long long>(),
+                comp_len.data_ptr<int>(),
                 tensor_data_ptr<double>(Bw_stacked),
                 Sb,
                 R,
-                tiles,
-                tile_size,
+                scale_inv,
                 tensor_data_ptr<double>(out_slice),
                 stream.stream());
+            auto idx_cpu = torch::from_blob(const_cast<int64_t*>(idxs.data()), {R}, torch::TensorOptions().dtype(torch::kInt64)).clone();
+            auto idx_dev = idx_cpu.to(torch::kCUDA).contiguous();
+            auto stream3 = at::cuda::getCurrentCUDAStream();
+            launch_scatter_set_double(
+                reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev)),
+                tensor_data_ptr<double>(out_slice),
+                R,
+                tensor_data_ptr<double>(out_dev),
+                stream3.stream());
         } else {
-            launch_popcount_weighted_keys(
-                query_words,
-                query_weights,
-                query->S,
-                query->W,
-                reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(B_stacked)),
-                tensor_data_ptr<double>(Bw_stacked),
-                Sb,
-                R,
+            auto out_slice = torch::zeros({R}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
+            if (bsi_cuda_use_tiled()) {
+                int tiles = 1; int tile_size = query->W;
+                if (query->W > 1024) { tiles = std::min(16, (query->W + 1023) / 1024); tile_size = (query->W + tiles - 1) / tiles; }
+                launch_popcount_weighted_keys_tiled(
+                    query_words,
+                    query_weights,
+                    query->S,
+                    query->W,
+                    reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(B_stacked)),
+                    tensor_data_ptr<double>(Bw_stacked),
+                    Sb,
+                    R,
+                    tiles,
+                    tile_size,
+                    tensor_data_ptr<double>(out_slice),
+                    stream.stream());
+            } else {
+                launch_popcount_weighted_keys(
+                    query_words,
+                    query_weights,
+                    query->S,
+                    query->W,
+                    reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(B_stacked)),
+                    tensor_data_ptr<double>(Bw_stacked),
+                    Sb,
+                    R,
+                    tensor_data_ptr<double>(out_slice),
+                    stream.stream());
+            }
+            if (scale_inv != 1.0) out_slice.mul_(scale_inv);
+            auto idx_cpu = torch::from_blob(const_cast<int64_t*>(idxs.data()), {R}, torch::TensorOptions().dtype(torch::kInt64)).clone();
+            auto idx_dev = idx_cpu.to(torch::kCUDA).contiguous();
+            auto stream3 = at::cuda::getCurrentCUDAStream();
+            launch_scatter_set_double(
+                reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev)),
                 tensor_data_ptr<double>(out_slice),
-                stream.stream());
+                R,
+                tensor_data_ptr<double>(out_dev),
+                stream3.stream());
         }
-
-        // Scale (constant per layer) and scatter to out_dev on device
-        if (scale_inv != 1.0) out_slice.mul_(scale_inv);
-        auto idx_cpu = torch::from_blob(const_cast<int64_t*>(idxs.data()), {R}, torch::TensorOptions().dtype(torch::kInt64)).clone();
-        auto idx_dev = idx_cpu.to(torch::kCUDA).contiguous();
-        auto stream3 = at::cuda::getCurrentCUDAStream();
-        launch_scatter_set_double(
-            reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev)),
-            tensor_data_ptr<double>(out_slice),
-            R,
-            tensor_data_ptr<double>(out_dev),
-            stream3.stream());
     }
 
-    cudaEventRecord(end_evt, stream.stream());
-    cudaEventSynchronize(end_evt);
-    float kernel_ms = 0.0f; cudaEventElapsedTime(&kernel_ms, start_evt, end_evt);
-    total_kernel_ms += kernel_ms;
     cudaEventDestroy(start_evt);
     cudaEventDestroy(end_evt);
 
@@ -512,6 +574,53 @@ void register_bsi_cuda(pybind11::module& m) {
     m.def("build_bsi_query_cuda", &build_bsi_query_cuda,
           pybind11::arg("q"), pybind11::arg("decimal_places"), pybind11::arg("compress_threshold") = 0.2f,
           "Build a BSI query vector and prepack it to CUDA words");
+    // Hybrid GPU builder: compressed-only (EWAH) representation for queries
+    m.def("build_bsi_query_cuda_hybrid", [](torch::Tensor q, int decimalPlaces, double compress_threshold) {
+        TORCH_CHECK(q.dim() == 1, "q must be 1D [d]");
+        auto* holder = new PrebuiltBSIQueryCUDA();
+        holder->vec = nullptr;
+        auto device = torch::Device(torch::kCUDA, c10::cuda::current_device());
+        bool verbose = bsi_cuda_should_log();
+        holder->device_view = build_bsi_vector_from_float_tensor_hybrid(q.detach(), decimalPlaces, compress_threshold, device, verbose);
+        holder->S = holder->device_view.slices;
+        holder->W = holder->device_view.words_per_slice;
+        holder->dev_words = torch::empty({0}, torch::dtype(torch::kInt64).device(device));
+        holder->slice_weights = make_slice_weights_cuda(holder->S,
+                                                        holder->device_view.offset,
+                                                        holder->device_view.twos_complement);
+        // Memory = compressed words size
+        holder->mem_bytes = static_cast<size_t>(holder->device_view.comp_words.numel() * holder->device_view.comp_words.element_size());
+        pybind11::capsule cap(holder, "PrebuiltBSIQueryCUDA",
+            [](PyObject* capsule) {
+                auto* p = reinterpret_cast<PrebuiltBSIQueryCUDA*>(PyCapsule_GetPointer(capsule, "PrebuiltBSIQueryCUDA"));
+                if (p) { delete p->vec; delete p; }
+            }
+        );
+        return pybind11::make_tuple(cap, static_cast<uint64_t>(holder->mem_bytes), holder->S, holder->W);
+    }, pybind11::arg("q"), pybind11::arg("decimal_places"), pybind11::arg("compress_threshold") = 0.2,
+       "Build a BSI query vector on CUDA using hybrid EWAH compression; returns compressed-only capsule");
+
+    // Debug: Decompress hybrid query to verbatim words [S,W] on CPU for parity checks
+    m.def("debug_bsi_query_hybrid_decompress", [](pybind11::capsule query_cap) {
+        auto* query = capsule_to_query_cuda(query_cap);
+        TORCH_CHECK(query != nullptr, "Invalid BSI CUDA query capsule");
+        const auto& dv = query->device_view;
+        TORCH_CHECK(dv.comp_words.defined() && dv.comp_off.defined() && dv.comp_len.defined(), "No compressed view present");
+        int S = dv.slices;
+        int W = dv.words_per_slice;
+        auto out = torch::zeros({S, W}, torch::dtype(torch::kInt64).device(torch::kCUDA));
+        auto stream = at::cuda::getCurrentCUDAStream();
+        for (int s = 0; s < S; ++s) {
+            auto off = dv.comp_off.index({s}).item<long long>();
+            auto len = dv.comp_len.index({s}).item<int>();
+            auto in_ptr = reinterpret_cast<const unsigned long long*>(dv.comp_words.data_ptr<long long>() + off);
+            auto out_ptr = reinterpret_cast<unsigned long long*>(out.data_ptr<long long>() + (long long)s * W);
+            launch_ewah_decompress(in_ptr, len, W, out_ptr, stream.stream());
+        }
+        auto cpu = out.to(torch::kCPU).contiguous();
+        return cpu;
+    }, pybind11::arg("query_cap"),
+       "Decompress hybrid-compressed query to [S,W] words on CPU for comparison");
     m.def("batch_dot_product_prebuilt_cuda_caps", &batch_dot_product_prebuilt_cuda_caps,
           pybind11::arg("query_cap"), pybind11::arg("keyset_cuda_cap"),
           "Batch dot using CUDA popcount kernel with prebuilt query and key capsules");
@@ -676,6 +785,46 @@ void register_bsi_cuda(pybind11::module& m) {
                 holder->grouped_words[Sb] = gw.contiguous();
                 holder->grouped_weights[Sb] = gwt.contiguous();
                 holder->grouped_indices[Sb] = idxs;
+            }
+        }
+
+        // Build grouped compressed EWAH buffers from CPU HybridBitmap (mirrors CPU layout)
+        {
+            std::unordered_map<int, std::vector<int64_t>> groups;
+            for (int64_t r=0; r<num_keys; ++r) groups[ holder->metas[r].S ].push_back(r);
+            for (auto& kv : groups) {
+                int Sb = kv.first; const auto& idxs = kv.second; int R = static_cast<int>(idxs.size());
+                // Host staging to compute sizes and offsets
+                std::vector<long long> h_abs_off; h_abs_off.resize((size_t)R * Sb);
+                std::vector<int> h_len; h_len.resize((size_t)R * Sb);
+                std::vector<u64> h_comp; h_comp.reserve(1024);
+                long long cursor = 0;
+                // We need the original CPU BsiVector to extract HybridBitmap. Rebuild quickly per key.
+                for (int i=0; i<R; ++i) {
+                    int64_t r = idxs[i];
+                    // Rebuild CPU BSI for this key from K (on CPU) again to access HybridBitmap
+                    std::vector<double> kvd; kvd.reserve(holder->d);
+                    const float* rowp = Kd + r * holder->d;
+                    for (int64_t c=0; c<holder->d; ++c) kvd.push_back(static_cast<double>(rowp[c]));
+                    BsiSigned<u64> b; BsiVector<u64>* bsi_k = b.buildBsiVector(kvd, decimalPlaces, compress_threshold);
+                    bsi_k->setPartitionID(0); bsi_k->setFirstSliceFlag(true); bsi_k->setLastSliceFlag(true);
+                    for (int s=0; s<Sb; ++s) {
+                        std::vector<u64> tmp;
+                        hb_to_ewah_stream_helper<u64>(bsi_k->bsi[s], bsi_k->getNumberOfRows(), tmp);
+                        h_abs_off[(size_t)i * Sb + s] = cursor;
+                        h_len[(size_t)i * Sb + s] = (int)tmp.size();
+                        h_comp.insert(h_comp.end(), tmp.begin(), tmp.end());
+                        cursor += (long long)tmp.size();
+                    }
+                    delete bsi_k;
+                }
+                // Copy to device tensors
+                auto d_comp = torch::from_blob(h_comp.data(), {(long long)h_comp.size()}, torch::TensorOptions().dtype(torch::kInt64)).clone().to(torch::kCUDA);
+                auto d_off = torch::from_blob(h_abs_off.data(), {R, Sb}, torch::TensorOptions().dtype(torch::kInt64)).clone().to(torch::kCUDA);
+                auto d_len = torch::from_blob(h_len.data(), {R, Sb}, torch::TensorOptions().dtype(torch::kInt32)).clone().to(torch::kCUDA);
+                holder->grouped_comp_words[Sb] = d_comp.contiguous();
+                holder->grouped_comp_off[Sb] = d_off.contiguous();
+                holder->grouped_comp_len[Sb] = d_len.contiguous();
             }
         }
         pybind11::capsule cap(holder, "PrebuiltBSIKeysCUDA",

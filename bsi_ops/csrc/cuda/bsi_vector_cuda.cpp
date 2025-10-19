@@ -55,6 +55,39 @@ extern "C" void launch_pack_bits_all_ballot(
     unsigned long long* out,
     cudaStream_t stream);
 
+extern "C" void launch_slice_popcount_sum(
+    const unsigned long long* words,
+    int S,
+    int W,
+    unsigned long long* out_counts,
+    cudaStream_t stream);
+
+extern "C" void launch_compress_flags_from_density(
+    const unsigned long long* counts,
+    int S,
+    int W,
+    double threshold,
+    int* out_flags,
+    cudaStream_t stream);
+
+extern "C" void launch_ewah_size(
+    const unsigned long long* words,
+    int S,
+    int W,
+    const int* flags,
+    unsigned long long* sizes,
+    cudaStream_t stream);
+
+extern "C" void launch_ewah_emit(
+    const unsigned long long* words,
+    int S,
+    int W,
+    const int* flags,
+    const unsigned long long* off,
+    unsigned long long* out,
+    int* out_len,
+    cudaStream_t stream);
+
 // no additional externs
 
 bool bsi_cuda_should_log() {
@@ -159,6 +192,120 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& input,
     return data;
 }
 
+BsiVectorCudaData build_bsi_vector_from_float_tensor_hybrid(const torch::Tensor& input,
+                                                            int decimal_places,
+                                                            double compress_threshold,
+                                                            const torch::Device& device,
+                                                            bool verbose) {
+    TORCH_CHECK(input.dim() == 1, "build_bsi_vector_from_float_tensor_hybrid expects 1D tensor");
+    auto scaled = bsi_cuda_quantize_to_int64(input, decimal_places, device);
+    const int64_t rows = scaled.size(0);
+
+    bool any_non_zero = (rows > 0) && scaled.ne(0).any().item<bool>();
+    bool has_negative = (rows > 0) && scaled.lt(0).any().item<bool>();
+
+    long long max_abs = 0;
+    if (any_non_zero) {
+        max_abs = scaled.abs().max().item<int64_t>();
+    }
+    int magnitude_bits = any_non_zero
+        ? std::max(1, static_cast<int>(std::bit_width(static_cast<unsigned long long>(max_abs))))
+        : 1;
+    int total_slices = std::min(64, magnitude_bits + 2);
+    if (!any_non_zero) {
+        total_slices = 2;
+        has_negative = false;
+    }
+
+    int offset = 0;
+    int stored_slices = std::max(1, total_slices);
+    const int W = rows > 0 ? static_cast<int>((rows + 63) / 64) : 1;
+
+    // Build temporary verbatim words on device quickly; we release them after compression
+    auto words = torch::zeros({stored_slices, W}, torch::dtype(torch::kInt64).device(device));
+    if (rows > 0) {
+        unsigned long long value_mask = (stored_slices >= 64) ? ~0ULL : ((1ULL << stored_slices) - 1ULL);
+        auto stream = at::cuda::getCurrentCUDAStream();
+        auto* shifted_ptr = tensor_data_ptr<int64_t>(scaled);
+        launch_pack_bits_all_ballot(
+            reinterpret_cast<const long long*>(shifted_ptr),
+            static_cast<long long>(rows),
+            stored_slices,
+            W,
+            value_mask,
+            reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(words)),
+            stream.stream());
+    }
+
+    // Per-slice popcounts and compress flags on device
+    auto slice_counts = torch::empty({stored_slices}, torch::dtype(torch::kInt64).device(device));
+    auto stream = at::cuda::getCurrentCUDAStream();
+    launch_slice_popcount_sum(
+        reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words)),
+        stored_slices,
+        W,
+        reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(slice_counts)),
+        stream.stream());
+
+    auto flags = torch::empty({stored_slices}, torch::dtype(torch::kInt32).device(device));
+    launch_compress_flags_from_density(
+        reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(slice_counts)),
+        stored_slices,
+        W,
+        compress_threshold,
+        flags.data_ptr<int>(),
+        stream.stream());
+
+    // Size pass per slice
+    auto sizes = torch::empty({stored_slices}, torch::dtype(torch::kInt64).device(device));
+    launch_ewah_size(
+        reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words)),
+        stored_slices,
+        W,
+        flags.data_ptr<int>(),
+        reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(sizes)),
+        stream.stream());
+
+    // Exclusive scan to offsets and total size
+    auto inclusive = sizes.cumsum(0);
+    long long total_u64 = inclusive.index({stored_slices - 1}).item<long long>();
+    auto comp_off = torch::empty({stored_slices}, torch::dtype(torch::kInt64).device(device));
+    if (stored_slices > 0) {
+        comp_off.index_put_({0}, 0);
+        if (stored_slices > 1) {
+            auto shifted = inclusive.narrow(0, 0, stored_slices - 1).contiguous();
+            comp_off.narrow(0, 1, stored_slices - 1).copy_(shifted);
+        }
+    }
+    auto comp_words = torch::empty({total_u64}, torch::dtype(torch::kInt64).device(device));
+    auto comp_len = torch::empty({stored_slices}, torch::dtype(torch::kInt32).device(device));
+
+    // Emit pass
+    launch_ewah_emit(
+        reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words)),
+        stored_slices,
+        W,
+        flags.data_ptr<int>(),
+        reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(comp_off)),
+        reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(comp_words)),
+        comp_len.data_ptr<int>(),
+        stream.stream());
+
+    BsiVectorCudaData data;
+    data.rows = rows;
+    data.slices = stored_slices;
+    data.words_per_slice = W;
+    data.offset = offset;
+    data.decimals = decimal_places;
+    data.twos_complement = has_negative;
+    data.words = torch::empty({0}, torch::dtype(torch::kInt64).device(device)); // not stored
+    data.metadata = torch::empty({stored_slices, 0}, torch::dtype(torch::kInt32).device(device));
+    data.comp_words = comp_words;
+    data.comp_off = comp_off;
+    data.comp_len = comp_len;
+    if (verbose || bsi_cuda_should_log()) data.log("build_bsi_vector_from_float_tensor_hybrid");
+    return data;
+}
 BsiVectorCudaData create_bsi_vector_cuda_from_cpu(const BsiVector<uint64_t>& src,
                                                   const torch::Device& device,
                                                   bool verbose) {
