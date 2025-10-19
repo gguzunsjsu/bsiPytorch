@@ -492,7 +492,7 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
                 query->S,
                 query->W,
                 reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(comp_buf)),
-                comp_off.data_ptr<long long>(),
+                reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(comp_off)),
                 comp_len.data_ptr<int>(),
                 tensor_data_ptr<double>(Bw_stacked),
                 Sb,
@@ -613,8 +613,8 @@ void register_bsi_cuda(pybind11::module& m) {
         for (int s = 0; s < S; ++s) {
             auto off = dv.comp_off.index({s}).item<long long>();
             auto len = dv.comp_len.index({s}).item<int>();
-            auto in_ptr = reinterpret_cast<const unsigned long long*>(dv.comp_words.data_ptr<long long>() + off);
-            auto out_ptr = reinterpret_cast<unsigned long long*>(out.data_ptr<long long>() + (long long)s * W);
+            auto in_ptr = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(dv.comp_words) + off);
+            auto out_ptr = reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(out) + (long long)s * W);
             launch_ewah_decompress(in_ptr, len, W, out_ptr, stream.stream());
         }
         auto cpu = out.to(torch::kCPU).contiguous();
