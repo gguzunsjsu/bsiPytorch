@@ -268,7 +268,7 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor_hybrid(const torch::Tensor&
 
     // Exclusive scan to offsets and total size
     auto inclusive = sizes.cumsum(0);
-    long long total_u64 = inclusive.index({stored_slices - 1}).item<long long>();
+    int64_t total_u64 = inclusive.index({stored_slices - 1}).item<int64_t>();
     auto comp_off = torch::empty({stored_slices}, torch::dtype(torch::kInt64).device(device));
     if (stored_slices > 0) {
         comp_off.index_put_({0}, 0);

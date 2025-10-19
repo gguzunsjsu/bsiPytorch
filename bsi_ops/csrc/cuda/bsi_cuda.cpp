@@ -611,7 +611,7 @@ void register_bsi_cuda(pybind11::module& m) {
         auto out = torch::zeros({S, W}, torch::dtype(torch::kInt64).device(torch::kCUDA));
         auto stream = at::cuda::getCurrentCUDAStream();
         for (int s = 0; s < S; ++s) {
-            auto off = dv.comp_off.index({s}).item<long long>();
+            auto off = dv.comp_off.index({s}).item<int64_t>();
             auto len = dv.comp_len.index({s}).item<int>();
             auto in_ptr = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(dv.comp_words) + off);
             auto out_ptr = reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(out) + (long long)s * W);
