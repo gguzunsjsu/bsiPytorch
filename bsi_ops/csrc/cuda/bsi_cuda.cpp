@@ -471,87 +471,41 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
         Pc.data_ptr<int>(),
         stream.stream());
 
-    // Use pre-built grouped tensors to avoid per-call stacking
-    for (const auto& kv : keys->grouped_words) {
+    // Use pre-built grouped compressed tensors by Sb
+    for (const auto& kv : keys->grouped_comp_words) {
         int Sb = kv.first;
-        const auto& B_stacked = kv.second;                          // [R_sb, Sb, W]
+        const auto& comp_buf = kv.second;                           // [total_u64]
+        const auto& comp_off = keys->grouped_comp_off.at(Sb);       // [R_sb, Sb]
+        const auto& comp_len = keys->grouped_comp_len.at(Sb);       // [R_sb, Sb]
         const auto& Bw_stacked = keys->grouped_weights.at(Sb);      // [R_sb, Sb]
         const auto& idxs = keys->grouped_indices.at(Sb);            // vector<int64_t> size R_sb
         const int R = static_cast<int>(idxs.size());
 
-        // If compressed buffers exist for this group, use compressed-aware kernel; else fallback to verbatim
-        auto it_comp = keys->grouped_comp_words.find(Sb);
-        if (it_comp != keys->grouped_comp_words.end()) {
-            auto comp_buf = it_comp->second;                                 // [total_u64]
-            auto comp_off = keys->grouped_comp_off.at(Sb);                   // [R,Sb]
-            auto comp_len = keys->grouped_comp_len.at(Sb);                   // [R,Sb]
-            auto out_slice = torch::zeros({R}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
-            launch_popcount_weighted_keys_compressed(
-                query_words,
-                Pc.data_ptr<int>(),
-                query_weights,
-                query->S,
-                query->W,
-                reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(comp_buf)),
-                reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(comp_off)),
-                comp_len.data_ptr<int>(),
-                tensor_data_ptr<double>(Bw_stacked),
-                Sb,
-                R,
-                scale_inv,
-                tensor_data_ptr<double>(out_slice),
-                stream.stream());
-            auto idx_cpu = torch::from_blob(const_cast<int64_t*>(idxs.data()), {R}, torch::TensorOptions().dtype(torch::kInt64)).clone();
-            auto idx_dev = idx_cpu.to(torch::kCUDA).contiguous();
-            auto stream3 = at::cuda::getCurrentCUDAStream();
-            launch_scatter_set_double(
-                reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev)),
-                tensor_data_ptr<double>(out_slice),
-                R,
-                tensor_data_ptr<double>(out_dev),
-                stream3.stream());
-        } else {
-            auto out_slice = torch::zeros({R}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
-            if (bsi_cuda_use_tiled()) {
-                int tiles = 1; int tile_size = query->W;
-                if (query->W > 1024) { tiles = std::min(16, (query->W + 1023) / 1024); tile_size = (query->W + tiles - 1) / tiles; }
-                launch_popcount_weighted_keys_tiled(
-                    query_words,
-                    query_weights,
-                    query->S,
-                    query->W,
-                    reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(B_stacked)),
-                    tensor_data_ptr<double>(Bw_stacked),
-                    Sb,
-                    R,
-                    tiles,
-                    tile_size,
-                    tensor_data_ptr<double>(out_slice),
-                    stream.stream());
-            } else {
-                launch_popcount_weighted_keys(
-                    query_words,
-                    query_weights,
-                    query->S,
-                    query->W,
-                    reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(B_stacked)),
-                    tensor_data_ptr<double>(Bw_stacked),
-                    Sb,
-                    R,
-                    tensor_data_ptr<double>(out_slice),
-                    stream.stream());
-            }
-            if (scale_inv != 1.0) out_slice.mul_(scale_inv);
-            auto idx_cpu = torch::from_blob(const_cast<int64_t*>(idxs.data()), {R}, torch::TensorOptions().dtype(torch::kInt64)).clone();
-            auto idx_dev = idx_cpu.to(torch::kCUDA).contiguous();
-            auto stream3 = at::cuda::getCurrentCUDAStream();
-            launch_scatter_set_double(
-                reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev)),
-                tensor_data_ptr<double>(out_slice),
-                R,
-                tensor_data_ptr<double>(out_dev),
-                stream3.stream());
-        }
+        auto out_slice = torch::zeros({R}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
+        launch_popcount_weighted_keys_compressed(
+            query_words,
+            Pc.data_ptr<int>(),
+            query_weights,
+            query->S,
+            query->W,
+            reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(comp_buf)),
+            reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(comp_off)),
+            comp_len.data_ptr<int>(),
+            tensor_data_ptr<double>(Bw_stacked),
+            Sb,
+            R,
+            scale_inv,
+            tensor_data_ptr<double>(out_slice),
+            stream.stream());
+        auto idx_cpu = torch::from_blob(const_cast<int64_t*>(idxs.data()), {R}, torch::TensorOptions().dtype(torch::kInt64)).clone();
+        auto idx_dev = idx_cpu.to(torch::kCUDA).contiguous();
+        auto stream3 = at::cuda::getCurrentCUDAStream();
+        launch_scatter_set_double(
+            reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev)),
+            tensor_data_ptr<double>(out_slice),
+            R,
+            tensor_data_ptr<double>(out_dev),
+            stream3.stream());
     }
 
     cudaEventDestroy(start_evt);
@@ -760,15 +714,9 @@ void register_bsi_cuda(pybind11::module& m) {
                 BsiSigned<u64> b;
                 std::unique_ptr<BsiVector<u64>> bsi_k(b.buildBsiVector(kv, decimalPlaces, compress_threshold));
                 bsi_k->setPartitionID(0); bsi_k->setFirstSliceFlag(true); bsi_k->setLastSliceFlag(true);
-                auto device = torch::Device(torch::kCUDA, c10::cuda::current_device());
-                auto dev_view = create_bsi_vector_cuda_from_cpu(*bsi_k, device, bsi_cuda_should_log());
-                int Sb = dev_view.slices;
-                int Wb = dev_view.words_per_slice;
-                if (Wb != holder->W) {
-                    TORCH_CHECK(false, "word count mismatch while building CUDA keys");
-                }
-                holder->device_views[r] = dev_view;
-                holder->dev_words[r] = dev_view.words;
+                int Sb = bsi_k->getNumberOfSlices();
+                int Wb = (int)((holder->d + 63) / 64);
+                TORCH_CHECK(Wb == holder->W, "word count mismatch while building CUDA keys");
                 holder->slice_weights[r] = make_slice_weights_cuda(Sb, bsi_k->offset, bsi_k->twosComplement);
                 KeyMeta meta; meta.S = Sb; meta.offset = bsi_k->offset; meta.twos = bsi_k->twosComplement; meta.decimals = bsi_k->decimals;
                 holder->metas[r] = meta;
@@ -785,20 +733,17 @@ void register_bsi_cuda(pybind11::module& m) {
             }
         });
         size_t total_mem = (size_t)total_mem_atomic.load();
-        // Group contiguous tensors by Sb once (verbatim words)
+        // Group slice weights by Sb once (no verbatim word grouping to save memory)
         {
             std::unordered_map<int, std::vector<int64_t>> groups;
             for (int64_t r=0; r<num_keys; ++r) groups[ holder->metas[r].S ].push_back(r);
             for (auto& kv : groups) {
                 int Sb = kv.first; const auto& idxs = kv.second; int R = static_cast<int>(idxs.size());
-                auto gw = torch::empty({R, Sb, holder->W}, torch::TensorOptions().dtype(torch::kInt64).device(torch::kCUDA));
                 auto gwt = torch::empty({R, Sb}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
                 for (int i=0; i<R; ++i) {
                     int64_t r = idxs[i];
-                    gw[i].copy_( holder->dev_words[r] );
                     gwt[i].copy_( holder->slice_weights[r] );
                 }
-                holder->grouped_words[Sb] = gw.contiguous();
                 holder->grouped_weights[Sb] = gwt.contiguous();
                 holder->grouped_indices[Sb] = idxs;
             }
