@@ -614,7 +614,8 @@ void register_bsi_cuda(pybind11::module& m) {
     // Build prepacked GPU keys
     m.def("build_bsi_keys_cuda", [](torch::Tensor K, int decimalPlaces, float compress_threshold) {
         TORCH_CHECK(K.dim() == 2, "K must be 2D [num_keys, d]");
-        auto Kc = K.contiguous();
+        // Ensure CPU access for the CPU builder path regardless of where K lives
+        auto Kc = K.detach().to(torch::kCPU, /*non_blocking=*/false).contiguous();
         const float* Kd = static_cast<const float*>(Kc.data_ptr());
         int64_t num_keys = Kc.size(0);
         int64_t d = Kc.size(1);

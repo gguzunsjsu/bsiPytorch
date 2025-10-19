@@ -80,8 +80,9 @@ class BSIQuantizedLinear(torch.nn.Module):
             assert prefer_cuda and hasattr(bsi_ops, 'build_bsi_keys_cuda') and torch.cuda.is_available(), \
                 "CUDA path required: build_bsi_keys_cuda not available or CUDA not present"
             # Build keys directly on CUDA (verbatim layout)
+            # Always pass CPU tensor to the CPU builder; it will prepack to CUDA internally
             self._bsi_keys_cuda, total_mem_bytes, num_keys, d, W = bsi_ops.build_bsi_keys_cuda(
-                dense_weight, self.decimalPlaces, float(self.compress_threshold)
+                self.weight_fp32, self.decimalPlaces, float(self.compress_threshold)
             )
             assert num_keys == self.out_features and d == self.in_features
             self.weight_bsi_memory_bytes = int(total_mem_bytes)
@@ -96,6 +97,8 @@ class BSIQuantizedLinear(torch.nn.Module):
         self.build_calls = 0
         self._query_cache: OrderedDict = OrderedDict()
         self.max_query_cache = 512
+        # optional stats collection flag toggled by helpers
+        self.collect_stats = False
 
     def reset_error_stats(self):
         self.mse_sum = 0.0
