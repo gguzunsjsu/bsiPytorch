@@ -736,43 +736,76 @@ void popcount_weighted_keys_compressed_kernel(
 {
     int r = blockIdx.x;
     if (r >= R) return;
-    if (threadIdx.x != 0) return; // serial per key for correctness-first
 
-    double acc = 0.0;
+    double local = 0.0;
     for (int j = 0; j < Sb; ++j) {
         long long off = comp_off_abs[(size_t)r * Sb + j];
         int len = comp_len[(size_t)r * Sb + j];
         const unsigned long long* cw = comp_words + off;
-        int pos = 0; // current word index in slice
         double bw = Bw[(size_t)r * Sb + j];
-        int idx = 0;
+        int pos = 0; int idx = 0;
         while (idx < len) {
             unsigned long long rlw = cw[idx++];
             int run_bit = (int)(rlw & 1ULL);
             int run_len = (int)((rlw >> 1) & ((1u << 32) - 1));
             int lit_cnt = (int)(rlw >> (1 + 32));
             if (run_bit) {
-                // ones run: sum across query slices using Pc deltas
-                for (int i = 0; i < Sa; ++i) {
+                double part = 0.0;
+                for (int i = threadIdx.x; i < Sa; i += blockDim.x) {
                     const int* pci = Pc + (size_t)i * (W + 1);
                     int delta = pci[min(pos + run_len, W)] - pci[pos];
-                    acc += (double)delta * Aw[i] * bw;
+                    part += (double)delta * Aw[i];
                 }
+                // reduce across block
+                part = warp_reduce_sum_double(part);
+                __shared__ double warp_sums[32];
+                if ((threadIdx.x & 31) == 0) warp_sums[threadIdx.x >> 5] = part;
+                __syncthreads();
+                double sum = 0.0;
+                if (threadIdx.x < 32) {
+                    int nw = blockDim.x >> 5;
+                    sum = (threadIdx.x < nw) ? warp_sums[threadIdx.x] : 0.0;
+                    sum = warp_reduce_sum_double(sum);
+                }
+                if (threadIdx.x == 0) local += sum * bw;
             }
             pos += run_len;
             // literal words
             for (int k = 0; k < lit_cnt && idx < len && pos < W; ++k) {
                 unsigned long long b = cw[idx++];
-                for (int i = 0; i < Sa; ++i) {
+                double part = 0.0;
+                for (int i = threadIdx.x; i < Sa; i += blockDim.x) {
                     const unsigned long long* ai = A + (size_t)i * W;
                     int pc = __popcll(ai[pos] & b);
-                    acc += (double)pc * Aw[i] * bw;
+                    part += (double)pc * Aw[i];
                 }
+                part = warp_reduce_sum_double(part);
+                __shared__ double warp_sums2[32];
+                if ((threadIdx.x & 31) == 0) warp_sums2[threadIdx.x >> 5] = part;
+                __syncthreads();
+                double sum2 = 0.0;
+                if (threadIdx.x < 32) {
+                    int nw = blockDim.x >> 5;
+                    sum2 = (threadIdx.x < nw) ? warp_sums2[threadIdx.x] : 0.0;
+                    sum2 = warp_reduce_sum_double(sum2);
+                }
+                if (threadIdx.x == 0) local += sum2 * bw;
                 ++pos;
             }
         }
     }
-    out[r] = acc * scale_inv;
+    // finalize
+    local = warp_reduce_sum_double(local);
+    __shared__ double warp_sums3[32];
+    if ((threadIdx.x & 31) == 0) warp_sums3[threadIdx.x >> 5] = local;
+    __syncthreads();
+    double total = 0.0;
+    if (threadIdx.x < 32) {
+        int nw = blockDim.x >> 5;
+        total = (threadIdx.x < nw) ? warp_sums3[threadIdx.x] : 0.0;
+        total = warp_reduce_sum_double(total);
+    }
+    if (threadIdx.x == 0) out[r] = total * scale_inv;
 }
 
 extern "C" void launch_popcount_weighted_keys_compressed(
@@ -792,7 +825,7 @@ extern "C" void launch_popcount_weighted_keys_compressed(
     cudaStream_t stream)
 {
     dim3 grid(R);
-    dim3 block(1);
+    dim3 block(256);
     popcount_weighted_keys_compressed_kernel<<<grid, block, 0, stream>>>(
         A, Pc, Aw, Sa, W, comp_words, comp_off_abs, comp_len, Bw, Sb, R, scale_inv, out);
 }

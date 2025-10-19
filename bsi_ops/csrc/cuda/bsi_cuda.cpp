@@ -747,6 +747,15 @@ void register_bsi_cuda(pybind11::module& m) {
         holder->slice_weights.reserve(num_keys);
         holder->metas.reserve(num_keys);
         holder->device_views.reserve(num_keys);
+        // Accumulators for grouped compressed buffers to avoid rebuilding CPU BSI twice
+        std::unordered_map<int, std::vector<int64_t>> grouped_indices_host; // Sb -> key indices in order appended
+        struct CompGroupAcc {
+            std::vector<long long> abs_off; // flat [R_sb*Sb]
+            std::vector<int> len;           // flat [R_sb*Sb]
+            std::vector<u64> words;         // concatenated EWAH u64s
+            long long cursor = 0;           // running offset in words[]
+        };
+        std::unordered_map<int, CompGroupAcc> comp_groups; // Sb -> accumulators
         size_t total_mem = 0;
         for (int64_t r=0;r<num_keys;++r) {
             std::vector<double> kv; kv.reserve(d);
@@ -756,20 +765,31 @@ void register_bsi_cuda(pybind11::module& m) {
             BsiVector<u64>* bsi_k = b.buildBsiVector(kv, decimalPlaces, compress_threshold);
             bsi_k->setPartitionID(0); bsi_k->setFirstSliceFlag(true); bsi_k->setLastSliceFlag(true);
             auto device = torch::Device(torch::kCUDA, c10::cuda::current_device());
-        auto dev_view = create_bsi_vector_cuda_from_cpu(*bsi_k, device, bsi_cuda_should_log());
-        int Sb = dev_view.slices;
-        int Wb = dev_view.words_per_slice;
-        TORCH_CHECK(Wb == holder->W,
-                    "word count mismatch while building CUDA keys");
-        holder->device_views.push_back(dev_view);
-        holder->dev_words.push_back(dev_view.words);
-        holder->slice_weights.push_back(make_slice_weights_cuda(Sb, bsi_k->offset, bsi_k->twosComplement));
+            auto dev_view = create_bsi_vector_cuda_from_cpu(*bsi_k, device, bsi_cuda_should_log());
+            int Sb = dev_view.slices;
+            int Wb = dev_view.words_per_slice;
+            TORCH_CHECK(Wb == holder->W,
+                        "word count mismatch while building CUDA keys");
+            holder->device_views.push_back(dev_view);
+            holder->dev_words.push_back(dev_view.words);
+            holder->slice_weights.push_back(make_slice_weights_cuda(Sb, bsi_k->offset, bsi_k->twosComplement));
             KeyMeta meta; meta.S = Sb; meta.offset = bsi_k->offset; meta.twos = bsi_k->twosComplement; meta.decimals = bsi_k->decimals;
             holder->metas.push_back(meta);
             total_mem += bsi_k->getSizeInMemory();
+            // Build compressed EWAH stream for this key directly and append to its Sb group accumulators
+            auto& acc = comp_groups[Sb];
+            grouped_indices_host[Sb].push_back(r);
+            for (int s = 0; s < Sb; ++s) {
+                std::vector<u64> tmp;
+                hb_to_ewah_stream_helper<u64>(bsi_k->bsi[s], bsi_k->getNumberOfRows(), tmp);
+                acc.abs_off.push_back(acc.cursor);
+                acc.len.push_back((int)tmp.size());
+                acc.words.insert(acc.words.end(), tmp.begin(), tmp.end());
+                acc.cursor += (long long)tmp.size();
+            }
             delete bsi_k;
         }
-        // Group contiguous tensors by Sb once
+        // Group contiguous tensors by Sb once (verbatim words)
         {
             std::unordered_map<int, std::vector<int64_t>> groups;
             for (int64_t r=0; r<num_keys; ++r) groups[ holder->metas[r].S ].push_back(r);
@@ -787,45 +807,18 @@ void register_bsi_cuda(pybind11::module& m) {
                 holder->grouped_indices[Sb] = idxs;
             }
         }
-
-        // Build grouped compressed EWAH buffers from CPU HybridBitmap (mirrors CPU layout)
-        {
-            std::unordered_map<int, std::vector<int64_t>> groups;
-            for (int64_t r=0; r<num_keys; ++r) groups[ holder->metas[r].S ].push_back(r);
-            for (auto& kv : groups) {
-                int Sb = kv.first; const auto& idxs = kv.second; int R = static_cast<int>(idxs.size());
-                // Host staging to compute sizes and offsets
-                std::vector<long long> h_abs_off; h_abs_off.resize((size_t)R * Sb);
-                std::vector<int> h_len; h_len.resize((size_t)R * Sb);
-                std::vector<u64> h_comp; h_comp.reserve(1024);
-                long long cursor = 0;
-                // We need the original CPU BsiVector to extract HybridBitmap. Rebuild quickly per key.
-                for (int i=0; i<R; ++i) {
-                    int64_t r = idxs[i];
-                    // Rebuild CPU BSI for this key from K (on CPU) again to access HybridBitmap
-                    std::vector<double> kvd; kvd.reserve(holder->d);
-                    const float* rowp = Kd + r * holder->d;
-                    for (int64_t c=0; c<holder->d; ++c) kvd.push_back(static_cast<double>(rowp[c]));
-                    BsiSigned<u64> b; BsiVector<u64>* bsi_k = b.buildBsiVector(kvd, decimalPlaces, compress_threshold);
-                    bsi_k->setPartitionID(0); bsi_k->setFirstSliceFlag(true); bsi_k->setLastSliceFlag(true);
-                    for (int s=0; s<Sb; ++s) {
-                        std::vector<u64> tmp;
-                        hb_to_ewah_stream_helper<u64>(bsi_k->bsi[s], bsi_k->getNumberOfRows(), tmp);
-                        h_abs_off[(size_t)i * Sb + s] = cursor;
-                        h_len[(size_t)i * Sb + s] = (int)tmp.size();
-                        h_comp.insert(h_comp.end(), tmp.begin(), tmp.end());
-                        cursor += (long long)tmp.size();
-                    }
-                    delete bsi_k;
-                }
-                // Copy to device tensors
-                auto d_comp = torch::from_blob(h_comp.data(), {(long long)h_comp.size()}, torch::TensorOptions().dtype(torch::kInt64)).clone().to(torch::kCUDA);
-                auto d_off = torch::from_blob(h_abs_off.data(), {R, Sb}, torch::TensorOptions().dtype(torch::kInt64)).clone().to(torch::kCUDA);
-                auto d_len = torch::from_blob(h_len.data(), {R, Sb}, torch::TensorOptions().dtype(torch::kInt32)).clone().to(torch::kCUDA);
-                holder->grouped_comp_words[Sb] = d_comp.contiguous();
-                holder->grouped_comp_off[Sb] = d_off.contiguous();
-                holder->grouped_comp_len[Sb] = d_len.contiguous();
-            }
+        // Finalize grouped compressed buffers without rebuilding
+        for (auto& kv : comp_groups) {
+            int Sb = kv.first; auto& acc = kv.second;
+            const auto& idxs = grouped_indices_host[Sb];
+            int R = static_cast<int>(idxs.size());
+            auto d_comp = torch::from_blob(acc.words.data(), {(long long)acc.words.size()}, torch::TensorOptions().dtype(torch::kInt64)).clone().to(torch::kCUDA);
+            auto d_off = torch::from_blob(acc.abs_off.data(), {R, Sb}, torch::TensorOptions().dtype(torch::kInt64)).clone().to(torch::kCUDA);
+            auto d_len = torch::from_blob(acc.len.data(), {R, Sb}, torch::TensorOptions().dtype(torch::kInt32)).clone().to(torch::kCUDA);
+            holder->grouped_comp_words[Sb] = d_comp.contiguous();
+            holder->grouped_comp_off[Sb] = d_off.contiguous();
+            holder->grouped_comp_len[Sb] = d_len.contiguous();
+            holder->grouped_indices[Sb] = idxs; // already set for verbatim above too
         }
         pybind11::capsule cap(holder, "PrebuiltBSIKeysCUDA",
             [](PyObject* capsule){
