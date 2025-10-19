@@ -65,25 +65,9 @@ class Evaluator:
         if summary["total_bsi_bytes"] == 0:
             print("Warning: BSI weight memory not found on modules. Did quantization run?")
 
-        # Place model. Use CUDA for BSI ops, but keep the module on CPU if GPU memory is insufficient.
         if prefer_cuda and torch.cuda.is_available():
-            try:
-                free_bytes, total_bytes = torch.cuda.mem_get_info()
-            except Exception:
-                free_bytes, total_bytes = (0, 0)
-            # Approximate BSI static footprint using the summary on this model
-            try:
-                need_bytes = bsi_full_model_static_bytes(model, summary)
-            except Exception:
-                need_bytes = 0
-            safety_headroom = int(2 * 1024**3)  # 2GB headroom
-            if free_bytes and (need_bytes + safety_headroom) < free_bytes:
-                model = model.to('cuda')
-                model_device = torch.device('cuda')
-            else:
-                print("[BSI] Keeping model on CPU to avoid GPU OOM; BSI ops will still run on CUDA.")
-                model = model.to('cpu')
-                model_device = torch.device('cpu')
+            model = model.to('cuda')
+            model_device = torch.device('cuda')
         else:
             model = model.to('cpu')
             model_device = torch.device('cpu')
