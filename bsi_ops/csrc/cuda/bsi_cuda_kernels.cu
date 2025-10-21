@@ -736,6 +736,12 @@ void popcount_weighted_keys_compressed_kernel(
 {
     int r = blockIdx.x;
     if (r >= R) return;
+    // Cache Aw into shared memory once per block
+    extern __shared__ double shAw[];
+    for (int t = threadIdx.x; t < Sa; t += blockDim.x) {
+        shAw[t] = Aw[t];
+    }
+    __syncthreads();
 
     double local = 0.0;
     for (int j = 0; j < Sb; ++j) {
@@ -754,7 +760,7 @@ void popcount_weighted_keys_compressed_kernel(
                 for (int i = threadIdx.x; i < Sa; i += blockDim.x) {
                     const int* pci = Pc + (size_t)i * (W + 1);
                     int delta = pci[min(pos + run_len, W)] - pci[pos];
-                    part += (double)delta * Aw[i];
+                    part += (double)delta * shAw[i];
                 }
                 // reduce across block
                 part = warp_reduce_sum_double(part);
@@ -777,7 +783,7 @@ void popcount_weighted_keys_compressed_kernel(
                 for (int i = threadIdx.x; i < Sa; i += blockDim.x) {
                     const unsigned long long* ai = A + (size_t)i * W;
                     int pc = __popcll(ai[pos] & b);
-                    part += (double)pc * Aw[i];
+                    part += (double)pc * shAw[i];
                 }
                 part = warp_reduce_sum_double(part);
                 __shared__ double warp_sums2[32];
@@ -824,8 +830,21 @@ extern "C" void launch_popcount_weighted_keys_compressed(
     double* out,
     cudaStream_t stream)
 {
+    // Block size tuning via env: BSI_CK_BLOCK (multiple of 32, default 256)
+    static int cached = 0;
+    if (cached == 0) {
+        int v = 256;
+        if (const char* s = getenv("BSI_CK_BLOCK")) {
+            int t = atoi(s);
+            if (t > 0) v = t;
+        }
+        // clamp and align to warps
+        if (v < 32) v = 32; if (v > 1024) v = 1024; v = (v / 32) * 32;
+        cached = v;
+    }
     dim3 grid(R);
-    dim3 block(256);
-    popcount_weighted_keys_compressed_kernel<<<grid, block, 0, stream>>>(
+    dim3 block(cached);
+    size_t shmem = (size_t)Sa * sizeof(double);
+    popcount_weighted_keys_compressed_kernel<<<grid, block, shmem, stream>>>(
         A, Pc, Aw, Sa, W, comp_words, comp_off_abs, comp_len, Bw, Sb, R, scale_inv, out);
 }
