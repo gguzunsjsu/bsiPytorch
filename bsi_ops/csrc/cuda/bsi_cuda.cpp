@@ -115,6 +115,21 @@ extern "C" void launch_popcount_weighted_keys_compressed(
     double scale_inv,
     double* out,
     cudaStream_t stream);
+extern "C" void launch_popcount_weighted_keys_compressed_tiled(
+    const unsigned long long* A,
+    const double* Aw,
+    int Sa,
+    int W,
+    const unsigned long long* comp_words,
+    const long long* comp_off_abs,
+    const int* comp_len,
+    const double* Bw,
+    int Sb,
+    int R,
+    int jtile,
+    double scale_inv,
+    double* out,
+    cudaStream_t stream);
 
 static bool bsi_cuda_use_tiled() {
     static int cached = -1;
@@ -473,20 +488,41 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
         const int R = static_cast<int>(idxs.size());
 
         auto out_slice = torch::zeros({R}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
-        launch_popcount_weighted_keys_compressed(
-            query_words,
-            query_weights,
-            query->S,
-            query->W,
-            reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(comp_buf)),
-            reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(comp_off)),
-            comp_len.data_ptr<int>(),
-            tensor_data_ptr<double>(Bw_stacked),
-            Sb,
-            R,
-            scale_inv,
-            tensor_data_ptr<double>(out_slice),
-            stream.stream());
+        // Choose j-tile size (slices per block) via env or heuristic
+        int jtile = 16;
+        if (const char* s = getenv("BSI_CK_JTILE")) { int t = atoi(s); if (t > 0) jtile = t; }
+        if (Sb <= jtile) {
+            launch_popcount_weighted_keys_compressed(
+                query_words,
+                query_weights,
+                query->S,
+                query->W,
+                reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(comp_buf)),
+                reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(comp_off)),
+                comp_len.data_ptr<int>(),
+                tensor_data_ptr<double>(Bw_stacked),
+                Sb,
+                R,
+                scale_inv,
+                tensor_data_ptr<double>(out_slice),
+                stream.stream());
+        } else {
+            launch_popcount_weighted_keys_compressed_tiled(
+                query_words,
+                query_weights,
+                query->S,
+                query->W,
+                reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(comp_buf)),
+                reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(comp_off)),
+                comp_len.data_ptr<int>(),
+                tensor_data_ptr<double>(Bw_stacked),
+                Sb,
+                R,
+                jtile,
+                scale_inv,
+                tensor_data_ptr<double>(out_slice),
+                stream.stream());
+        }
         auto idx_cpu = torch::from_blob(const_cast<int64_t*>(idxs.data()), {R}, torch::TensorOptions().dtype(torch::kInt64)).clone();
         auto idx_dev = idx_cpu.to(torch::kCUDA).contiguous();
         auto stream3 = at::cuda::getCurrentCUDAStream();
