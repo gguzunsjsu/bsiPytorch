@@ -721,7 +721,6 @@ extern "C" void launch_prefix_popcount(
 extern "C" __global__
 void popcount_weighted_keys_compressed_kernel(
     const unsigned long long* __restrict__ A,
-    const int* __restrict__ Pc,
     const double* __restrict__ Aw,
     int Sa,
     int W,
@@ -736,12 +735,42 @@ void popcount_weighted_keys_compressed_kernel(
 {
     int r = blockIdx.x;
     if (r >= R) return;
-    // Cache Aw into shared memory once per block
-    extern __shared__ double shAw[];
+    // Dynamic shared memory layout: [Aw (Sa)] [Vp (W+1)] as doubles
+    extern __shared__ double shm[];
+    double* shAw = shm;
+    double* shVp = shm + Sa; // length W+1
     for (int t = threadIdx.x; t < Sa; t += blockDim.x) {
         shAw[t] = Aw[t];
     }
     __syncthreads();
+
+    // Build combined prefix Vp on-the-fly: V[w] = sum_i Aw[i] * popcount(Ai[w]); Vp[0]=0; Vp[w+1]=Vp[w]+V[w]
+    if (threadIdx.x == 0) {
+        shVp[0] = 0.0;
+    }
+    __syncthreads();
+    for (int w = 0; w < W; ++w) {
+        double part = 0.0;
+        for (int i = threadIdx.x; i < Sa; i += blockDim.x) {
+            const unsigned long long* ai = A + (size_t)i * W;
+            int pc = __popcll(ai[w]);
+            part += (double)pc * shAw[i];
+        }
+        part = warp_reduce_sum_double(part);
+        __shared__ double warp_sums_build[32];
+        if ((threadIdx.x & 31) == 0) warp_sums_build[threadIdx.x >> 5] = part;
+        __syncthreads();
+        double sumv = 0.0;
+        if (threadIdx.x < 32) {
+            int nw = blockDim.x >> 5;
+            sumv = (threadIdx.x < nw) ? warp_sums_build[threadIdx.x] : 0.0;
+            sumv = warp_reduce_sum_double(sumv);
+        }
+        if (threadIdx.x == 0) {
+            shVp[w+1] = shVp[w] + sumv;
+        }
+        __syncthreads();
+    }
 
     double local = 0.0;
     for (int j = 0; j < Sb; ++j) {
@@ -756,24 +785,12 @@ void popcount_weighted_keys_compressed_kernel(
             int run_len = (int)((rlw >> 1) & ((1u << 32) - 1));
             int lit_cnt = (int)(rlw >> (1 + 32));
             if (run_bit) {
-                double part = 0.0;
-                for (int i = threadIdx.x; i < Sa; i += blockDim.x) {
-                    const int* pci = Pc + (size_t)i * (W + 1);
-                    int delta = pci[min(pos + run_len, W)] - pci[pos];
-                    part += (double)delta * shAw[i];
+                double contrib = 0.0;
+                if (threadIdx.x == 0) {
+                    int endp = min(pos + run_len, W);
+                    contrib = (shVp[endp] - shVp[pos]) * bw;
+                    local += contrib;
                 }
-                // reduce across block
-                part = warp_reduce_sum_double(part);
-                __shared__ double warp_sums[32];
-                if ((threadIdx.x & 31) == 0) warp_sums[threadIdx.x >> 5] = part;
-                __syncthreads();
-                double sum = 0.0;
-                if (threadIdx.x < 32) {
-                    int nw = blockDim.x >> 5;
-                    sum = (threadIdx.x < nw) ? warp_sums[threadIdx.x] : 0.0;
-                    sum = warp_reduce_sum_double(sum);
-                }
-                if (threadIdx.x == 0) local += sum * bw;
             }
             pos += run_len;
             // literal words
@@ -844,7 +861,7 @@ extern "C" void launch_popcount_weighted_keys_compressed(
     }
     dim3 grid(R);
     dim3 block(cached);
-    size_t shmem = (size_t)Sa * sizeof(double);
+    size_t shmem = ((size_t)Sa + (size_t)(W + 1)) * sizeof(double);
     popcount_weighted_keys_compressed_kernel<<<grid, block, shmem, stream>>>(
-        A, Pc, Aw, Sa, W, comp_words, comp_off_abs, comp_len, Bw, Sb, R, scale_inv, out);
+        A, Aw, Sa, W, comp_words, comp_off_abs, comp_len, Bw, Sb, R, scale_inv, out);
 }

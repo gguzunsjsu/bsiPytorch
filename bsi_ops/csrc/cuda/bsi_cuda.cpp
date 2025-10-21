@@ -103,7 +103,6 @@ extern "C" void launch_prefix_popcount(
     cudaStream_t stream);
 extern "C" void launch_popcount_weighted_keys_compressed(
     const unsigned long long* A,
-    const int* Pc,
     const double* Aw,
     int Sa,
     int W,
@@ -462,14 +461,6 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
 
     float total_kernel_ms = 0.0f;
     auto stream = at::cuda::getCurrentCUDAStream();
-    // Precompute query prefix popcounts for compressed path
-    auto Pc = torch::empty({query->S, query->W + 1}, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
-    launch_prefix_popcount(
-        query_words,
-        query->S,
-        query->W,
-        Pc.data_ptr<int>(),
-        stream.stream());
 
     // Use pre-built grouped compressed tensors by Sb
     for (const auto& kv : keys->grouped_comp_words) {
@@ -484,7 +475,6 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
         auto out_slice = torch::zeros({R}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
         launch_popcount_weighted_keys_compressed(
             query_words,
-            Pc.data_ptr<int>(),
             query_weights,
             query->S,
             query->W,
