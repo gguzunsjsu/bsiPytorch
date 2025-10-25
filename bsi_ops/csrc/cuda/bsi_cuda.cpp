@@ -209,6 +209,47 @@ static torch::Tensor make_slice_flags_cuda(const std::vector<uint8_t>& host_flag
     return tensor.contiguous();
 }
 
+static bool bsi_hybrid_debug_enabled() {
+    static int cached = -1;
+    if (cached >= 0) return cached != 0;
+    const char* env = std::getenv("BSI_HYBRID_DEBUG");
+    if (!env) {
+        cached = 0;
+        return false;
+    }
+    std::string s(env);
+    std::transform(s.begin(), s.end(), s.begin(), [](char c){ return static_cast<char>(std::tolower(c)); });
+    cached = (s == "1" || s == "true" || s == "yes") ? 1 : 0;
+    return cached != 0;
+}
+
+static void maybe_log_hybrid_stats(int layer_id,
+                                   int Sb,
+                                   int Sa,
+                                   int W,
+                                   const at::Tensor& flags_tensor,
+                                   const char* tag) {
+    static bool logged = false;
+    if (!bsi_hybrid_debug_enabled() || logged) return;
+    auto flags_cpu = flags_tensor.to(torch::kCPU, /*non_blocking=*/false);
+    const uint8_t* ptr = flags_cpu.data_ptr<uint8_t>();
+    int64_t total = flags_cpu.numel();
+    int64_t compressed = 0;
+    for (int64_t i = 0; i < total; ++i) {
+        compressed += (ptr[i] != 0);
+    }
+    int64_t literal = total - compressed;
+    std::cout << "[BSI][HybridDebug] layer=" << layer_id
+              << " tag=" << tag
+              << " Sb=" << Sb
+              << " Sa=" << Sa
+              << " W=" << W
+              << " literal_slices=" << literal
+              << " compressed_slices=" << compressed
+              << std::endl;
+    logged = true;
+}
+
 struct PrebuiltBSIQueryCUDA {
     BsiVector<u64>* vec = nullptr;
     BsiVectorCudaData device_view;
@@ -480,6 +521,7 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
     cudaEventCreate(&end_evt);
     cudaEventRecord(start_evt, stream.stream());
 
+    int debug_layer_id = 0;
     for (const auto& kv : keys->grouped_indices) {
         int Sb = kv.first;
         const auto& idxs = kv.second;
@@ -492,6 +534,8 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
         const auto& comp_len = keys->grouped_comp_len.at(Sb);
         const auto& flags = keys->grouped_flags.at(Sb);
         const auto& Bw_stacked = keys->grouped_weights.at(Sb);
+
+        maybe_log_hybrid_stats(debug_layer_id++, Sb, query->S, query->W, flags, "prebuilt-single");
 
         const unsigned long long* comp_ptr = comp_buf.numel() > 0
             ? reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(comp_buf))
@@ -688,6 +732,7 @@ void register_bsi_cuda(pybind11::module& m) {
 
                 auto tensor_opts = torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA);
 
+                static int multi_debug_layer = 0;
                 for (const auto& kv2 : keys->grouped_indices) {
                     int Sb = kv2.first;
                     const auto& idxs = kv2.second;
@@ -700,6 +745,8 @@ void register_bsi_cuda(pybind11::module& m) {
                     const auto& comp_len = keys->grouped_comp_len.at(Sb);
                     const auto& flags = keys->grouped_flags.at(Sb);
                     const auto& Bw_stacked = keys->grouped_weights.at(Sb);
+
+                    maybe_log_hybrid_stats(multi_debug_layer++, Sb, query->S, query->W, flags, "multi-query");
 
                     const unsigned long long* comp_ptr = comp_buf.numel() > 0
                         ? reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(comp_buf))
