@@ -285,30 +285,52 @@ void popcount_weighted_keys_literal_tiled_kernel(
     int w_end = min(W, w_begin + tile_size);
     if (w_begin >= w_end) return;
 
-    double local = 0.0;
-    long long total = (long long)Sa * (long long)Sb * (long long)(w_end - w_begin);
-    for (long long idx = threadIdx.x; idx < total; idx += blockDim.x) {
-        int i = static_cast<int>(idx / (Sb * (long long)(w_end - w_begin)));
-        int rem = static_cast<int>(idx % (Sb * (long long)(w_end - w_begin)));
-        int j = rem / (w_end - w_begin);
-        int w = w_begin + (rem % (w_end - w_begin));
-        const unsigned long long* ai = A + (size_t)i * W;
-        const unsigned long long* bj = B + ((size_t)r * Sb + j) * W;
-        int cnt = __popcll(ai[w] & bj[w]);
-        local += (double)cnt * Aw[i] * Bw[(size_t)r * Sb + j];
-    }
-
-    local = warp_reduce_sum_double(local);
+    extern __shared__ unsigned long long shA[];
     __shared__ double warp_buf[32];
-    if ((threadIdx.x & 31) == 0) warp_buf[threadIdx.x >> 5] = local;
-    __syncthreads();
-    double total_acc = 0.0;
-    if (threadIdx.x < 32) {
-        int num_warps = blockDim.x >> 5;
-        total_acc = (threadIdx.x < num_warps) ? warp_buf[threadIdx.x] : 0.0;
-        total_acc = warp_reduce_sum_double(total_acc);
+    for (int idx = threadIdx.x; idx < Sa * tile_size; idx += blockDim.x) {
+        int i = idx / tile_size;
+        int w = idx % tile_size;
+        int global_w = w_begin + w;
+        unsigned long long val = 0ULL;
+        if (i < Sa && global_w < W) {
+            val = A[(size_t)i * W + global_w];
+        }
+        shA[(size_t)i * tile_size + w] = val;
     }
-    if (threadIdx.x == 0) atomicAdd(&out[r], total_acc * scale_inv);
+    __syncthreads();
+
+    double block_accum = 0.0;
+    const double* bw_row = Bw + (size_t)r * Sb;
+    for (int j = 0; j < Sb; ++j) {
+        const unsigned long long* bj = B + ((size_t)r * Sb + j) * W + w_begin;
+        double partial = 0.0;
+        for (int idx = threadIdx.x; idx < Sa * tile_size; idx += blockDim.x) {
+            int i = idx / tile_size;
+            int w = idx % tile_size;
+            int global_w = w_begin + w;
+            if (i >= Sa || global_w >= W) continue;
+            unsigned long long a_word = shA[(size_t)i * tile_size + w];
+            unsigned long long b_word = bj[w];
+            int cnt = __popcll(a_word & b_word);
+            partial += (double)cnt * Aw[i];
+        }
+        partial = warp_reduce_sum_double(partial);
+        if ((threadIdx.x & 31) == 0) warp_buf[threadIdx.x >> 5] = partial;
+        __syncthreads();
+        double total = 0.0;
+        if (threadIdx.x < 32) {
+            int num_warps = blockDim.x >> 5;
+            total = (threadIdx.x < num_warps) ? warp_buf[threadIdx.x] : 0.0;
+            total = warp_reduce_sum_double(total);
+        }
+        if (threadIdx.x == 0) {
+            block_accum += total * bw_row[j];
+        }
+        __syncthreads();
+    }
+    if (threadIdx.x == 0) {
+        atomicAdd(&out[r], block_accum * scale_inv);
+    }
 }
 
 extern "C" void launch_popcount_weighted_keys_literal_tiled(
@@ -344,7 +366,8 @@ extern "C" void launch_popcount_weighted_keys_literal_tiled(
     int tiles = (W + tile_size - 1) / tile_size;
     dim3 grid(R, tiles);
     dim3 block(cached_block);
-    popcount_weighted_keys_literal_tiled_kernel<<<grid, block, 0, stream>>>(
+    size_t shmem = (size_t)Sa * (size_t)tile_size * sizeof(unsigned long long);
+    popcount_weighted_keys_literal_tiled_kernel<<<grid, block, shmem, stream>>>(
         A, Aw, Sa, W, B, Bw, Sb, R, tile_size, scale_inv, out);
 }
 
