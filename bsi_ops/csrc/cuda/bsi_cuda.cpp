@@ -144,49 +144,6 @@ static bool bsi_cuda_use_tiled() {
     return cached != 0;
 }
 
-static double bsi_multi_compress_ratio_limit() {
-    static double cached = -1.0;
-    if (cached >= 0.0) return cached;
-    double limit = 0.6; // require at least 40% savings to favor compressed path
-    if (const char* v = std::getenv("BSI_MULTI_COMP_RATIO")) {
-        try {
-            limit = std::stod(v);
-        } catch (...) {
-            // ignore malformed input
-        }
-    }
-    if (limit < 0.0) limit = 0.0;
-    if (limit > 1.0) limit = 1.0;
-    cached = limit;
-    return cached;
-}
-
-static bool bsi_multi_should_use_compressed(const PrebuiltBSIKeysCUDA* keys, int Sb) {
-    auto it_comp = keys->grouped_comp_words.find(Sb);
-    if (it_comp == keys->grouped_comp_words.end()) {
-        return false;
-    }
-    const auto& comp_buf = it_comp->second;
-    if (!comp_buf.defined() || comp_buf.numel() == 0) {
-        return false;
-    }
-    auto it_words = keys->grouped_words.find(Sb);
-    if (it_words == keys->grouped_words.end()) {
-        return true;
-    }
-    const auto& words_tensor = it_words->second;
-    if (!words_tensor.defined() || words_tensor.numel() == 0) {
-        return true;
-    }
-    double compressed_words = static_cast<double>(comp_buf.numel());
-    double verbatim_words = static_cast<double>(words_tensor.numel());
-    if (verbatim_words <= 0.0) {
-        return true;
-    }
-    double ratio = compressed_words / verbatim_words;
-    double limit = bsi_multi_compress_ratio_limit();
-    return ratio <= limit;
-}
 static inline uint64_t now_ns() {
     using namespace std::chrono;
     return duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
@@ -278,6 +235,50 @@ struct PrebuiltBSIKeysCUDA {
 
 static PrebuiltBSIKeysCUDA* capsule_to_keys_cuda(const pybind11::capsule& cap) {
     return reinterpret_cast<PrebuiltBSIKeysCUDA*>(cap.get_pointer());
+}
+
+static double bsi_multi_compress_ratio_limit() {
+    static double cached = -1.0;
+    if (cached >= 0.0) return cached;
+    double limit = 0.6; // require at least 40% savings to favor compressed path
+    if (const char* v = std::getenv("BSI_MULTI_COMP_RATIO")) {
+        try {
+            limit = std::stod(v);
+        } catch (...) {
+            // ignore malformed input
+        }
+    }
+    if (limit < 0.0) limit = 0.0;
+    if (limit > 1.0) limit = 1.0;
+    cached = limit;
+    return cached;
+}
+
+static bool bsi_multi_should_use_compressed(const PrebuiltBSIKeysCUDA* keys, int Sb) {
+    auto it_comp = keys->grouped_comp_words.find(Sb);
+    if (it_comp == keys->grouped_comp_words.end()) {
+        return false;
+    }
+    const auto& comp_buf = it_comp->second;
+    if (!comp_buf.defined() || comp_buf.numel() == 0) {
+        return false;
+    }
+    auto it_words = keys->grouped_words.find(Sb);
+    if (it_words == keys->grouped_words.end()) {
+        return true;
+    }
+    const auto& words_tensor = it_words->second;
+    if (!words_tensor.defined() || words_tensor.numel() == 0) {
+        return true;
+    }
+    double compressed_words = static_cast<double>(comp_buf.numel());
+    double verbatim_words = static_cast<double>(words_tensor.numel());
+    if (verbatim_words <= 0.0) {
+        return true;
+    }
+    double ratio = compressed_words / verbatim_words;
+    double limit = bsi_multi_compress_ratio_limit();
+    return ratio <= limit;
 }
 
 struct PrebuiltBSIQueryCUDA {
