@@ -10,6 +10,7 @@
 #include <iostream>
 #include <cstdint>
 #include <unordered_map>
+#include <unordered_set>
 #include <c10/cuda/CUDAFunctions.h>
 #include <ATen/Parallel.h>
 #include <cstdlib>
@@ -229,8 +230,11 @@ static void maybe_log_hybrid_stats(int layer_id,
                                    int W,
                                    const at::Tensor& flags_tensor,
                                    const char* tag) {
-    static bool logged = false;
-    if (!bsi_hybrid_debug_enabled() || logged) return;
+    if (!bsi_hybrid_debug_enabled()) return;
+    static std::unordered_set<std::string> logged_keys;
+    std::string key = std::to_string(layer_id) + std::string(":") + (tag ? tag : "");
+    if (logged_keys.find(key) != logged_keys.end()) return;
+    logged_keys.insert(key);
     auto flags_cpu = flags_tensor.to(torch::kCPU, /*non_blocking=*/false);
     const uint8_t* ptr = flags_cpu.data_ptr<uint8_t>();
     int64_t total = flags_cpu.numel();
@@ -247,7 +251,6 @@ static void maybe_log_hybrid_stats(int layer_id,
               << " literal_slices=" << literal
               << " compressed_slices=" << compressed
               << std::endl;
-    logged = true;
 }
 
 struct PrebuiltBSIQueryCUDA {
