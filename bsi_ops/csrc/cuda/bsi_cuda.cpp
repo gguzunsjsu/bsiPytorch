@@ -103,6 +103,7 @@ extern "C" void launch_prefix_popcount(
     cudaStream_t stream);
 extern "C" void launch_popcount_weighted_keys_compressed(
     const unsigned long long* A,
+    const int* Pc,
     const double* Aw,
     int Sa,
     int W,
@@ -495,6 +496,7 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
         if (Sb <= jtile) {
             launch_popcount_weighted_keys_compressed(
                 query_words,
+                nullptr,
                 query_weights,
                 query->S,
                 query->W,
@@ -664,6 +666,7 @@ void register_bsi_cuda(pybind11::module& m) {
                         if (Sb <= jtile) {
                             launch_popcount_weighted_keys_compressed(
                                 A,
+                                nullptr,
                                 Aw,
                                 query->S,
                                 query->W,
