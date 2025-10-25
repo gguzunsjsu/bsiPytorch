@@ -434,10 +434,13 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
         const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words));
         const auto* Bw_ptr = tensor_data_ptr<double>(Bw_stacked);
 
-        int jtile = 16;
-        if (const char* s = getenv("BSI_CK_JTILE")) { int t = atoi(s); if (t > 0) jtile = t; }
         bool use_tiled = bsi_cuda_use_tiled();
-        if (!use_tiled || Sb <= jtile || query->W <= 256) {
+        int tile_size = 64;
+        if (const char* s = std::getenv("BSI_TILE_W")) {
+            int t = std::atoi(s);
+            if (t > 0) tile_size = t;
+        }
+        if (!use_tiled || query->W <= tile_size) {
             launch_popcount_weighted_keys_literal(
                 query_words,
                 query_weights,
@@ -451,8 +454,7 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
                 tensor_data_ptr<double>(out_slice),
                 stream.stream());
         } else {
-            int tile_size = (query->W + jtile - 1) / jtile;
-            if (tile_size < 32) tile_size = 32;
+            tile_size = std::min(tile_size, query->W);
             launch_popcount_weighted_keys_literal_tiled(
                 query_words,
                 query_weights,
@@ -622,12 +624,12 @@ void register_bsi_cuda(pybind11::module& m) {
                     const auto* Bw_ptr = tensor_data_ptr<double>(Bw_stacked);
 
                     bool use_tiled = bsi_cuda_use_tiled();
-                    int jtile = 16;
-                    if (const char* s = std::getenv("BSI_CK_JTILE")) {
+                    int tile_size = 64;
+                    if (const char* s = std::getenv("BSI_TILE_W")) {
                         int t = std::atoi(s);
-                        if (t > 0) jtile = t;
+                        if (t > 0) tile_size = t;
                     }
-                    if (!use_tiled || Sb <= jtile || query->W <= 256) {
+                    if (!use_tiled || query->W <= tile_size) {
                         launch_popcount_weighted_keys_literal(
                             A,
                             Aw,
@@ -641,8 +643,7 @@ void register_bsi_cuda(pybind11::module& m) {
                             tensor_data_ptr<double>(out_slice),
                             stream.stream());
                     } else {
-                        int tile_size = (query->W + jtile - 1) / jtile;
-                        if (tile_size < 32) tile_size = 32;
+                        tile_size = std::min(tile_size, query->W);
                         launch_popcount_weighted_keys_literal_tiled(
                             A,
                             Aw,

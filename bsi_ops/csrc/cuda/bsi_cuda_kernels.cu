@@ -308,7 +308,8 @@ void popcount_weighted_keys_literal_tiled_kernel(
             int i = idx / tile_size;
             int w = idx % tile_size;
             int global_w = w_begin + w;
-            if (i >= Sa || global_w >= W) continue;
+            if (i >= Sa) continue;
+            if (global_w >= W) continue;
             unsigned long long a_word = shA[(size_t)i * tile_size + w];
             unsigned long long b_word = bj[w];
             int cnt = __popcll(a_word & b_word);
