@@ -217,6 +217,7 @@ struct PrebuiltBSIKeysCUDA {
     std::unordered_map<int, at::Tensor> grouped_words;   // Sb -> [R_sb, Sb, W]
     std::unordered_map<int, at::Tensor> grouped_weights; // Sb -> [R_sb, Sb]
     std::unordered_map<int, std::vector<int64_t>> grouped_indices; // Sb -> original key indices
+    std::unordered_map<int, at::Tensor> grouped_indices_dev; // Sb -> [R_sb] int64 cuda
     // Compressed grouped layout (EWAH):
     // For each Sb group: a big 1D comp_words buffer, plus absolute per-slice offsets and lengths per key
     std::unordered_map<int, at::Tensor> grouped_comp_words; // Sb -> [total_u64]
@@ -640,48 +641,100 @@ void register_bsi_cuda(pybind11::module& m) {
                 int totalDecimals = query->device_view.decimals + keys->decimals;
                 const double scale_inv = (totalDecimals > 0) ? (1.0 / std::pow(10.0, totalDecimals)) : 1.0;
 
-                // Iterate pre-grouped key tensors to avoid stacking
-                for (const auto& kv2 : keys->grouped_words) {
-                    int Sb = kv2.first;
-                    const auto& B_stacked = kv2.second;                          // [R_sb, Sb, W]
-                    const auto& Bw_stacked = keys->grouped_weights.at(Sb);      // [R_sb, Sb]
-                    const auto& idxs = keys->grouped_indices.at(Sb);            // vector<int64_t>
-                    const int Rg = static_cast<int>(idxs.size());
+                const bool use_compressed = !keys->grouped_comp_words.empty();
+                const auto& grouped_map = use_compressed ? keys->grouped_comp_words : keys->grouped_words;
+                auto tensor_opts = torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA);
 
-                    auto out_slice = torch::zeros({Rg}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
-                    if (bsi_cuda_use_tiled()) {
-                        int tiles = 1; int tile_size = query->W;
-                        if (query->W > 1024) { tiles = std::min(16, (query->W + 1023) / 1024); tile_size = (query->W + tiles - 1) / tiles; }
-                        launch_popcount_weighted_keys_tiled(
-                            A,
-                            Aw,
-                            query->S,
-                            query->W,
-                            reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(B_stacked)),
-                            tensor_data_ptr<double>(Bw_stacked),
-                            Sb,
-                            Rg,
-                            tiles,
-                            tile_size,
-                            tensor_data_ptr<double>(out_slice),
-                            stream.stream());
+                for (const auto& kv2 : grouped_map) {
+                    int Sb = kv2.first;
+                    const auto& idxs = keys->grouped_indices.at(Sb);
+                    const int Rg = static_cast<int>(idxs.size());
+                    torch::Tensor out_slice = torch::zeros({Rg}, tensor_opts);
+
+                    if (use_compressed) {
+                        const auto& comp_buf = kv2.second;                          // [total_u64]
+                        const auto& comp_off = keys->grouped_comp_off.at(Sb);       // [R_sb, Sb]
+                        const auto& comp_len = keys->grouped_comp_len.at(Sb);       // [R_sb, Sb]
+                        const auto& Bw_stacked = keys->grouped_weights.at(Sb);      // [R_sb, Sb]
+                        int jtile = 16;
+                        if (const char* s = std::getenv("BSI_CK_JTILE")) {
+                            int t = std::atoi(s);
+                            if (t > 0) jtile = t;
+                        }
+                        if (Sb <= jtile) {
+                            launch_popcount_weighted_keys_compressed(
+                                A,
+                                Aw,
+                                query->S,
+                                query->W,
+                                reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(comp_buf)),
+                                reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(comp_off)),
+                                comp_len.data_ptr<int>(),
+                                tensor_data_ptr<double>(Bw_stacked),
+                                Sb,
+                                Rg,
+                                scale_inv,
+                                tensor_data_ptr<double>(out_slice),
+                                stream.stream());
+                        } else {
+                            launch_popcount_weighted_keys_compressed_tiled(
+                                A,
+                                Aw,
+                                query->S,
+                                query->W,
+                                reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(comp_buf)),
+                                reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(comp_off)),
+                                comp_len.data_ptr<int>(),
+                                tensor_data_ptr<double>(Bw_stacked),
+                                Sb,
+                                Rg,
+                                jtile,
+                                scale_inv,
+                                tensor_data_ptr<double>(out_slice),
+                                stream.stream());
+                        }
                     } else {
-                        launch_popcount_weighted_keys(
-                            A,
-                            Aw,
-                            query->S,
-                            query->W,
-                            reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(B_stacked)),
-                            tensor_data_ptr<double>(Bw_stacked),
-                            Sb,
-                            Rg,
-                            tensor_data_ptr<double>(out_slice),
-                            stream.stream());
+                        const auto& B_stacked = kv2.second;                          // [R_sb, Sb, W]
+                        const auto& Bw_stacked = keys->grouped_weights.at(Sb);      // [R_sb, Sb]
+                        if (bsi_cuda_use_tiled()) {
+                            int tiles = 1;
+                            int tile_size = query->W;
+                            if (query->W > 1024) {
+                                tiles = std::min(16, (query->W + 1023) / 1024);
+                                tile_size = (query->W + tiles - 1) / tiles;
+                            }
+                            launch_popcount_weighted_keys_tiled(
+                                A,
+                                Aw,
+                                query->S,
+                                query->W,
+                                reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(B_stacked)),
+                                tensor_data_ptr<double>(Bw_stacked),
+                                Sb,
+                                Rg,
+                                tiles,
+                                tile_size,
+                                tensor_data_ptr<double>(out_slice),
+                                stream.stream());
+                        } else {
+                            launch_popcount_weighted_keys(
+                                A,
+                                Aw,
+                                query->S,
+                                query->W,
+                                reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(B_stacked)),
+                                tensor_data_ptr<double>(Bw_stacked),
+                                Sb,
+                                Rg,
+                                tensor_data_ptr<double>(out_slice),
+                                stream.stream());
+                        }
+                        if (scale_inv != 1.0) {
+                            out_slice.mul_(scale_inv);
+                        }
                     }
 
-                    if (scale_inv != 1.0) out_slice.mul_(scale_inv);
-                    auto idx_cpu = torch::from_blob(const_cast<int64_t*>(idxs.data()), {Rg}, torch::TensorOptions().dtype(torch::kInt64)).clone();
-                    auto idx_dev = idx_cpu.to(torch::kCUDA).contiguous();
+                    const auto& idx_dev = keys->grouped_indices_dev.at(Sb);
                     launch_scatter_set_double(
                         reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev)),
                         tensor_data_ptr<double>(out_slice),
@@ -777,6 +830,11 @@ void register_bsi_cuda(pybind11::module& m) {
                 holder->grouped_words[Sb] = gw.contiguous();
                 holder->grouped_weights[Sb] = gwt.contiguous();
                 holder->grouped_indices[Sb] = idxs;
+                auto idx_cpu = torch::from_blob(
+                    const_cast<int64_t*>(idxs.data()),
+                    {R},
+                    torch::TensorOptions().dtype(torch::kInt64)).clone();
+                holder->grouped_indices_dev[Sb] = idx_cpu.to(torch::kCUDA).contiguous();
             }
         }
         // Finalize grouped compressed buffers from per-key staging
