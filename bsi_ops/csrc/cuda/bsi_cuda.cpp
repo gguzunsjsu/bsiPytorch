@@ -4,6 +4,7 @@
 #include <ATen/cuda/CUDAContext.h>
 #include <cuda_runtime.h>
 #include <vector>
+#include <algorithm>
 #include <cmath>
 #include <chrono>
 #include <iostream>
@@ -12,6 +13,7 @@
 #include <c10/cuda/CUDAFunctions.h>
 #include <ATen/Parallel.h>
 #include <cstdlib>
+#include <string>
 
 // bring in BSI core (CPU) to build and access slices
 #include "../../../bsiCPP/bsi/BsiVector.hpp"
@@ -103,7 +105,6 @@ extern "C" void launch_prefix_popcount(
     cudaStream_t stream);
 extern "C" void launch_popcount_weighted_keys_compressed(
     const unsigned long long* A,
-    const int* Pc,
     const double* Aw,
     int Sa,
     int W,
@@ -141,6 +142,50 @@ static bool bsi_cuda_use_tiled() {
     for (auto& c : s) c = (char)std::tolower(c);
     cached = (s == "1" || s == "true" || s == "yes") ? 1 : 0;
     return cached != 0;
+}
+
+static double bsi_multi_compress_ratio_limit() {
+    static double cached = -1.0;
+    if (cached >= 0.0) return cached;
+    double limit = 0.6; // require at least 40% savings to favor compressed path
+    if (const char* v = std::getenv("BSI_MULTI_COMP_RATIO")) {
+        try {
+            limit = std::stod(v);
+        } catch (...) {
+            // ignore malformed input
+        }
+    }
+    if (limit < 0.0) limit = 0.0;
+    if (limit > 1.0) limit = 1.0;
+    cached = limit;
+    return cached;
+}
+
+static bool bsi_multi_should_use_compressed(const PrebuiltBSIKeysCUDA* keys, int Sb) {
+    auto it_comp = keys->grouped_comp_words.find(Sb);
+    if (it_comp == keys->grouped_comp_words.end()) {
+        return false;
+    }
+    const auto& comp_buf = it_comp->second;
+    if (!comp_buf.defined() || comp_buf.numel() == 0) {
+        return false;
+    }
+    auto it_words = keys->grouped_words.find(Sb);
+    if (it_words == keys->grouped_words.end()) {
+        return true;
+    }
+    const auto& words_tensor = it_words->second;
+    if (!words_tensor.defined() || words_tensor.numel() == 0) {
+        return true;
+    }
+    double compressed_words = static_cast<double>(comp_buf.numel());
+    double verbatim_words = static_cast<double>(words_tensor.numel());
+    if (verbatim_words <= 0.0) {
+        return true;
+    }
+    double ratio = compressed_words / verbatim_words;
+    double limit = bsi_multi_compress_ratio_limit();
+    return ratio <= limit;
 }
 static inline uint64_t now_ns() {
     using namespace std::chrono;
@@ -496,7 +541,6 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
         if (Sb <= jtile) {
             launch_popcount_weighted_keys_compressed(
                 query_words,
-                nullptr,
                 query_weights,
                 query->S,
                 query->W,
@@ -643,18 +687,17 @@ void register_bsi_cuda(pybind11::module& m) {
                 int totalDecimals = query->device_view.decimals + keys->decimals;
                 const double scale_inv = (totalDecimals > 0) ? (1.0 / std::pow(10.0, totalDecimals)) : 1.0;
 
-                const bool use_compressed = !keys->grouped_comp_words.empty();
-                const auto& grouped_map = use_compressed ? keys->grouped_comp_words : keys->grouped_words;
                 auto tensor_opts = torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA);
 
-                for (const auto& kv2 : grouped_map) {
+                for (const auto& kv2 : keys->grouped_indices) {
                     int Sb = kv2.first;
-                    const auto& idxs = keys->grouped_indices.at(Sb);
+                    const auto& idxs = kv2.second;
                     const int Rg = static_cast<int>(idxs.size());
                     torch::Tensor out_slice = torch::zeros({Rg}, tensor_opts);
 
-                    if (use_compressed) {
-                        const auto& comp_buf = kv2.second;                          // [total_u64]
+                    bool use_compressed_group = bsi_multi_should_use_compressed(keys, Sb);
+                    if (use_compressed_group) {
+                        const auto& comp_buf = keys->grouped_comp_words.at(Sb);     // [total_u64]
                         const auto& comp_off = keys->grouped_comp_off.at(Sb);       // [R_sb, Sb]
                         const auto& comp_len = keys->grouped_comp_len.at(Sb);       // [R_sb, Sb]
                         const auto& Bw_stacked = keys->grouped_weights.at(Sb);      // [R_sb, Sb]
@@ -666,7 +709,6 @@ void register_bsi_cuda(pybind11::module& m) {
                         if (Sb <= jtile) {
                             launch_popcount_weighted_keys_compressed(
                                 A,
-                                nullptr,
                                 Aw,
                                 query->S,
                                 query->W,
@@ -697,7 +739,7 @@ void register_bsi_cuda(pybind11::module& m) {
                                 stream.stream());
                         }
                     } else {
-                        const auto& B_stacked = kv2.second;                          // [R_sb, Sb, W]
+                        const auto& B_stacked = keys->grouped_words.at(Sb);         // [R_sb, Sb, W]
                         const auto& Bw_stacked = keys->grouped_weights.at(Sb);      // [R_sb, Sb]
                         if (bsi_cuda_use_tiled()) {
                             int tiles = 1;
@@ -736,7 +778,6 @@ void register_bsi_cuda(pybind11::module& m) {
                             out_slice.mul_(scale_inv);
                         }
                     }
-
                     const auto& idx_dev = keys->grouped_indices_dev.at(Sb);
                     launch_scatter_set_double(
                         reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev)),

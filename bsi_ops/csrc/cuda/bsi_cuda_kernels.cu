@@ -833,7 +833,6 @@ void popcount_weighted_keys_compressed_kernel(
 
 extern "C" void launch_popcount_weighted_keys_compressed(
     const unsigned long long* A,
-    const int* Pc,
     const double* Aw,
     int Sa,
     int W,
