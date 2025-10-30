@@ -75,6 +75,19 @@ extern "C" void launch_popcount_weighted_keys_literal_tiled(
     double scale_inv,
     double* out,
     cudaStream_t stream);
+extern "C" void launch_popcount_weighted_keys_literal_fused(
+    const unsigned long long* A,
+    const double* Aw,
+    int Sa,
+    int W,
+    const unsigned long long* B,
+    const double* Bw,
+    int Sb,
+    int R,
+    const long long* indices,
+    double scale_inv,
+    double* out_global,
+    cudaStream_t stream);
 
 static bool bsi_cuda_use_tiled() {
     static int cached = -1;
@@ -616,54 +629,25 @@ void register_bsi_cuda(pybind11::module& m) {
                     int Sb = kv2.first;
                     const auto& idxs = kv2.second;
                     const int Rg = static_cast<int>(idxs.size());
-                    auto out_slice = torch::zeros({Rg}, tensor_opts);
 
                     const auto& words = keys->grouped_words.at(Sb);
                     const auto& Bw_stacked = keys->grouped_weights.at(Sb);
                     const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words));
                     const auto* Bw_ptr = tensor_data_ptr<double>(Bw_stacked);
-
-                    bool use_tiled = bsi_cuda_use_tiled();
-                    int tile_size = 64;
-                    if (const char* s = std::getenv("BSI_TILE_W")) {
-                        int t = std::atoi(s);
-                        if (t > 0) tile_size = t;
-                    }
-                    if (!use_tiled || query->W <= tile_size) {
-                        launch_popcount_weighted_keys_literal(
-                            A,
-                            Aw,
-                            query->S,
-                            query->W,
-                            B_words,
-                            Bw_ptr,
-                            Sb,
-                            Rg,
-                            scale_inv,
-                            tensor_data_ptr<double>(out_slice),
-                            stream.stream());
-                    } else {
-                        tile_size = std::min(tile_size, query->W);
-                        launch_popcount_weighted_keys_literal_tiled(
-                            A,
-                            Aw,
-                            query->S,
-                            query->W,
-                            B_words,
-                            Bw_ptr,
-                            Sb,
-                            Rg,
-                            tile_size,
-                            scale_inv,
-                            tensor_data_ptr<double>(out_slice),
-                            stream.stream());
-                    }
-
                     const auto& idx_dev = keys->grouped_indices_dev.at(Sb);
-                    launch_scatter_set_double(
-                        reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev)),
-                        tensor_data_ptr<double>(out_slice),
+
+                    // Use fused kernel that writes directly to final output (eliminates scatter)
+                    launch_popcount_weighted_keys_literal_fused(
+                        A,
+                        Aw,
+                        query->S,
+                        query->W,
+                        B_words,
+                        Bw_ptr,
+                        Sb,
                         Rg,
+                        reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev)),
+                        scale_inv,
                         tensor_data_ptr<double>(out_row),
                         stream.stream());
                 }

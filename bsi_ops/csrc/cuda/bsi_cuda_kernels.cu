@@ -372,6 +372,85 @@ extern "C" void launch_popcount_weighted_keys_literal_tiled(
         A, Aw, Sa, W, B, Bw, Sb, R, tile_size, scale_inv, out);
 }
 
+// Fused version: write directly to indexed output (eliminates scatter kernel)
+extern "C" __global__
+void popcount_weighted_keys_literal_fused_kernel(
+    const unsigned long long* __restrict__ A,
+    const double* __restrict__ Aw,
+    int Sa,
+    int W,
+    const unsigned long long* __restrict__ B,
+    const double* __restrict__ Bw,
+    int Sb,
+    int R,
+    const long long* __restrict__ indices,
+    double scale_inv,
+    double* __restrict__ out_global)
+{
+    int r = blockIdx.x;
+    if (r >= R) return;
+
+    double local = 0.0;
+    long long total = (long long)Sa * (long long)Sb * (long long)W;
+    for (long long idx = threadIdx.x; idx < total; idx += blockDim.x) {
+        int i = static_cast<int>(idx / (Sb * (long long)W));
+        int rem = static_cast<int>(idx % (Sb * (long long)W));
+        int j = rem / W;
+        int w = rem % W;
+        const unsigned long long* ai = A + (size_t)i * W;
+        const unsigned long long* bj = B + ((size_t)r * Sb + j) * W;
+        int cnt = __popcll(ai[w] & bj[w]);
+        local += (double)cnt * Aw[i] * Bw[(size_t)r * Sb + j];
+    }
+
+    local = warp_reduce_sum_double(local);
+    __shared__ double warp_buf[32];
+    if ((threadIdx.x & 31) == 0) warp_buf[threadIdx.x >> 5] = local;
+    __syncthreads();
+    double total_acc = 0.0;
+    if (threadIdx.x < 32) {
+        int num_warps = blockDim.x >> 5;
+        total_acc = (threadIdx.x < num_warps) ? warp_buf[threadIdx.x] : 0.0;
+        total_acc = warp_reduce_sum_double(total_acc);
+    }
+    if (threadIdx.x == 0) {
+        long long global_idx = indices[r];
+        out_global[global_idx] = total_acc * scale_inv;
+    }
+}
+
+extern "C" void launch_popcount_weighted_keys_literal_fused(
+    const unsigned long long* A,
+    const double* Aw,
+    int Sa,
+    int W,
+    const unsigned long long* B,
+    const double* Bw,
+    int Sb,
+    int R,
+    const long long* indices,
+    double scale_inv,
+    double* out_global,
+    cudaStream_t stream)
+{
+    static int cached_block = 0;
+    if (cached_block == 0) {
+        int v = 256;
+        if (const char* s = getenv("BSI_CK_BLOCK")) {
+            int t = atoi(s);
+            if (t > 0) v = t;
+        }
+        if (v < 64) v = 64;
+        if (v > 1024) v = 1024;
+        cached_block = (v / 32) * 32;
+        if (cached_block == 0) cached_block = 32;
+    }
+    dim3 grid(R);
+    dim3 block(cached_block);
+    popcount_weighted_keys_literal_fused_kernel<<<grid, block, 0, stream>>>(
+        A, Aw, Sa, W, B, Bw, Sb, R, indices, scale_inv, out_global);
+}
+
 extern "C" void launch_ewah_decompress(
     const unsigned long long* in,
     int in_len,
