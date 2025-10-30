@@ -15,7 +15,6 @@ cuda_sources = [
     'csrc/cuda/bsi_vector_cuda.cpp',
     'csrc/cuda/bsi_cuda.cpp',
     'csrc/cuda/bsi_cuda_kernels.cu',
-    'csrc/cuda/bsi_cuda_kernels_optimized.cu',  # New optimized kernels
 ]
 
 torch_lib_dir = os.path.join(os.path.dirname(torch.__file__), 'lib')
