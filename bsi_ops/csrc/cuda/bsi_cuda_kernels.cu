@@ -208,44 +208,28 @@ void popcount_weighted_keys_literal_kernel(
     if (r >= R) return;
 
     double local = 0.0;
-
-    // Nested loops instead of flat indexing - eliminates all divisions/modulos
-    for (int i = 0; i < Sa; ++i) {
-        double wa = Aw[i];
+    long long total = (long long)Sa * (long long)Sb * (long long)W;
+    for (long long idx = threadIdx.x; idx < total; idx += blockDim.x) {
+        int i = static_cast<int>(idx / (Sb * (long long)W));
+        int rem = static_cast<int>(idx % (Sb * (long long)W));
+        int j = rem / W;
+        int w = rem % W;
         const unsigned long long* ai = A + (size_t)i * W;
-
-        for (int j = 0; j < Sb; ++j) {
-            double wb = Bw[(size_t)r * Sb + j];
-            const unsigned long long* bj = B + ((size_t)r * Sb + j) * W;
-
-            // Parallel popcount across W words
-            unsigned long long partial_pop = 0ULL;
-            for (int w = threadIdx.x; w < W; w += blockDim.x) {
-                partial_pop += __popcll(ai[w] & bj[w]);
-            }
-
-            // Reduce popcount within warp
-            partial_pop = warp_reduce_sum_ull(partial_pop);
-
-            // Only lane 0 accumulates the weighted contribution
-            if ((threadIdx.x & 31) == 0) {
-                local += (double)partial_pop * wa * wb;
-            }
-        }
+        const unsigned long long* bj = B + ((size_t)r * Sb + j) * W;
+        int cnt = __popcll(ai[w] & bj[w]);
+        local += (double)cnt * Aw[i] * Bw[(size_t)r * Sb + j];
     }
 
-    // Block-level reduction across warps
+    local = warp_reduce_sum_double(local);
     __shared__ double warp_buf[32];
     if ((threadIdx.x & 31) == 0) warp_buf[threadIdx.x >> 5] = local;
     __syncthreads();
-
     double total_acc = 0.0;
     if (threadIdx.x < 32) {
         int num_warps = blockDim.x >> 5;
         total_acc = (threadIdx.x < num_warps) ? warp_buf[threadIdx.x] : 0.0;
         total_acc = warp_reduce_sum_double(total_acc);
     }
-
     if (threadIdx.x == 0) out[r] = total_acc * scale_inv;
 }
 
