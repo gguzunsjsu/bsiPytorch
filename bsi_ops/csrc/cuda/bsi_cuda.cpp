@@ -114,6 +114,16 @@ extern "C" void launch_popcount_multiquery_optimized(
     double* out,
     cudaStream_t stream);
 
+// Keep old kernel launchers for backward compatibility
+extern "C" void launch_pack_bits_all_ballot(
+    const long long* values,
+    long long n,
+    int slices,
+    int words_per_slice,
+    unsigned long long value_mask,
+    unsigned long long* out,
+    cudaStream_t stream);
+
 static bool bsi_cuda_use_tiled() {
     static int cached = -1;
     if (cached >= 0) return cached != 0;
