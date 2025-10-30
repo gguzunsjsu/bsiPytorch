@@ -75,9 +75,11 @@ void popcount_weighted_optimized_kernel(
     int r = blockIdx.x;
     if (r >= R) return;
 
-    // Load query weights to shared memory (small, reused many times)
-    extern __shared__ double smem[];
-    double* Aw_shared = smem;
+    // Shared memory layout: query weights + temp storage for popcount reduction
+    extern __shared__ char smem_bytes[];
+    double* Aw_shared = reinterpret_cast<double*>(smem_bytes);
+    unsigned long long* smem_pop = reinterpret_cast<unsigned long long*>(
+        smem_bytes + Sa * sizeof(double));
 
     for (int i = threadIdx.x; i < Sa; i += blockDim.x) {
         Aw_shared[i] = A_weights[i];
@@ -129,22 +131,30 @@ void popcount_weighted_optimized_kernel(
                 local_pop += __popcll(A_slice[w] & B_slice[w]);
             }
 
-            // Reduce popcount across warp
+            // Reduce popcount across block (all threads participate)
             local_pop = warp_reduce_sum_ull(local_pop);
 
-            // Only lane 0 accumulates
-            if ((threadIdx.x & 31) == 0) {
+            int lane = threadIdx.x & 31;
+            int wid = threadIdx.x >> 5;
+
+            if (lane == 0) smem_pop[wid] = local_pop;
+            __syncthreads();
+
+            // Final warp reduction
+            int num_warps = (blockDim.x + 31) >> 5;
+            local_pop = (threadIdx.x < num_warps) ? smem_pop[lane] : 0ULL;
+            if (wid == 0) local_pop = warp_reduce_sum_ull(local_pop);
+
+            // Only thread 0 has the final popcount, accumulate weighted sum
+            if (threadIdx.x == 0) {
                 thread_sum += (double)local_pop * wa * wb;
             }
         }
     }
 
-    // Block-level reduction
-    double block_sum = block_reduce_sum_double(thread_sum);
-
-    // Single write, no atomicAdd needed
+    // Only thread 0 has accumulated the full sum
     if (threadIdx.x == 0) {
-        out[r] = block_sum * scale_inv;
+        out[r] = thread_sum * scale_inv;
     }
 }
 
@@ -322,8 +332,8 @@ extern "C" void launch_popcount_weighted_optimized(
     // Use 256 threads per block (8 warps)
     dim3 block(256);
 
-    // Shared memory for query weights
-    size_t smem_size = Sa * sizeof(double);
+    // Shared memory: query weights + popcount reduction temp (32 warps max)
+    size_t smem_size = Sa * sizeof(double) + 32 * sizeof(unsigned long long);
 
     popcount_weighted_optimized_kernel<<<grid, block, smem_size, stream>>>(
         A_words, A_weights, Sa, W, B_words, B_weights, Sb, R, scale_inv, out);
