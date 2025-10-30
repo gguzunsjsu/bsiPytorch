@@ -88,6 +88,20 @@ extern "C" void launch_popcount_weighted_keys_literal_fused(
     double scale_inv,
     double* out_global,
     cudaStream_t stream);
+extern "C" void launch_popcount_weighted_keys_multiquery_batched(
+    const unsigned long long** A_ptrs,
+    const double** Aw_ptrs,
+    const int* Sa_arr,
+    int W,
+    const unsigned long long* B,
+    const double* Bw,
+    int Sb,
+    int Q,
+    int R,
+    const long long* indices,
+    double scale_inv,
+    double* out_global,
+    cudaStream_t stream);
 
 static bool bsi_cuda_use_tiled() {
     static int cached = -1;
@@ -600,13 +614,13 @@ void register_bsi_cuda(pybind11::module& m) {
 
             auto out_all = torch::zeros({Q, R}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
 
-            // Measure kernel time across all launches in this call
-            cudaEvent_t start_evt, end_evt;
-            cudaEventCreate(&start_evt);
-            cudaEventCreate(&end_evt);
-            auto stream = at::cuda::getCurrentCUDAStream();
-            cudaEventRecord(start_evt, stream.stream());
+            // Collect all query pointers and metadata
+            std::vector<PrebuiltBSIQueryCUDA*> queries(Q);
+            std::vector<const unsigned long long*> A_host_ptrs(Q);
+            std::vector<const double*> Aw_host_ptrs(Q);
+            std::vector<int> Sa_host(Q);
 
+            int totalDecimals = -1;
             for (int64_t qi = 0; qi < Q; ++qi) {
                 auto cap_obj = query_caps_list[qi];
                 TORCH_CHECK(pybind11::isinstance<pybind11::capsule>(cap_obj), "Each item must be a capsule");
@@ -615,42 +629,62 @@ void register_bsi_cuda(pybind11::module& m) {
                 TORCH_CHECK(query != nullptr, "Invalid BSI query capsule at index ", qi);
                 TORCH_CHECK(query->W == keys->W, "Word count mismatch between query and keys");
 
-                const auto* A = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(query->dev_words));
-                const auto* Aw = tensor_data_ptr<double>(query->slice_weights);
-                auto out_row = out_all[qi]; // [R]
+                queries[qi] = query;
+                A_host_ptrs[qi] = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(query->dev_words));
+                Aw_host_ptrs[qi] = tensor_data_ptr<double>(query->slice_weights);
+                Sa_host[qi] = query->S;
 
-                // Decimals scale (constant across keys in this layer)
-                int totalDecimals = query->device_view.decimals + keys->decimals;
-                const double scale_inv = (totalDecimals > 0) ? (1.0 / std::pow(10.0, totalDecimals)) : 1.0;
+                int td = query->device_view.decimals + keys->decimals;
+                if (totalDecimals < 0) totalDecimals = td;
+                TORCH_CHECK(totalDecimals == td, "All queries must have same decimal precision");
+            }
 
-                auto tensor_opts = torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA);
+            const double scale_inv = (totalDecimals > 0) ? (1.0 / std::pow(10.0, totalDecimals)) : 1.0;
 
-                for (const auto& kv2 : keys->grouped_indices) {
-                    int Sb = kv2.first;
-                    const auto& idxs = kv2.second;
-                    const int Rg = static_cast<int>(idxs.size());
+            // Copy pointer arrays to GPU
+            auto A_ptrs_gpu = torch::from_blob(
+                const_cast<const unsigned long long**>(A_host_ptrs.data()),
+                {Q}, torch::TensorOptions().dtype(torch::kInt64)).clone().to(torch::kCUDA);
+            auto Aw_ptrs_gpu = torch::from_blob(
+                const_cast<const double**>(Aw_host_ptrs.data()),
+                {Q}, torch::TensorOptions().dtype(torch::kInt64)).clone().to(torch::kCUDA);
+            auto Sa_gpu = torch::from_blob(
+                Sa_host.data(), {Q}, torch::TensorOptions().dtype(torch::kInt32)).clone().to(torch::kCUDA);
 
-                    const auto& words = keys->grouped_words.at(Sb);
-                    const auto& Bw_stacked = keys->grouped_weights.at(Sb);
-                    const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words));
-                    const auto* Bw_ptr = tensor_data_ptr<double>(Bw_stacked);
-                    const auto& idx_dev = keys->grouped_indices_dev.at(Sb);
+            // Measure kernel time across all launches in this call
+            cudaEvent_t start_evt, end_evt;
+            cudaEventCreate(&start_evt);
+            cudaEventCreate(&end_evt);
+            auto stream = at::cuda::getCurrentCUDAStream();
+            cudaEventRecord(start_evt, stream.stream());
 
-                    // Use fused kernel that writes directly to final output (eliminates scatter)
-                    launch_popcount_weighted_keys_literal_fused(
-                        A,
-                        Aw,
-                        query->S,
-                        query->W,
-                        B_words,
-                        Bw_ptr,
-                        Sb,
-                        Rg,
-                        reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev)),
-                        scale_inv,
-                        tensor_data_ptr<double>(out_row),
-                        stream.stream());
-                }
+            // Process all queries together for each group
+            for (const auto& kv2 : keys->grouped_indices) {
+                int Sb = kv2.first;
+                const auto& idxs = kv2.second;
+                const int Rg = static_cast<int>(idxs.size());
+
+                const auto& words = keys->grouped_words.at(Sb);
+                const auto& Bw_stacked = keys->grouped_weights.at(Sb);
+                const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words));
+                const auto* Bw_ptr = tensor_data_ptr<double>(Bw_stacked);
+                const auto& idx_dev = keys->grouped_indices_dev.at(Sb);
+
+                // Launch batched kernel that processes all Q queries at once
+                launch_popcount_weighted_keys_multiquery_batched(
+                    reinterpret_cast<const unsigned long long**>(A_ptrs_gpu.data_ptr<int64_t>()),
+                    reinterpret_cast<const double**>(Aw_ptrs_gpu.data_ptr<int64_t>()),
+                    Sa_gpu.data_ptr<int>(),
+                    queries[0]->W,
+                    B_words,
+                    Bw_ptr,
+                    Sb,
+                    Q,
+                    Rg,
+                    reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev)),
+                    scale_inv,
+                    tensor_data_ptr<double>(out_all),
+                    stream.stream());
             }
 
             cudaEventRecord(end_evt, stream.stream());
