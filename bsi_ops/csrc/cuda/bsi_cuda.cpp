@@ -76,70 +76,11 @@ extern "C" void launch_popcount_weighted_keys_literal_tiled(
     double* out,
     cudaStream_t stream);
 
-// New optimized kernels
-extern "C" void launch_popcount_weighted_optimized(
-    const unsigned long long* A_words,
-    const double* A_weights,
-    int Sa,
-    int W,
-    const unsigned long long* B_words,
-    const double* B_weights,
-    int Sb,
-    int R,
-    double scale_inv,
-    double* out,
-    cudaStream_t stream);
-
-extern "C" void launch_pack_queries_batched(
-    const long long* values,
-    int Q,
-    long long n,
-    int slices,
-    int words_per_slice,
-    unsigned long long value_mask,
-    unsigned long long* out,
-    cudaStream_t stream);
-
-extern "C" void launch_popcount_multiquery_optimized(
-    const unsigned long long* A_words,
-    const double* A_weights,
-    const int* Sa_array,
-    int Q,
-    int W,
-    const unsigned long long* B_words,
-    const double* B_weights,
-    int Sb,
-    int R,
-    double scale_inv,
-    double* out,
-    cudaStream_t stream);
-
-// Keep old kernel launchers for backward compatibility
-extern "C" void launch_pack_bits_all_ballot(
-    const long long* values,
-    long long n,
-    int slices,
-    int words_per_slice,
-    unsigned long long value_mask,
-    unsigned long long* out,
-    cudaStream_t stream);
-
 static bool bsi_cuda_use_tiled() {
     static int cached = -1;
     if (cached >= 0) return cached != 0;
     const char* v = std::getenv("BSI_TILED");
     if (!v) { cached = 1; return true; }
-    std::string s(v);
-    for (auto& c : s) c = (char)std::tolower(c);
-    cached = (s == "1" || s == "true" || s == "yes") ? 1 : 0;
-    return cached != 0;
-}
-
-static bool bsi_cuda_use_optimized() {
-    static int cached = -1;
-    if (cached >= 0) return cached != 0;
-    const char* v = std::getenv("BSI_OPTIMIZED");
-    if (!v) { cached = 1; return true; }  // Default to optimized
     std::string s(v);
     for (auto& c : s) c = (char)std::tolower(c);
     cached = (s == "1" || s == "true" || s == "yes") ? 1 : 0;
@@ -482,8 +423,6 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
     cudaEventCreate(&end_evt);
     cudaEventRecord(start_evt, stream.stream());
 
-    bool use_optimized = bsi_cuda_use_optimized();
-
     for (const auto& kv : keys->grouped_indices) {
         int Sb = kv.first;
         const auto& idxs = kv.second;
@@ -495,9 +434,14 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
         const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words));
         const auto* Bw_ptr = tensor_data_ptr<double>(Bw_stacked);
 
-        if (use_optimized) {
-            // Use new optimized kernel (vectorized, no atomicAdd, better memory access)
-            launch_popcount_weighted_optimized(
+        bool use_tiled = bsi_cuda_use_tiled();
+        int tile_size = 64;
+        if (const char* s = std::getenv("BSI_TILE_W")) {
+            int t = std::atoi(s);
+            if (t > 0) tile_size = t;
+        }
+        if (!use_tiled || query->W <= tile_size) {
+            launch_popcount_weighted_keys_literal(
                 query_words,
                 query_weights,
                 query->S,
@@ -510,42 +454,20 @@ static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule qu
                 tensor_data_ptr<double>(out_slice),
                 stream.stream());
         } else {
-            // Fallback to old tiled/literal kernels
-            bool use_tiled = bsi_cuda_use_tiled();
-            int tile_size = 64;
-            if (const char* s = std::getenv("BSI_TILE_W")) {
-                int t = std::atoi(s);
-                if (t > 0) tile_size = t;
-            }
-            if (!use_tiled || query->W <= tile_size) {
-                launch_popcount_weighted_keys_literal(
-                    query_words,
-                    query_weights,
-                    query->S,
-                    query->W,
-                    B_words,
-                    Bw_ptr,
-                    Sb,
-                    R,
-                    scale_inv,
-                    tensor_data_ptr<double>(out_slice),
-                    stream.stream());
-            } else {
-                tile_size = std::min(tile_size, query->W);
-                launch_popcount_weighted_keys_literal_tiled(
-                    query_words,
-                    query_weights,
-                    query->S,
-                    query->W,
-                    B_words,
-                    Bw_ptr,
-                    Sb,
-                    R,
-                    tile_size,
-                    scale_inv,
-                    tensor_data_ptr<double>(out_slice),
-                    stream.stream());
-            }
+            tile_size = std::min(tile_size, query->W);
+            launch_popcount_weighted_keys_literal_tiled(
+                query_words,
+                query_weights,
+                query->S,
+                query->W,
+                B_words,
+                Bw_ptr,
+                Sb,
+                R,
+                tile_size,
+                scale_inv,
+                tensor_data_ptr<double>(out_slice),
+                stream.stream());
         }
 
         const auto& idx_dev = keys->grouped_indices_dev.at(Sb);
@@ -655,86 +577,6 @@ void register_bsi_cuda(pybind11::module& m) {
           "Batch dot using CUDA popcount kernel with prebuilt query and key capsules");
 
     // Batched multi-query variant: process a Python list of query capsules in one call
-    // Expose batched query builder for multi-query optimization
-    m.def("build_bsi_queries_batched_cuda", [](torch::Tensor queries, int decimalPlaces, float compress_threshold) {
-        TORCH_CHECK(queries.dim() == 2, "queries must be 2D [Q, d]");
-        int Q = queries.size(0);
-        int d = queries.size(1);
-
-        auto device = torch::Device(torch::kCUDA, c10::cuda::current_device());
-
-        // Quantize all queries to int64 on GPU
-        auto queries_gpu = queries.to(device, torch::kFloat32, /*non_blocking=*/true).contiguous();
-        std::vector<torch::Tensor> scaled_queries;
-        scaled_queries.reserve(Q);
-
-        for (int q = 0; q < Q; ++q) {
-            auto query = queries_gpu[q];
-            auto scaled = bsi_cuda_quantize_to_int64(query, decimalPlaces, device);
-            scaled_queries.push_back(scaled);
-        }
-
-        // Build BSI metadata for first query to determine slices and words
-        bool any_non_zero = scaled_queries[0].ne(0).any().item<bool>();
-        bool has_negative = scaled_queries[0].lt(0).any().item<bool>();
-        long long max_abs = any_non_zero ? scaled_queries[0].abs().max().item<int64_t>() : 0;
-
-        int magnitude_bits = any_non_zero
-            ? std::max(1, static_cast<int>(std::bit_width(static_cast<unsigned long long>(max_abs))))
-            : 1;
-        int total_slices = std::min(64, magnitude_bits + 2);
-        if (!any_non_zero) total_slices = 2;
-
-        int stored_slices = std::max(1, total_slices);
-        int words_per_slice = d > 0 ? static_cast<int>((d + 63) / 64) : 1;
-
-        // Allocate output for all queries: [Q, slices, words_per_slice]
-        auto all_words = torch::zeros({Q, stored_slices, words_per_slice},
-                                     torch::TensorOptions().dtype(torch::kInt64).device(device));
-
-        // Build each query individually for now (can be further optimized)
-        auto stream = at::cuda::getCurrentCUDAStream();
-        for (int q = 0; q < Q; ++q) {
-            unsigned long long value_mask = (stored_slices >= 64) ? ~0ULL : ((1ULL << stored_slices) - 1ULL);
-            auto query_out = all_words[q];
-
-            launch_pack_bits_all_ballot(
-                reinterpret_cast<const long long*>(scaled_queries[q].data_ptr<int64_t>()),
-                static_cast<long long>(d),
-                stored_slices,
-                words_per_slice,
-                value_mask,
-                reinterpret_cast<unsigned long long*>(query_out.data_ptr<int64_t>()),
-                stream.stream());
-        }
-
-        // Create capsules for all queries
-        pybind11::list capsule_list;
-        for (int q = 0; q < Q; ++q) {
-            auto* holder = new PrebuiltBSIQueryCUDA();
-            holder->vec = nullptr;
-            holder->S = stored_slices;
-            holder->W = words_per_slice;
-            holder->dev_words = all_words[q].contiguous();
-            holder->slice_weights = make_slice_weights_cuda(stored_slices, 0, has_negative);
-            holder->mem_bytes = static_cast<size_t>(holder->dev_words.numel() * holder->dev_words.element_size());
-
-            pybind11::capsule cap(holder, "PrebuiltBSIQueryCUDA",
-                [](PyObject* capsule) {
-                    auto* p = reinterpret_cast<PrebuiltBSIQueryCUDA*>(PyCapsule_GetPointer(capsule, "PrebuiltBSIQueryCUDA"));
-                    if (p) {
-                        delete p->vec;
-                        delete p;
-                    }
-                }
-            );
-            capsule_list.append(cap);
-        }
-
-        return capsule_list;
-    }, pybind11::arg("queries"), pybind11::arg("decimal_places"), pybind11::arg("compress_threshold") = 0.2f,
-       "Build multiple BSI query vectors in batch on CUDA; returns list of capsules");
-
     m.def("batch_dot_product_multiquery_cuda_caps",
         [](pybind11::list query_caps_list, pybind11::capsule keyset_cuda_cap) {
             auto* keys = capsule_to_keys_cuda(keyset_cuda_cap);
@@ -770,8 +612,6 @@ void register_bsi_cuda(pybind11::module& m) {
 
                 auto tensor_opts = torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA);
 
-                bool use_optimized_inner = bsi_cuda_use_optimized();
-
                 for (const auto& kv2 : keys->grouped_indices) {
                     int Sb = kv2.first;
                     const auto& idxs = kv2.second;
@@ -783,9 +623,14 @@ void register_bsi_cuda(pybind11::module& m) {
                     const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words));
                     const auto* Bw_ptr = tensor_data_ptr<double>(Bw_stacked);
 
-                    if (use_optimized_inner) {
-                        // Use optimized kernel
-                        launch_popcount_weighted_optimized(
+                    bool use_tiled = bsi_cuda_use_tiled();
+                    int tile_size = 64;
+                    if (const char* s = std::getenv("BSI_TILE_W")) {
+                        int t = std::atoi(s);
+                        if (t > 0) tile_size = t;
+                    }
+                    if (!use_tiled || query->W <= tile_size) {
+                        launch_popcount_weighted_keys_literal(
                             A,
                             Aw,
                             query->S,
@@ -798,42 +643,20 @@ void register_bsi_cuda(pybind11::module& m) {
                             tensor_data_ptr<double>(out_slice),
                             stream.stream());
                     } else {
-                        // Fallback to old kernels
-                        bool use_tiled = bsi_cuda_use_tiled();
-                        int tile_size = 64;
-                        if (const char* s = std::getenv("BSI_TILE_W")) {
-                            int t = std::atoi(s);
-                            if (t > 0) tile_size = t;
-                        }
-                        if (!use_tiled || query->W <= tile_size) {
-                            launch_popcount_weighted_keys_literal(
-                                A,
-                                Aw,
-                                query->S,
-                                query->W,
-                                B_words,
-                                Bw_ptr,
-                                Sb,
-                                Rg,
-                                scale_inv,
-                                tensor_data_ptr<double>(out_slice),
-                                stream.stream());
-                        } else {
-                            tile_size = std::min(tile_size, query->W);
-                            launch_popcount_weighted_keys_literal_tiled(
-                                A,
-                                Aw,
-                                query->S,
-                                query->W,
-                                B_words,
-                                Bw_ptr,
-                                Sb,
-                                Rg,
-                                tile_size,
-                                scale_inv,
-                                tensor_data_ptr<double>(out_slice),
-                                stream.stream());
-                        }
+                        tile_size = std::min(tile_size, query->W);
+                        launch_popcount_weighted_keys_literal_tiled(
+                            A,
+                            Aw,
+                            query->S,
+                            query->W,
+                            B_words,
+                            Bw_ptr,
+                            Sb,
+                            Rg,
+                            tile_size,
+                            scale_inv,
+                            tensor_data_ptr<double>(out_slice),
+                            stream.stream());
                     }
 
                     const auto& idx_dev = keys->grouped_indices_dev.at(Sb);
