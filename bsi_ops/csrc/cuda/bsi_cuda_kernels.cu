@@ -1,4 +1,3 @@
-// Minimal CUDA kernels for BSI operations (verbatim words popcount)
 #include <cuda_runtime.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -370,6 +369,113 @@ extern "C" void launch_popcount_weighted_keys_literal_tiled(
     size_t shmem = (size_t)Sa * (size_t)tile_size * sizeof(unsigned long long);
     popcount_weighted_keys_literal_tiled_kernel<<<grid, block, shmem, stream>>>(
         A, Aw, Sa, W, B, Bw, Sb, R, tile_size, scale_inv, out);
+}
+
+// Fused version: write directly to indexed output (eliminates scatter kernel)
+// Optimized with: async loads, minimal divergence, efficient shared memory
+extern "C" __global__
+void popcount_weighted_keys_literal_fused_kernel(
+    const unsigned long long* __restrict__ A,
+    const double* __restrict__ Aw,
+    int Sa,
+    int W,
+    const unsigned long long* __restrict__ B,
+    const double* __restrict__ Bw,
+    int Sb,
+    int R,
+    const long long* __restrict__ indices,
+    double scale_inv,
+    double* __restrict__ out_global)
+{
+    int r = blockIdx.x;
+    if (r >= R) return;
+
+    // Pre-load global index to avoid redundant memory access
+    long long global_idx = __ldg(&indices[r]);
+
+    double local = 0.0;
+    long long total = (long long)Sa * (long long)Sb * (long long)W;
+
+    // Main computation loop - use async global loads (__ldg for read-only data)
+    for (long long idx = threadIdx.x; idx < total; idx += blockDim.x) {
+        // Keep original indexing for parallelism
+        int i = static_cast<int>(idx / (Sb * (long long)W));
+        int rem = static_cast<int>(idx % (Sb * (long long)W));
+        int j = rem / W;
+        int w = rem % W;
+
+        const unsigned long long* ai = A + (size_t)i * W;
+        const unsigned long long* bj = B + ((size_t)r * Sb + j) * W;
+
+        // Use __ldg for read-only cached loads (L1 cache)
+        unsigned long long a_val = __ldg(&ai[w]);
+        unsigned long long b_val = __ldg(&bj[w]);
+        int cnt = __popcll(a_val & b_val);
+
+        // Pre-load weights
+        double aw = __ldg(&Aw[i]);
+        double bw = __ldg(&Bw[(size_t)r * Sb + j]);
+
+        local += (double)cnt * aw * bw;
+    }
+
+    // Warp-level reduction (no divergence within warp)
+    local = warp_reduce_sum_double(local);
+
+    // Block-level reduction using shared memory
+    __shared__ double warp_buf[32];
+    const int lane = threadIdx.x & 31;
+    const int warp_id = threadIdx.x >> 5;
+
+    // Only lane 0 of each warp writes (no divergence)
+    if (lane == 0) {
+        warp_buf[warp_id] = local;
+    }
+    __syncthreads();
+
+    // Final reduction in first warp (minimal divergence)
+    if (warp_id == 0) {
+        int num_warps = (blockDim.x + 31) >> 5;
+        double val = (lane < num_warps) ? warp_buf[lane] : 0.0;
+        val = warp_reduce_sum_double(val);
+
+        // Single thread writes final result
+        if (lane == 0) {
+            out_global[global_idx] = val * scale_inv;
+        }
+    }
+}
+
+extern "C" void launch_popcount_weighted_keys_literal_fused(
+    const unsigned long long* A,
+    const double* Aw,
+    int Sa,
+    int W,
+    const unsigned long long* B,
+    const double* Bw,
+    int Sb,
+    int R,
+    const long long* indices,
+    double scale_inv,
+    double* out_global,
+    cudaStream_t stream)
+{
+    static int cached_block = 0;
+    if (cached_block == 0) {
+        int v = 256;
+        if (const char* s = getenv("BSI_CK_BLOCK")) {
+            int t = atoi(s);
+            if (t > 0) v = t;
+        }
+        if (v < 64) v = 64;
+        if (v > 1024) v = 1024;
+        cached_block = (v / 32) * 32;
+        if (cached_block == 0) cached_block = 32;
+    }
+    dim3 grid(R);
+    dim3 block(cached_block);
+    popcount_weighted_keys_literal_fused_kernel<<<grid, block, 0, stream>>>(
+        A, Aw, Sa, W, B, Bw, Sb, R, indices, scale_inv, out_global);
 }
 
 extern "C" void launch_ewah_decompress(
