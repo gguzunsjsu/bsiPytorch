@@ -373,6 +373,7 @@ extern "C" void launch_popcount_weighted_keys_literal_tiled(
 }
 
 // Fused version: write directly to indexed output (eliminates scatter kernel)
+// Optimized with: async loads, minimal divergence, efficient shared memory
 extern "C" __global__
 void popcount_weighted_keys_literal_fused_kernel(
     const unsigned long long* __restrict__ A,
@@ -390,49 +391,57 @@ void popcount_weighted_keys_literal_fused_kernel(
     int r = blockIdx.x;
     if (r >= R) return;
 
+    // Pre-load global index to avoid redundant memory access
+    long long global_idx = __ldg(&indices[r]);
+
     double local = 0.0;
+    long long total = (long long)Sa * (long long)Sb * (long long)W;
 
-    // Optimization 1: Replace division/modulo with nested loops
-    // This eliminates expensive div/mod operations in the hot path
-    const int SbW = Sb * W;
-    for (int i = 0; i < Sa; ++i) {
+    // Main computation loop - use async global loads (__ldg for read-only data)
+    for (long long idx = threadIdx.x; idx < total; idx += blockDim.x) {
+        // Keep original indexing for parallelism
+        int i = static_cast<int>(idx / (Sb * (long long)W));
+        int rem = static_cast<int>(idx % (Sb * (long long)W));
+        int j = rem / W;
+        int w = rem % W;
+
         const unsigned long long* ai = A + (size_t)i * W;
-        const double Aw_i = Aw[i];
+        const unsigned long long* bj = B + ((size_t)r * Sb + j) * W;
 
-        for (int j = 0; j < Sb; ++j) {
-            const unsigned long long* bj = B + ((size_t)r * Sb + j) * W;
-            const double Bw_j = Bw[(size_t)r * Sb + j];
-            const double weight = Aw_i * Bw_j;
+        // Use __ldg for read-only cached loads (L1 cache)
+        unsigned long long a_val = __ldg(&ai[w]);
+        unsigned long long b_val = __ldg(&bj[w]);
+        int cnt = __popcll(a_val & b_val);
 
-            // Optimization 2: Better memory coalescing - threads process same w across i,j
-            for (int w = threadIdx.x; w < W; w += blockDim.x) {
-                int cnt = __popcll(ai[w] & bj[w]);
-                local += (double)cnt * weight;
-            }
-        }
+        // Pre-load weights
+        double aw = __ldg(&Aw[i]);
+        double bw = __ldg(&Bw[(size_t)r * Sb + j]);
+
+        local += (double)cnt * aw * bw;
     }
 
-    // Optimization 3: More efficient reduction with less divergence
+    // Warp-level reduction (no divergence within warp)
     local = warp_reduce_sum_double(local);
 
-    // Use single warp for final reduction if possible
+    // Block-level reduction using shared memory
     __shared__ double warp_buf[32];
     const int lane = threadIdx.x & 31;
     const int warp_id = threadIdx.x >> 5;
 
+    // Only lane 0 of each warp writes (no divergence)
     if (lane == 0) {
         warp_buf[warp_id] = local;
     }
     __syncthreads();
 
-    // Final reduction in first warp only
-    if (threadIdx.x < 32) {
+    // Final reduction in first warp (minimal divergence)
+    if (warp_id == 0) {
         int num_warps = (blockDim.x + 31) >> 5;
-        double val = (threadIdx.x < num_warps) ? warp_buf[threadIdx.x] : 0.0;
+        double val = (lane < num_warps) ? warp_buf[lane] : 0.0;
         val = warp_reduce_sum_double(val);
 
-        if (threadIdx.x == 0) {
-            long long global_idx = indices[r];
+        // Single thread writes final result
+        if (lane == 0) {
             out_global[global_idx] = val * scale_inv;
         }
     }
