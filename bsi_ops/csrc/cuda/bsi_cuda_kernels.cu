@@ -391,31 +391,50 @@ void popcount_weighted_keys_literal_fused_kernel(
     if (r >= R) return;
 
     double local = 0.0;
-    long long total = (long long)Sa * (long long)Sb * (long long)W;
-    for (long long idx = threadIdx.x; idx < total; idx += blockDim.x) {
-        int i = static_cast<int>(idx / (Sb * (long long)W));
-        int rem = static_cast<int>(idx % (Sb * (long long)W));
-        int j = rem / W;
-        int w = rem % W;
+
+    // Optimization 1: Replace division/modulo with nested loops
+    // This eliminates expensive div/mod operations in the hot path
+    const int SbW = Sb * W;
+    for (int i = 0; i < Sa; ++i) {
         const unsigned long long* ai = A + (size_t)i * W;
-        const unsigned long long* bj = B + ((size_t)r * Sb + j) * W;
-        int cnt = __popcll(ai[w] & bj[w]);
-        local += (double)cnt * Aw[i] * Bw[(size_t)r * Sb + j];
+        const double Aw_i = Aw[i];
+
+        for (int j = 0; j < Sb; ++j) {
+            const unsigned long long* bj = B + ((size_t)r * Sb + j) * W;
+            const double Bw_j = Bw[(size_t)r * Sb + j];
+            const double weight = Aw_i * Bw_j;
+
+            // Optimization 2: Better memory coalescing - threads process same w across i,j
+            for (int w = threadIdx.x; w < W; w += blockDim.x) {
+                int cnt = __popcll(ai[w] & bj[w]);
+                local += (double)cnt * weight;
+            }
+        }
     }
 
+    // Optimization 3: More efficient reduction with less divergence
     local = warp_reduce_sum_double(local);
+
+    // Use single warp for final reduction if possible
     __shared__ double warp_buf[32];
-    if ((threadIdx.x & 31) == 0) warp_buf[threadIdx.x >> 5] = local;
-    __syncthreads();
-    double total_acc = 0.0;
-    if (threadIdx.x < 32) {
-        int num_warps = blockDim.x >> 5;
-        total_acc = (threadIdx.x < num_warps) ? warp_buf[threadIdx.x] : 0.0;
-        total_acc = warp_reduce_sum_double(total_acc);
+    const int lane = threadIdx.x & 31;
+    const int warp_id = threadIdx.x >> 5;
+
+    if (lane == 0) {
+        warp_buf[warp_id] = local;
     }
-    if (threadIdx.x == 0) {
-        long long global_idx = indices[r];
-        out_global[global_idx] = total_acc * scale_inv;
+    __syncthreads();
+
+    // Final reduction in first warp only
+    if (threadIdx.x < 32) {
+        int num_warps = (blockDim.x + 31) >> 5;
+        double val = (threadIdx.x < num_warps) ? warp_buf[threadIdx.x] : 0.0;
+        val = warp_reduce_sum_double(val);
+
+        if (threadIdx.x == 0) {
+            long long global_idx = indices[r];
+            out_global[global_idx] = val * scale_inv;
+        }
     }
 }
 
