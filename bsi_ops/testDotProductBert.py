@@ -61,8 +61,8 @@ with open(output_text_file, 'w') as text_file:
         k_flat_histograms.append(K_flat.detach().numpy())
 
 
-        # Print the shape and size of  of the flattened tensors
-        print(f"Layer {i} - Q shape: {Q_flat.shape}, K shape: {K_flat.shape}, V shape: {V_flat.shape}")
+        # Print the shape
+        print(f"\nLayer {i} - Q shape: {Q_flat.shape}, K shape: {K_flat.shape}")
 
         compress_threshold = 0.2
         q_stats = bsi_ops.tensor_slice_stats(Q_flat, decimal_places, compress_threshold)
@@ -130,8 +130,13 @@ with open(output_text_file, 'w') as text_file:
         bsi_values.append(res)
         normal_values.append(torch_res.detach().numpy())
         percentage_error_values.append(percentage_error.detach().numpy())
-        print(f"Length of layer numbers {len(vector_exec_times)}")
-        print('BERT normalized Q and K dot product::: bsi:', res, 'normal:',torch_res)
+
+        # Print results in clean format
+        print(f"  Torch result (ground truth): {torch_res.item():.10f}")
+        print(f"  BSI CPU result:              {res:.10f}  (error: {percentage_error.item():.4f}%)")
+        print(f"  BSI CPU time:                {custom_avg_time*1000:.4f} ms")
+        print(f"  C++ vector time:             {vector_dot_product_avg_timeTaken*1000:.4f} ms")
+        print(f"  Torch time:                  {torch_avg_time*1000:.4f} ms")
 
         text_file.write(f"Layer {i} - Q shape: {Q.shape}, K shape: {K.shape}, V shape: {V.shape}\n")
         text_file.write(f"Bits used by Q_flat: {Q_bits_used}, K_flat: {K_bits_used}, V_flat: {V_bits_used}\n")
@@ -185,39 +190,39 @@ with open(output_text_file, 'w') as text_file:
         })
 print(f"Results saved to {output_text_file}")
 
-if layer_compression_summary:
-    total_compressed = sum(entry["total"][0] for entry in layer_compression_summary)
-    total_slices = sum(entry["total"][1] for entry in layer_compression_summary)
-    overall_pct = (total_compressed * 100.0 / total_slices) if total_slices else 0.0
-    print("\n=== Compression Summary ===")
-    for entry in layer_compression_summary:
-        layer = entry["layer"]
-        compressed, total = entry["total"]
-        pct = (compressed * 100.0 / total) if total else 0.0
-        print(
-            f"Layer {layer}: {compressed}/{total} ({pct:.2f}%) | "
-            f"Q {entry['q'][0]}/{entry['q'][1]}, "
-            f"K {entry['k'][0]}/{entry['k'][1]}, V {entry['v'][0]}/{entry['v'][1]}"
-        )
-    print(
-        f"Overall compressed slices: {total_compressed}/{total_slices} "
-        f"({overall_pct:.2f}%)"
-    )
-    with open(output_text_file, 'a') as summary_file:
-        summary_file.write("=== Compression Summary ===\n")
-        for entry in layer_compression_summary:
-            layer = entry["layer"]
-            compressed, total = entry["total"]
-            pct = (compressed * 100.0 / total) if total else 0.0
-            summary_file.write(
-                f"Layer {layer}: {compressed}/{total} ({pct:.2f}%) | "
-                f"Q {entry['q'][0]}/{entry['q'][1]}, "
-                f"K {entry['k'][0]}/{entry['k'][1]}, V {entry['v'][0]}/{entry['v'][1]}\n"
-            )
-        summary_file.write(
-            f"Overall compressed slices: {total_compressed}/{total_slices} "
-            f"({overall_pct:.2f}%)\n\n"
-        )
+# if layer_compression_summary:
+#     total_compressed = sum(entry["total"][0] for entry in layer_compression_summary)
+#     total_slices = sum(entry["total"][1] for entry in layer_compression_summary)
+#     overall_pct = (total_compressed * 100.0 / total_slices) if total_slices else 0.0
+#     print("\n=== Compression Summary ===")
+#     for entry in layer_compression_summary:
+#         layer = entry["layer"]
+#         compressed, total = entry["total"]
+#         pct = (compressed * 100.0 / total) if total else 0.0
+#         print(
+#             f"Layer {layer}: {compressed}/{total} ({pct:.2f}%) | "
+#             f"Q {entry['q'][0]}/{entry['q'][1]}, "
+#             f"K {entry['k'][0]}/{entry['k'][1]}, V {entry['v'][0]}/{entry['v'][1]}"
+#         )
+#     print(
+#         f"Overall compressed slices: {total_compressed}/{total_slices} "
+#         f"({overall_pct:.2f}%)"
+#     )
+#     with open(output_text_file, 'a') as summary_file:
+#         summary_file.write("=== Compression Summary ===\n")
+#         for entry in layer_compression_summary:
+#             layer = entry["layer"]
+#             compressed, total = entry["total"]
+#             pct = (compressed * 100.0 / total) if total else 0.0
+#             summary_file.write(
+#                 f"Layer {layer}: {compressed}/{total} ({pct:.2f}%) | "
+#                 f"Q {entry['q'][0]}/{entry['q'][1]}, "
+#                 f"K {entry['k'][0]}/{entry['k'][1]}, V {entry['v'][0]}/{entry['v'][1]}\n"
+#             )
+#         summary_file.write(
+#             f"Overall compressed slices: {total_compressed}/{total_slices} "
+#             f"({overall_pct:.2f}%)\n\n"
+#         )
 
 #Create visualization
 # layer_numbers = list(range(1, 7))

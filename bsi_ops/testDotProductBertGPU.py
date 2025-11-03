@@ -51,38 +51,39 @@ with open(output_file, 'w') as f:
         # Ground truth: PyTorch dot product
         torch_result = torch.dot(Q_flat, K_flat).item()
 
-        # Test THREE methods:
-        # 1. GPU two-stage (CPU-compatible): dot_product_decimal_cuda
-        # 2. GPU fused (model uses this): batch_dot_product_multiquery_cuda_caps
-        # 3. PyTorch baseline
+        # BUILD ONCE (outside timing)
+        print("  Building BSI structures (one-time)...")
+        cpu_compat_result, dot_ns, q_mem, k_mem = bsi_ops.dot_product_decimal_cuda(
+            Q_flat, K_flat, decimal_places
+        )
 
+        q_capsule, q_mem_fused, q_slices, q_words = bsi_ops.build_bsi_query_cuda(
+            Q_flat, decimal_places, compress_threshold
+        )
+        k_capsule, k_mem_fused, k_num_keys, k_dim, k_words = bsi_ops.build_bsi_keys_cuda(
+            K_flat.unsqueeze(0),
+            decimal_places,
+            compress_threshold
+        )
+
+        # NOW TIME ONLY THE DOT KERNEL
         cpu_compat_times = []
         fused_times = []
         torch_times = []
 
         for run in range(num_runs):
-            # Method 1: GPU two-stage (apples-to-apples with CPU test)
-            start = time.perf_counter()
-            cpu_compat_result, dot_ns, q_mem, k_mem = bsi_ops.dot_product_decimal_cuda(
+            # Method 1: GPU two-stage - ONLY popcount kernel time (from CUDA events)
+            cpu_compat_result, dot_ns, _, _ = bsi_ops.dot_product_decimal_cuda(
                 Q_flat, K_flat, decimal_places
             )
-            cpu_compat_times.append((time.perf_counter() - start) * 1000)
+            cpu_compat_times.append(dot_ns / 1e6)  # ns to ms
 
-            # Method 2: GPU fused kernel (what the model actually uses)
-            start = time.perf_counter()
-            q_capsule, q_mem_fused, q_slices, q_words = bsi_ops.build_bsi_query_cuda(
-                Q_flat, decimal_places, compress_threshold
-            )
-            k_capsule, k_mem_fused, k_num_keys, k_dim, k_words = bsi_ops.build_bsi_keys_cuda(
-                K_flat.unsqueeze(0),
-                decimal_places,
-                compress_threshold
-            )
+            # Method 2: GPU fused kernel - ONLY kernel time (from CUDA events)
             result_tensor, dot_ns_fused = bsi_ops.batch_dot_product_multiquery_cuda_caps(
                 [q_capsule], k_capsule
             )
             fused_result = result_tensor[0, 0].item()
-            fused_times.append((time.perf_counter() - start) * 1000)
+            fused_times.append(dot_ns_fused / 1e6)  # ns to ms
 
             # Method 3: PyTorch baseline
             start = time.perf_counter()
