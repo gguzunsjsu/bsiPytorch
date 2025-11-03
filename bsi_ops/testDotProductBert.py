@@ -76,22 +76,22 @@ with open(output_text_file, 'w') as text_file:
         layer_total_slices = q_summary[1] + k_summary[1] + v_summary[1]
         layer_total_pct = (layer_total_compressed * 100.0 / layer_total_slices) if layer_total_slices else 0.0
 
-        print(
-            f"  Q compressed: {q_stats['compressed_pct']:.2f}% "
-            f"({q_summary[0]}/{q_summary[1]})"
-        )
-        print(
-            f"  K compressed: {k_stats['compressed_pct']:.2f}% "
-            f"({k_summary[0]}/{k_summary[1]})"
-        )
-        print(
-            f"  V compressed: {v_stats['compressed_pct']:.2f}% "
-            f"({v_summary[0]}/{v_summary[1]})"
-        )
-        print(
-            f"  Layer total compressed: {layer_total_pct:.2f}% "
-            f"({layer_total_compressed}/{layer_total_slices})"
-        )
+        # print(
+        #     f"  Q compressed: {q_stats['compressed_pct']:.2f}% "
+        #     f"({q_summary[0]}/{q_summary[1]})"
+        # )
+        # print(
+        #     f"  K compressed: {k_stats['compressed_pct']:.2f}% "
+        #     f"({k_summary[0]}/{k_summary[1]})"
+        # )
+        # print(
+        #     f"  V compressed: {v_stats['compressed_pct']:.2f}% "
+        #     f"({v_summary[0]}/{v_summary[1]})"
+        # )
+        # print(
+        #     f"  Layer total compressed: {layer_total_pct:.2f}% "
+        #     f"({layer_total_compressed}/{layer_total_slices})"
+        # )
         # Calculate the total size of each tensor in bytes using sys.getsizeof
         Q_size = Q_flat.nelement() * Q_flat.element_size() #storage() is being deprecated. so used untyped_storage()
         K_size = K_flat.nelement() * K_flat.element_size()
