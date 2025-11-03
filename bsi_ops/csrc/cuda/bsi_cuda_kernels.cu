@@ -77,6 +77,73 @@ extern "C" void launch_scatter_set_double(
     scatter_set_double_kernel<<<blocks, threads, 0, stream>>>(idx, src, n, out);
 }
 
+extern "C" __global__
+void weighted_reduction_kernel(
+    const unsigned long long* __restrict__ counts,
+    const double* __restrict__ Aw,
+    const double* __restrict__ Bw,
+    int Sa, int Sb, int R,
+    const long long* __restrict__ indices,
+    double scale_inv,
+    double* __restrict__ out_global)
+{
+    int r = blockIdx.x;
+    if (r >= R) return;
+
+    long long out_idx = __ldg(&indices[r]);
+    const unsigned long long* counts_r = counts + (size_t)r * Sb * Sa;
+    const double* Bw_r = Bw + (size_t)r * Sb;
+
+    double local_sum = 0.0;
+    int total_pairs = Sa * Sb;
+
+    for (int ij = threadIdx.x; ij < total_pairs; ij += blockDim.x) {
+        int i = ij / Sb;
+        int j = ij % Sb;
+
+        unsigned long long cnt = counts_r[j * Sa + i];
+        double aw = __ldg(&Aw[i]);
+        double bw = __ldg(&Bw_r[j]);
+
+        local_sum += (double)cnt * aw * bw;
+    }
+
+    local_sum = warp_reduce_sum_double(local_sum);
+
+    __shared__ double smem[32];
+    int warp_id = threadIdx.x >> 5;
+
+    if ((threadIdx.x & 31) == 0) {
+        smem[warp_id] = local_sum;
+    }
+    __syncthreads();
+
+    if (warp_id == 0) {
+        int num_warps = (blockDim.x + 31) >> 5;
+        double val = (threadIdx.x < num_warps) ? smem[threadIdx.x] : 0.0;
+        val = warp_reduce_sum_double(val);
+        if (threadIdx.x == 0) {
+            out_global[out_idx] = val * scale_inv;
+        }
+    }
+}
+
+extern "C" void launch_weighted_reduction(
+    const unsigned long long* counts,
+    const double* Aw,
+    const double* Bw,
+    int Sa, int Sb, int R,
+    const long long* indices,
+    double scale_inv,
+    double* out_global,
+    cudaStream_t stream)
+{
+    dim3 grid(R);
+    dim3 block(256);
+    weighted_reduction_kernel<<<grid, block, 0, stream>>>(
+        counts, Aw, Bw, Sa, Sb, R, indices, scale_inv, out_global);
+}
+
 // EWAH decompress: interpret buffer of RLWs and literal words into W literal words.
 // Assumes u64 words and runninglengthbits = 32, literalbits = 31.
 extern "C" __global__

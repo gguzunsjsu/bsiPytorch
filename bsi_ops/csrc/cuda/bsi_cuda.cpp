@@ -33,6 +33,16 @@ extern "C" void launch_popcount_pairwise(
     unsigned long long* out,
     cudaStream_t stream);
 
+extern "C" void launch_weighted_reduction(
+    const unsigned long long* counts,
+    const double* Aw,
+    const double* Bw,
+    int Sa, int Sb, int R,
+    const long long* indices,
+    double scale_inv,
+    double* out_global,
+    cudaStream_t stream);
+
 extern "C" void launch_ewah_decompress(
     const unsigned long long* in,
     int in_len,
@@ -574,6 +584,93 @@ static torch::Tensor debug_bsi_query_hybrid_decompress(pybind11::capsule query_c
     return cpu;
 }
 
+static pybind11::tuple batch_dot_product_two_stage_cuda_caps(pybind11::list query_caps_list, pybind11::capsule keyset_cuda_cap) {
+    auto* keys = capsule_to_keys_cuda(keyset_cuda_cap);
+    TORCH_CHECK(keys != nullptr, "Invalid CUDA keys capsule");
+    const int64_t R = keys->num_keys;
+    const int64_t Q = static_cast<int64_t>(pybind11::len(query_caps_list));
+    TORCH_CHECK(R > 0 && Q > 0, "Empty keys or queries");
+
+    auto out_all = torch::zeros({Q, R}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
+
+    cudaEvent_t start_evt, end_evt;
+    cudaEventCreate(&start_evt);
+    cudaEventCreate(&end_evt);
+    auto stream = at::cuda::getCurrentCUDAStream();
+    cudaEventRecord(start_evt, stream.stream());
+
+    for (int64_t qi = 0; qi < Q; ++qi) {
+        auto cap_obj = query_caps_list[qi];
+        TORCH_CHECK(pybind11::isinstance<pybind11::capsule>(cap_obj), "Each item must be a capsule");
+        auto cap = pybind11::cast<pybind11::capsule>(cap_obj);
+        auto* query = capsule_to_query_cuda(cap);
+        TORCH_CHECK(query != nullptr, "Invalid BSI query capsule at index ", qi);
+        TORCH_CHECK(query->W == keys->W, "Word count mismatch between query and keys");
+
+        const auto* A = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(query->dev_words));
+        const auto* Aw = tensor_data_ptr<double>(query->slice_weights);
+        auto out_row = out_all[qi];
+
+        int totalDecimals = query->device_view.decimals + keys->decimals;
+        const double scale_inv = (totalDecimals > 0) ? (1.0 / std::pow(10.0, totalDecimals)) : 1.0;
+
+        for (const auto& kv2 : keys->grouped_indices) {
+            int Sb = kv2.first;
+            const auto& idxs = kv2.second;
+            const int Rg = static_cast<int>(idxs.size());
+
+            const auto& words = keys->grouped_words.at(Sb);
+            const auto& Bw_stacked = keys->grouped_weights.at(Sb);
+            const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words));
+            const auto* Bw_ptr = tensor_data_ptr<double>(Bw_stacked);
+            const auto& idx_dev = keys->grouped_indices_dev.at(Sb);
+
+            // Allocate counts buffer: [Rg, Sb, Sa]
+            auto counts = torch::empty({Rg, Sb, query->S},
+                torch::TensorOptions().dtype(torch::kInt64).device(torch::kCUDA));
+            auto* counts_ptr = reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(counts));
+
+            // Stage 1: Popcount for all (r, j, i) combinations
+            for (int r = 0; r < Rg; ++r) {
+                const unsigned long long* B_r = B_words + (size_t)r * Sb * query->W;
+                unsigned long long* counts_r = counts_ptr + (size_t)r * Sb * query->S;
+
+                launch_popcount_pairwise(
+                    A,
+                    B_r,
+                    query->S,
+                    Sb,
+                    query->W,
+                    counts_r,
+                    stream.stream());
+            }
+
+            // Stage 2: Weighted reduction
+            launch_weighted_reduction(
+                counts_ptr,
+                Aw,
+                Bw_ptr,
+                query->S,
+                Sb,
+                Rg,
+                reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev)),
+                scale_inv,
+                tensor_data_ptr<double>(out_row),
+                stream.stream());
+        }
+    }
+
+    cudaEventRecord(end_evt, stream.stream());
+    cudaEventSynchronize(end_evt);
+    float kernel_ms = 0.0f;
+    cudaEventElapsedTime(&kernel_ms, start_evt, end_evt);
+    cudaEventDestroy(start_evt);
+    cudaEventDestroy(end_evt);
+
+    uint64_t dot_ns = static_cast<uint64_t>(kernel_ms * 1.0e6);
+    return pybind11::make_tuple(out_all, dot_ns);
+}
+
 static pybind11::tuple batch_dot_product_multiquery_cuda_caps(pybind11::list query_caps_list, pybind11::capsule keyset_cuda_cap) {
     auto* keys = capsule_to_keys_cuda(keyset_cuda_cap);
     TORCH_CHECK(keys != nullptr, "Invalid CUDA keys capsule");
@@ -899,6 +996,12 @@ void register_bsi_cuda(pybind11::module& m) {
         pybind11::arg("query_caps_list"),
         pybind11::arg("keyset_cuda_cap"),
         "Multi-query batch dot product with fused kernel (28% faster)");
+
+    m.def("batch_dot_product_two_stage_cuda_caps",
+        &batch_dot_product_two_stage_cuda_caps,
+        pybind11::arg("query_caps_list"),
+        pybind11::arg("keyset_cuda_cap"),
+        "Multi-query batch dot product with two-stage approach (popcount + weighted reduction)");
 
     // Key builder for CUDA
     m.def("build_bsi_keys_cuda",
