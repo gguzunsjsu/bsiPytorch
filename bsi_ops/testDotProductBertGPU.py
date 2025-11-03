@@ -70,7 +70,7 @@ with open(output_file, 'w') as f:
 
             # Method 2: GPU fused kernel (what the model actually uses)
             start = time.perf_counter()
-            q_capsule, q_mem_fused, q_meta = bsi_ops.build_bsi_query_cuda(
+            q_capsule, q_mem_fused, q_slices, q_words = bsi_ops.build_bsi_query_cuda(
                 Q_flat, decimal_places, compress_threshold
             )
             k_capsule, k_mem_fused, k_num_keys, k_dim, k_words = bsi_ops.build_bsi_keys_cuda(
