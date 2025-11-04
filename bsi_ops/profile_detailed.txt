@@ -1,0 +1,769 @@
+==PROF== Connected to process 2402014 (/fs/atipa/home/017510883/miniconda3/envs/bsiPytorch/bin/python3.12)
+Auto-detected device: cuda
+
+==========================================================================================
+Dataset: lambada | Split: validation[:5] | Model: facebook/opt-1.3b
+==========================================================================================
+Initializing tokenizer and dataset...
+Using device: cuda
+
+[Metric]
+  Type       : NEXT-TOKEN ACCURACY (last-token prediction)
+  Dataset    : lambada  [validation split]
+  Samples    : 5
+  Definition : Right-pad/truncate to max_seq_len=512;
+               label is the last token; logits are taken at the last non-pad position.
+
+--- Benchmarking FP baseline: facebook/opt-1.3b ---
+Baseline model dtype: torch.float16
+Model static size: 2509.609MB
+FP16 linear weights size: 2304.00MB
+-> [NEXT-TOKEN ACC] FP baseline top1=0.6000, top5=0.8000, avg_fwd=207.073ms, peak_mem=2835.62MB
+
+--- Benchmarking BSI (dec=2) ---
+Reference Full Model dtype (pre-quantization): torch.float32
+Quantizing model with BSI (decimal_places=2, scope=all, device=cuda)...
+Quantized 144 linear layers to BSI with decimalPlaces=2 (scope=all)
+Running evaluation...
+BSI eval:   0%|                                                                                                                                           | 0/5 [00:00<?, ?it/s]==PROF== Profiling "popcount_weighted_keys_literal_fused_kernel": 0%....50%....100% - 17 passes
+==PROF== Profiling "popcount_weighted_keys_literal_fused_kernel": 0%....50%....100% - 17 passes
+==PROF== Profiling "popcount_weighted_keys_literal_fused_kernel": 0%....50%....100% - 17 passes
+==PROF== Profiling "popcount_weighted_keys_literal_fused_kernel": 0%....50%....100% - 17 passes
+==PROF== Profiling "popcount_weighted_keys_literal_fused_kernel": 0%....50%....100% - 17 passes
+==PROF== Profiling "popcount_weighted_keys_literal_fused_kernel": 0%....50%....100% - 17 passes
+==PROF== Profiling "popcount_weighted_keys_literal_fused_kernel": 0%....50%....100% - 17 passes
+==PROF== Profiling "popcount_weighted_keys_literal_fused_kernel": 0%....50%....100% - 17 passes
+==PROF== Profiling "popcount_weighted_keys_literal_fused_kernel": 0%....50%....100% - 17 passes
+==PROF== Profiling "popcount_weighted_keys_literal_fused_kernel": 0%....50%....100% - 17 passes
+BSI eval:  20%|██████████████████████████                                                                                                        | 1/5 [04:05<16:22, 245.66s/it]BSI eval:  20%|███████████████▍                                                             | 1/5 [04:05<16:22, 245.66s/it, build_ms=2811691.1, dot_ms=24815.9, fwd_ms=245651.3]BSI eval:  40%|██████████████████████████████▊                                              | 2/5 [08:05<12:07, 242.37s/it, build_ms=2811691.1, dot_ms=24815.9, fwd_ms=245651.3]BSI eval:  40%|██████████████████████████████▊                                              | 2/5 [08:05<12:07, 242.37s/it, build_ms=2831469.7, dot_ms=18479.0, fwd_ms=240060.0]BSI eval:  60%|██████████████████████████████████████████████▏                              | 3/5 [12:05<08:02, 241.14s/it, build_ms=2831469.7, dot_ms=18479.0, fwd_ms=240060.0]BSI eval:  60%|██████████████████████████████████████████████▏                              | 3/5 [12:05<08:02, 241.14s/it, build_ms=2817196.6, dot_ms=18005.3, fwd_ms=239671.1]BSI eval:  80%|█████████████████████████████████████████████████████████████▌               | 4/5 [16:04<04:00, 240.30s/it, build_ms=2817196.6, dot_ms=18005.3, fwd_ms=239671.1]BSI eval:  80%|█████████████████████████████████████████████████████████████▌               | 4/5 [16:04<04:00, 240.30s/it, build_ms=2831639.8, dot_ms=18067.7, fwd_ms=239005.7]BSI eval: 100%|█████████████████████████████████████████████████████████████████████████████| 5/5 [20:02<00:00, 239.60s/it, build_ms=2831639.8, dot_ms=18067.7, fwd_ms=239005.7]BSI eval: 100%|█████████████████████████████████████████████████████████████████████████████| 5/5 [20:02<00:00, 239.60s/it, build_ms=2840041.5, dot_ms=17907.7, fwd_ms=238355.1]BSI eval: 100%|█████████████████████████████████████████████████████████████████████████████| 5/5 [20:02<00:00, 240.55s/it, build_ms=2840041.5, dot_ms=17907.7, fwd_ms=238355.1]
+  dbg batch=0 len=108, pad_len=404, label_id=8492(Ġcake), pred_id=8492, match=True
+    top5: [(8492, 'Ġcake', '13.742'), (9368, 'Ġtower', '10.331'), (27483, 'Ġtray', '9.976'), (17709, 'Ġstack', '9.929'), (2103, 'Ġtable', '9.594')]
+  dbg batch=1 len=94, pad_len=418, label_id=260(an), pred_id=260, match=True
+    top5: [(260, 'an', '16.781'), (225, 'en', '12.298'), (2156, 'Ġ,', '11.885'), (479, 'Ġ.', '11.352'), (4242, 'ena', '10.735')]
+  dbg batch=2 len=71, pad_len=441, label_id=7821(Ġmat), pred_id=7821, match=True
+    top5: [(7821, 'Ġmat', '11.707'), (1514, 'Ġspot', '10.208'), (1255, 'Ġground', '9.764'), (1929, 'Ġfloor', '9.167'), (97, 'Ġother', '9.086')]
+Completed BSI eval: top1_acc=0.6000, top5_acc=0.8000
+-> [NEXT-TOKEN ACC] BSI (dec=2) top1=0.6000, top5=0.8000, avg_fwd=240548.631ms, build=2826407.749ms, dot=19455.118ms (per-sample)
+Baseline model static size: 5019.219MB
+BSI model static size: 1512.778MB
+Compression: 3.32x
+==PROF== Disconnected from process 2402014
+[2402014] python3.12@127.0.0.1
+  popcount_weighted_keys_literal_fused_kernel (1480, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.62
+    SM Frequency                    Ghz         1.04
+    Elapsed Cycles                cycle       29,173
+    Memory Throughput                 %        23.52
+    DRAM Throughput                   %         1.95
+    Duration                         us        27.78
+    L1/TEX Cache Throughput           %        27.71
+    L2 Cache Throughput               %         3.75
+    SM Active Cycles              cycle    24,559.86
+    Compute (SM) Throughput           %        58.35
+    ----------------------- ----------- ------------
+
+    OPT   This kernel exhibits low compute throughput and memory bandwidth utilization relative to the peak performance 
+          of this device. Achieved compute throughput and/or memory bandwidth below 60.0% of peak typically indicate    
+          latency issues. Look at Scheduler Statistics and Warp State Statistics for potential reasons.                 
+
+    Section: Memory Workload Analysis
+    --------------------------- ----------- ------------
+    Metric Name                 Metric Unit Metric Value
+    --------------------------- ----------- ------------
+    Memory Throughput               Gbyte/s        71.12
+    Mem Busy                              %        23.52
+    Max Bandwidth                         %        23.05
+    L1/TEX Hit Rate                       %        95.15
+    L2 Compression Success Rate           %            0
+    L2 Compression Ratio                               0
+    L2 Hit Rate                           %        23.60
+    Mem Pipes Busy                        %        13.79
+    --------------------------- ----------- ------------
+
+    Section: Scheduler Statistics
+    ---------------------------- ----------- ------------
+    Metric Name                  Metric Unit Metric Value
+    ---------------------------- ----------- ------------
+    One or More Eligible                   %        69.40
+    Issued Warp Per Scheduler                        0.69
+    No Eligible                            %        30.60
+    Active Warps Per Scheduler          warp        12.12
+    Eligible Warps Per Scheduler        warp         3.87
+    ---------------------------- ----------- ------------
+
+    Section: Warp State Statistics
+    ---------------------------------------- ----------- ------------
+    Metric Name                              Metric Unit Metric Value
+    ---------------------------------------- ----------- ------------
+    Warp Cycles Per Issued Instruction             cycle        17.47
+    Warp Cycles Per Executed Instruction           cycle        17.48
+    Avg. Active Threads Per Warp                                31.95
+    Avg. Not Predicated Off Threads Per Warp                    28.74
+    ---------------------------------------- ----------- ------------
+
+    WRN   The optional metric smsp__pcsamp_sample_count could not be found. Collecting it as an additional metric could 
+          enable the rule to provide more guidance.                                                                     
+
+  popcount_weighted_keys_literal_fused_kernel (43, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.61
+    SM Frequency                    Ghz         1.07
+    Elapsed Cycles                cycle       11,320
+    Memory Throughput                 %         2.30
+    DRAM Throughput                   %         0.23
+    Duration                         us        10.53
+    L1/TEX Cache Throughput           %         9.01
+    L2 Cache Throughput               %         0.57
+    SM Active Cycles              cycle     2,883.65
+    Compute (SM) Throughput           %         5.89
+    ----------------------- ----------- ------------
+
+    OPT   This kernel grid is too small to fill the available resources on this device, resulting in only 0.0 full      
+          waves across all SMs. Look at Launch Statistics for more details.                                             
+
+    Section: Memory Workload Analysis
+    --------------------------- ----------- ------------
+    Metric Name                 Metric Unit Metric Value
+    --------------------------- ----------- ------------
+    Memory Throughput               Gbyte/s         8.53
+    Mem Busy                              %         2.30
+    Max Bandwidth                         %         2.27
+    L1/TEX Hit Rate                       %        89.51
+    L2 Compression Success Rate           %            0
+    L2 Compression Ratio                               0
+    L2 Hit Rate                           %        55.30
+    Mem Pipes Busy                        %         1.30
+    --------------------------- ----------- ------------
+
+    Section: Scheduler Statistics
+    ---------------------------- ----------- ------------
+    Metric Name                  Metric Unit Metric Value
+    ---------------------------- ----------- ------------
+    One or More Eligible                   %        23.71
+    Issued Warp Per Scheduler                        0.24
+    No Eligible                            %        76.29
+    Active Warps Per Scheduler          warp         1.99
+    Eligible Warps Per Scheduler        warp         0.27
+    ---------------------------- ----------- ------------
+
+    OPT   Est. Local Speedup: 76.29%                                                                                    
+          Every scheduler is capable of issuing one instruction per cycle, but for this kernel each scheduler only      
+          issues an instruction every 4.2 cycles. This might leave hardware resources underutilized and may lead to     
+          less optimal performance. Out of the maximum of 16 warps per scheduler, this kernel allocates an average of   
+          1.99 active warps per scheduler, but only an average of 0.27 warps were eligible per cycle. Eligible warps    
+          are the subset of active warps that are ready to issue their next instruction. Every cycle with no eligible   
+          warp results in no instruction being issued and the issue slot remains unused. To increase the number of      
+          eligible warps, reduce the time the active warps are stalled by inspecting the top stall reasons on the Warp  
+          State Statistics and Source Counters sections.                                                                
+
+    Section: Warp State Statistics
+    ---------------------------------------- ----------- ------------
+    Metric Name                              Metric Unit Metric Value
+    ---------------------------------------- ----------- ------------
+    Warp Cycles Per Issued Instruction             cycle         8.38
+    Warp Cycles Per Executed Instruction           cycle         8.39
+    Avg. Active Threads Per Warp                                31.96
+    Avg. Not Predicated Off Threads Per Warp                    28.76
+    ---------------------------------------- ----------- ------------
+
+    WRN   The optional metric smsp__pcsamp_sample_count could not be found. Collecting it as an additional metric could 
+          enable the rule to provide more guidance.                                                                     
+    ----- --------------------------------------------------------------------------------------------------------------
+    OPT   Est. Speedup: 34.37%                                                                                          
+          On average, each warp of this kernel spends 2.9 cycles being stalled waiting on a fixed latency execution     
+          dependency. Typically, this stall reason should be very low and only shows up as a top contributor in         
+          already highly optimized kernels. Try to hide the corresponding instruction latencies by increasing the       
+          number of active warps, restructuring the code or unrolling loops. Furthermore, consider switching to         
+          lower-latency instructions, e.g. by making use of fast math compiler options. This stall type represents      
+          about 34.4% of the total average of 8.4 cycles between issuing two instructions.                              
+    ----- --------------------------------------------------------------------------------------------------------------
+    INF   Check the Warp Stall Sampling (All Samples) table for the top stall locations in your source based on         
+          sampling data. The Kernel Profiling Guide                                                                     
+          (https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#metrics-reference) provides more details    
+          on each stall reason.                                                                                         
+
+  popcount_weighted_keys_literal_fused_kernel (305, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.61
+    SM Frequency                    Ghz         1.07
+    Elapsed Cycles                cycle       10,954
+    Memory Throughput                 %        10.77
+    DRAM Throughput                   %         0.90
+    Duration                         us        10.21
+    L1/TEX Cache Throughput           %        14.13
+    L2 Cache Throughput               %         2.55
+    SM Active Cycles              cycle     8,337.38
+    Compute (SM) Throughput           %        26.13
+    ----------------------- ----------- ------------
+
+    OPT   This kernel grid is too small to fill the available resources on this device, resulting in only 0.3 full      
+          waves across all SMs. Look at Launch Statistics for more details.                                             
+
+    Section: Memory Workload Analysis
+    --------------------------- ----------- ------------
+    Metric Name                 Metric Unit Metric Value
+    --------------------------- ----------- ------------
+    Memory Throughput               Gbyte/s        32.78
+    Mem Busy                              %        10.77
+    Max Bandwidth                         %        10.54
+    L1/TEX Hit Rate                       %        91.08
+    L2 Compression Success Rate           %            0
+    L2 Compression Ratio                               0
+    L2 Hit Rate                           %        47.46
+    Mem Pipes Busy                        %         6.50
+    --------------------------- ----------- ------------
+
+    Section: Scheduler Statistics
+    ---------------------------- ----------- ------------
+    Metric Name                  Metric Unit Metric Value
+    ---------------------------- ----------- ------------
+    One or More Eligible                   %        34.42
+    Issued Warp Per Scheduler                        0.34
+    No Eligible                            %        65.58
+    Active Warps Per Scheduler          warp         4.50
+    Eligible Warps Per Scheduler        warp         0.57
+    ---------------------------- ----------- ------------
+
+    OPT   Est. Local Speedup: 65.58%                                                                                    
+          Every scheduler is capable of issuing one instruction per cycle, but for this kernel each scheduler only      
+          issues an instruction every 2.9 cycles. This might leave hardware resources underutilized and may lead to     
+          less optimal performance. Out of the maximum of 16 warps per scheduler, this kernel allocates an average of   
+          4.50 active warps per scheduler, but only an average of 0.57 warps were eligible per cycle. Eligible warps    
+          are the subset of active warps that are ready to issue their next instruction. Every cycle with no eligible   
+          warp results in no instruction being issued and the issue slot remains unused. To increase the number of      
+          eligible warps, reduce the time the active warps are stalled by inspecting the top stall reasons on the Warp  
+          State Statistics and Source Counters sections.                                                                
+
+    Section: Warp State Statistics
+    ---------------------------------------- ----------- ------------
+    Metric Name                              Metric Unit Metric Value
+    ---------------------------------------- ----------- ------------
+    Warp Cycles Per Issued Instruction             cycle        13.09
+    Warp Cycles Per Executed Instruction           cycle        13.12
+    Avg. Active Threads Per Warp                                31.94
+    Avg. Not Predicated Off Threads Per Warp                    28.72
+    ---------------------------------------- ----------- ------------
+
+    WRN   The optional metric smsp__pcsamp_sample_count could not be found. Collecting it as an additional metric could 
+          enable the rule to provide more guidance.                                                                     
+
+  popcount_weighted_keys_literal_fused_kernel (220, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.60
+    SM Frequency                    Ghz         1.06
+    Elapsed Cycles                cycle       11,716
+    Memory Throughput                 %        10.02
+    DRAM Throughput                   %         0.90
+    Duration                         us        10.98
+    L1/TEX Cache Throughput           %        13.22
+    L2 Cache Throughput               %         2.68
+    SM Active Cycles              cycle     8,850.52
+    Compute (SM) Throughput           %        25.36
+    ----------------------- ----------- ------------
+
+    OPT   This kernel grid is too small to fill the available resources on this device, resulting in only 0.2 full      
+          waves across all SMs. Look at Launch Statistics for more details.                                             
+
+    Section: Memory Workload Analysis
+    --------------------------- ----------- ------------
+    Metric Name                 Metric Unit Metric Value
+    --------------------------- ----------- ------------
+    Memory Throughput               Gbyte/s        32.82
+    Mem Busy                              %        10.02
+    Max Bandwidth                         %         9.86
+    L1/TEX Hit Rate                       %        91.46
+    L2 Compression Success Rate           %            0
+    L2 Compression Ratio                               0
+    L2 Hit Rate                           %        40.94
+    Mem Pipes Busy                        %         5.76
+    --------------------------- ----------- ------------
+
+    Section: Scheduler Statistics
+    ---------------------------- ----------- ------------
+    Metric Name                  Metric Unit Metric Value
+    ---------------------------- ----------- ------------
+    One or More Eligible                   %        35.06
+    Issued Warp Per Scheduler                        0.35
+    No Eligible                            %        64.94
+    Active Warps Per Scheduler          warp         3.30
+    Eligible Warps Per Scheduler        warp         0.49
+    ---------------------------- ----------- ------------
+
+    OPT   Est. Local Speedup: 64.94%                                                                                    
+          Every scheduler is capable of issuing one instruction per cycle, but for this kernel each scheduler only      
+          issues an instruction every 2.9 cycles. This might leave hardware resources underutilized and may lead to     
+          less optimal performance. Out of the maximum of 16 warps per scheduler, this kernel allocates an average of   
+          3.30 active warps per scheduler, but only an average of 0.49 warps were eligible per cycle. Eligible warps    
+          are the subset of active warps that are ready to issue their next instruction. Every cycle with no eligible   
+          warp results in no instruction being issued and the issue slot remains unused. To increase the number of      
+          eligible warps, reduce the time the active warps are stalled by inspecting the top stall reasons on the Warp  
+          State Statistics and Source Counters sections.                                                                
+
+    Section: Warp State Statistics
+    ---------------------------------------- ----------- ------------
+    Metric Name                              Metric Unit Metric Value
+    ---------------------------------------- ----------- ------------
+    Warp Cycles Per Issued Instruction             cycle         9.40
+    Warp Cycles Per Executed Instruction           cycle         9.42
+    Avg. Active Threads Per Warp                                31.96
+    Avg. Not Predicated Off Threads Per Warp                    28.75
+    ---------------------------------------- ----------- ------------
+
+    WRN   The optional metric smsp__pcsamp_sample_count could not be found. Collecting it as an additional metric could 
+          enable the rule to provide more guidance.                                                                     
+    ----- --------------------------------------------------------------------------------------------------------------
+    OPT   Est. Speedup: 31.91%                                                                                          
+          On average, each warp of this kernel spends 3.0 cycles being stalled waiting on a fixed latency execution     
+          dependency. Typically, this stall reason should be very low and only shows up as a top contributor in         
+          already highly optimized kernels. Try to hide the corresponding instruction latencies by increasing the       
+          number of active warps, restructuring the code or unrolling loops. Furthermore, consider switching to         
+          lower-latency instructions, e.g. by making use of fast math compiler options. This stall type represents      
+          about 31.9% of the total average of 9.4 cycles between issuing two instructions.                              
+    ----- --------------------------------------------------------------------------------------------------------------
+    INF   Check the Warp Stall Sampling (All Samples) table for the top stall locations in your source based on         
+          sampling data. The Kernel Profiling Guide                                                                     
+          (https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#metrics-reference) provides more details    
+          on each stall reason.                                                                                         
+
+  popcount_weighted_keys_literal_fused_kernel (1480, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.62
+    SM Frequency                    Ghz         1.03
+    Elapsed Cycles                cycle       28,959
+    Memory Throughput                 %        23.69
+    DRAM Throughput                   %         1.93
+    Duration                         us        27.97
+    L1/TEX Cache Throughput           %        27.70
+    L2 Cache Throughput               %         3.21
+    SM Active Cycles              cycle    24,569.13
+    Compute (SM) Throughput           %        58.79
+    ----------------------- ----------- ------------
+
+    OPT   This kernel exhibits low compute throughput and memory bandwidth utilization relative to the peak performance 
+          of this device. Achieved compute throughput and/or memory bandwidth below 60.0% of peak typically indicate    
+          latency issues. Look at Scheduler Statistics and Warp State Statistics for potential reasons.                 
+
+    Section: Memory Workload Analysis
+    --------------------------- ----------- ------------
+    Metric Name                 Metric Unit Metric Value
+    --------------------------- ----------- ------------
+    Memory Throughput               Gbyte/s        70.63
+    Mem Busy                              %        23.69
+    Max Bandwidth                         %        23.23
+    L1/TEX Hit Rate                       %        95.15
+    L2 Compression Success Rate           %            0
+    L2 Compression Ratio                               0
+    L2 Hit Rate                           %        23.61
+    Mem Pipes Busy                        %        13.90
+    --------------------------- ----------- ------------
+
+    Section: Scheduler Statistics
+    ---------------------------- ----------- ------------
+    Metric Name                  Metric Unit Metric Value
+    ---------------------------- ----------- ------------
+    One or More Eligible                   %        69.42
+    Issued Warp Per Scheduler                        0.69
+    No Eligible                            %        30.58
+    Active Warps Per Scheduler          warp        12.13
+    Eligible Warps Per Scheduler        warp         3.85
+    ---------------------------- ----------- ------------
+
+    Section: Warp State Statistics
+    ---------------------------------------- ----------- ------------
+    Metric Name                              Metric Unit Metric Value
+    ---------------------------------------- ----------- ------------
+    Warp Cycles Per Issued Instruction             cycle        17.47
+    Warp Cycles Per Executed Instruction           cycle        17.48
+    Avg. Active Threads Per Warp                                31.95
+    Avg. Not Predicated Off Threads Per Warp                    28.74
+    ---------------------------------------- ----------- ------------
+
+    WRN   The optional metric smsp__pcsamp_sample_count could not be found. Collecting it as an additional metric could 
+          enable the rule to provide more guidance.                                                                     
+
+  popcount_weighted_keys_literal_fused_kernel (43, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.60
+    SM Frequency                    Ghz         1.07
+    Elapsed Cycles                cycle       11,296
+    Memory Throughput                 %         2.30
+    DRAM Throughput                   %         0.24
+    Duration                         us        10.53
+    L1/TEX Cache Throughput           %         8.43
+    L2 Cache Throughput               %         0.61
+    SM Active Cycles              cycle     3,083.39
+    Compute (SM) Throughput           %         5.91
+    ----------------------- ----------- ------------
+
+    OPT   This kernel grid is too small to fill the available resources on this device, resulting in only 0.0 full      
+          waves across all SMs. Look at Launch Statistics for more details.                                             
+
+    Section: Memory Workload Analysis
+    --------------------------- ----------- ------------
+    Metric Name                 Metric Unit Metric Value
+    --------------------------- ----------- ------------
+    Memory Throughput               Gbyte/s         8.56
+    Mem Busy                              %         2.30
+    Max Bandwidth                         %         2.27
+    L1/TEX Hit Rate                       %        89.51
+    L2 Compression Success Rate           %            0
+    L2 Compression Ratio                               0
+    L2 Hit Rate                           %        60.06
+    Mem Pipes Busy                        %         1.30
+    --------------------------- ----------- ------------
+
+    Section: Scheduler Statistics
+    ---------------------------- ----------- ------------
+    Metric Name                  Metric Unit Metric Value
+    ---------------------------- ----------- ------------
+    One or More Eligible                   %        24.30
+    Issued Warp Per Scheduler                        0.24
+    No Eligible                            %        75.70
+    Active Warps Per Scheduler          warp         1.99
+    Eligible Warps Per Scheduler        warp         0.27
+    ---------------------------- ----------- ------------
+
+    OPT   Est. Local Speedup: 75.7%                                                                                     
+          Every scheduler is capable of issuing one instruction per cycle, but for this kernel each scheduler only      
+          issues an instruction every 4.1 cycles. This might leave hardware resources underutilized and may lead to     
+          less optimal performance. Out of the maximum of 16 warps per scheduler, this kernel allocates an average of   
+          1.99 active warps per scheduler, but only an average of 0.27 warps were eligible per cycle. Eligible warps    
+          are the subset of active warps that are ready to issue their next instruction. Every cycle with no eligible   
+          warp results in no instruction being issued and the issue slot remains unused. To increase the number of      
+          eligible warps, reduce the time the active warps are stalled by inspecting the top stall reasons on the Warp  
+          State Statistics and Source Counters sections.                                                                
+
+    Section: Warp State Statistics
+    ---------------------------------------- ----------- ------------
+    Metric Name                              Metric Unit Metric Value
+    ---------------------------------------- ----------- ------------
+    Warp Cycles Per Issued Instruction             cycle         8.18
+    Warp Cycles Per Executed Instruction           cycle         8.19
+    Avg. Active Threads Per Warp                                31.96
+    Avg. Not Predicated Off Threads Per Warp                    28.76
+    ---------------------------------------- ----------- ------------
+
+    WRN   The optional metric smsp__pcsamp_sample_count could not be found. Collecting it as an additional metric could 
+          enable the rule to provide more guidance.                                                                     
+    ----- --------------------------------------------------------------------------------------------------------------
+    OPT   Est. Speedup: 35.22%                                                                                          
+          On average, each warp of this kernel spends 2.9 cycles being stalled waiting on a fixed latency execution     
+          dependency. Typically, this stall reason should be very low and only shows up as a top contributor in         
+          already highly optimized kernels. Try to hide the corresponding instruction latencies by increasing the       
+          number of active warps, restructuring the code or unrolling loops. Furthermore, consider switching to         
+          lower-latency instructions, e.g. by making use of fast math compiler options. This stall type represents      
+          about 35.2% of the total average of 8.2 cycles between issuing two instructions.                              
+    ----- --------------------------------------------------------------------------------------------------------------
+    INF   Check the Warp Stall Sampling (All Samples) table for the top stall locations in your source based on         
+          sampling data. The Kernel Profiling Guide                                                                     
+          (https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#metrics-reference) provides more details    
+          on each stall reason.                                                                                         
+
+  popcount_weighted_keys_literal_fused_kernel (305, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.61
+    SM Frequency                    Ghz         1.07
+    Elapsed Cycles                cycle       10,950
+    Memory Throughput                 %        10.80
+    DRAM Throughput                   %         0.90
+    Duration                         us        10.24
+    L1/TEX Cache Throughput           %        14.45
+    L2 Cache Throughput               %         2.30
+    SM Active Cycles              cycle     8,154.66
+    Compute (SM) Throughput           %        26.21
+    ----------------------- ----------- ------------
+
+    OPT   This kernel grid is too small to fill the available resources on this device, resulting in only 0.3 full      
+          waves across all SMs. Look at Launch Statistics for more details.                                             
+
+    Section: Memory Workload Analysis
+    --------------------------- ----------- ------------
+    Metric Name                 Metric Unit Metric Value
+    --------------------------- ----------- ------------
+    Memory Throughput               Gbyte/s        32.67
+    Mem Busy                              %        10.80
+    Max Bandwidth                         %        10.57
+    L1/TEX Hit Rate                       %        91.08
+    L2 Compression Success Rate           %            0
+    L2 Compression Ratio                               0
+    L2 Hit Rate                           %        45.95
+    Mem Pipes Busy                        %         6.52
+    --------------------------- ----------- ------------
+
+    Section: Scheduler Statistics
+    ---------------------------- ----------- ------------
+    Metric Name                  Metric Unit Metric Value
+    ---------------------------- ----------- ------------
+    One or More Eligible                   %        34.69
+    Issued Warp Per Scheduler                        0.35
+    No Eligible                            %        65.31
+    Active Warps Per Scheduler          warp         4.51
+    Eligible Warps Per Scheduler        warp         0.58
+    ---------------------------- ----------- ------------
+
+    OPT   Est. Local Speedup: 65.31%                                                                                    
+          Every scheduler is capable of issuing one instruction per cycle, but for this kernel each scheduler only      
+          issues an instruction every 2.9 cycles. This might leave hardware resources underutilized and may lead to     
+          less optimal performance. Out of the maximum of 16 warps per scheduler, this kernel allocates an average of   
+          4.51 active warps per scheduler, but only an average of 0.58 warps were eligible per cycle. Eligible warps    
+          are the subset of active warps that are ready to issue their next instruction. Every cycle with no eligible   
+          warp results in no instruction being issued and the issue slot remains unused. To increase the number of      
+          eligible warps, reduce the time the active warps are stalled by inspecting the top stall reasons on the Warp  
+          State Statistics and Source Counters sections.                                                                
+
+    Section: Warp State Statistics
+    ---------------------------------------- ----------- ------------
+    Metric Name                              Metric Unit Metric Value
+    ---------------------------------------- ----------- ------------
+    Warp Cycles Per Issued Instruction             cycle        12.99
+    Warp Cycles Per Executed Instruction           cycle        13.02
+    Avg. Active Threads Per Warp                                31.94
+    Avg. Not Predicated Off Threads Per Warp                    28.72
+    ---------------------------------------- ----------- ------------
+
+    WRN   The optional metric smsp__pcsamp_sample_count could not be found. Collecting it as an additional metric could 
+          enable the rule to provide more guidance.                                                                     
+
+  popcount_weighted_keys_literal_fused_kernel (220, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.60
+    SM Frequency                    Ghz         1.06
+    Elapsed Cycles                cycle       11,890
+    Memory Throughput                 %         9.88
+    DRAM Throughput                   %         0.89
+    Duration                         us        11.14
+    L1/TEX Cache Throughput           %        13.21
+    L2 Cache Throughput               %         2.41
+    SM Active Cycles              cycle     8,859.71
+    Compute (SM) Throughput           %        25.01
+    ----------------------- ----------- ------------
+
+    OPT   This kernel grid is too small to fill the available resources on this device, resulting in only 0.2 full      
+          waves across all SMs. Look at Launch Statistics for more details.                                             
+
+    Section: Memory Workload Analysis
+    --------------------------- ----------- ------------
+    Metric Name                 Metric Unit Metric Value
+    --------------------------- ----------- ------------
+    Memory Throughput               Gbyte/s        32.34
+    Mem Busy                              %         9.88
+    Max Bandwidth                         %         9.72
+    L1/TEX Hit Rate                       %        91.46
+    L2 Compression Success Rate           %            0
+    L2 Compression Ratio                               0
+    L2 Hit Rate                           %        45.71
+    Mem Pipes Busy                        %         5.68
+    --------------------------- ----------- ------------
+
+    Section: Scheduler Statistics
+    ---------------------------- ----------- ------------
+    Metric Name                  Metric Unit Metric Value
+    ---------------------------- ----------- ------------
+    One or More Eligible                   %        33.66
+    Issued Warp Per Scheduler                        0.34
+    No Eligible                            %        66.34
+    Active Warps Per Scheduler          warp         3.29
+    Eligible Warps Per Scheduler        warp         0.47
+    ---------------------------- ----------- ------------
+
+    OPT   Est. Local Speedup: 66.34%                                                                                    
+          Every scheduler is capable of issuing one instruction per cycle, but for this kernel each scheduler only      
+          issues an instruction every 3.0 cycles. This might leave hardware resources underutilized and may lead to     
+          less optimal performance. Out of the maximum of 16 warps per scheduler, this kernel allocates an average of   
+          3.29 active warps per scheduler, but only an average of 0.47 warps were eligible per cycle. Eligible warps    
+          are the subset of active warps that are ready to issue their next instruction. Every cycle with no eligible   
+          warp results in no instruction being issued and the issue slot remains unused. To increase the number of      
+          eligible warps, reduce the time the active warps are stalled by inspecting the top stall reasons on the Warp  
+          State Statistics and Source Counters sections.                                                                
+
+    Section: Warp State Statistics
+    ---------------------------------------- ----------- ------------
+    Metric Name                              Metric Unit Metric Value
+    ---------------------------------------- ----------- ------------
+    Warp Cycles Per Issued Instruction             cycle         9.76
+    Warp Cycles Per Executed Instruction           cycle         9.78
+    Avg. Active Threads Per Warp                                31.96
+    Avg. Not Predicated Off Threads Per Warp                    28.75
+    ---------------------------------------- ----------- ------------
+
+    WRN   The optional metric smsp__pcsamp_sample_count could not be found. Collecting it as an additional metric could 
+          enable the rule to provide more guidance.                                                                     
+    ----- --------------------------------------------------------------------------------------------------------------
+    OPT   Est. Speedup: 30.73%                                                                                          
+          On average, each warp of this kernel spends 3.0 cycles being stalled waiting on a fixed latency execution     
+          dependency. Typically, this stall reason should be very low and only shows up as a top contributor in         
+          already highly optimized kernels. Try to hide the corresponding instruction latencies by increasing the       
+          number of active warps, restructuring the code or unrolling loops. Furthermore, consider switching to         
+          lower-latency instructions, e.g. by making use of fast math compiler options. This stall type represents      
+          about 30.7% of the total average of 9.8 cycles between issuing two instructions.                              
+    ----- --------------------------------------------------------------------------------------------------------------
+    INF   Check the Warp Stall Sampling (All Samples) table for the top stall locations in your source based on         
+          sampling data. The Kernel Profiling Guide                                                                     
+          (https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#metrics-reference) provides more details    
+          on each stall reason.                                                                                         
+
+  popcount_weighted_keys_literal_fused_kernel (1480, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.61
+    SM Frequency                    Ghz         1.03
+    Elapsed Cycles                cycle       29,336
+    Memory Throughput                 %        23.38
+    DRAM Throughput                   %         1.91
+    Duration                         us        28.38
+    L1/TEX Cache Throughput           %        27.72
+    L2 Cache Throughput               %         3.25
+    SM Active Cycles              cycle    24,550.10
+    Compute (SM) Throughput           %        58.00
+    ----------------------- ----------- ------------
+
+    OPT   This kernel exhibits low compute throughput and memory bandwidth utilization relative to the peak performance 
+          of this device. Achieved compute throughput and/or memory bandwidth below 60.0% of peak typically indicate    
+          latency issues. Look at Scheduler Statistics and Warp State Statistics for potential reasons.                 
+
+    Section: Memory Workload Analysis
+    --------------------------- ----------- ------------
+    Metric Name                 Metric Unit Metric Value
+    --------------------------- ----------- ------------
+    Memory Throughput               Gbyte/s        69.60
+    Mem Busy                              %        23.38
+    Max Bandwidth                         %        22.92
+    L1/TEX Hit Rate                       %        95.15
+    L2 Compression Success Rate           %            0
+    L2 Compression Ratio                               0
+    L2 Hit Rate                           %        24.09
+    Mem Pipes Busy                        %        13.71
+    --------------------------- ----------- ------------
+
+    Section: Scheduler Statistics
+    ---------------------------- ----------- ------------
+    Metric Name                  Metric Unit Metric Value
+    ---------------------------- ----------- ------------
+    One or More Eligible                   %        68.23
+    Issued Warp Per Scheduler                        0.68
+    No Eligible                            %        31.77
+    Active Warps Per Scheduler          warp        12.19
+    Eligible Warps Per Scheduler        warp         3.78
+    ---------------------------- ----------- ------------
+
+    Section: Warp State Statistics
+    ---------------------------------------- ----------- ------------
+    Metric Name                              Metric Unit Metric Value
+    ---------------------------------------- ----------- ------------
+    Warp Cycles Per Issued Instruction             cycle        17.87
+    Warp Cycles Per Executed Instruction           cycle        17.89
+    Avg. Active Threads Per Warp                                31.95
+    Avg. Not Predicated Off Threads Per Warp                    28.74
+    ---------------------------------------- ----------- ------------
+
+    WRN   The optional metric smsp__pcsamp_sample_count could not be found. Collecting it as an additional metric could 
+          enable the rule to provide more guidance.                                                                     
+
+  popcount_weighted_keys_literal_fused_kernel (43, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.61
+    SM Frequency                    Ghz         1.07
+    Elapsed Cycles                cycle       11,428
+    Memory Throughput                 %         2.28
+    DRAM Throughput                   %         0.23
+    Duration                         us        10.62
+    L1/TEX Cache Throughput           %         8.88
+    L2 Cache Throughput               %         0.65
+    SM Active Cycles              cycle     2,929.04
+    Compute (SM) Throughput           %         5.84
+    ----------------------- ----------- ------------
+
+    OPT   This kernel grid is too small to fill the available resources on this device, resulting in only 0.0 full      
+          waves across all SMs. Look at Launch Statistics for more details.                                             
+
+    Section: Memory Workload Analysis
+    --------------------------- ----------- ------------
+    Metric Name                 Metric Unit Metric Value
+    --------------------------- ----------- ------------
+    Memory Throughput               Gbyte/s         8.43
+    Mem Busy                              %         2.28
+    Max Bandwidth                         %         2.25
+    L1/TEX Hit Rate                       %        89.51
+    L2 Compression Success Rate           %            0
+    L2 Compression Ratio                               0
+    L2 Hit Rate                           %        60.82
+    Mem Pipes Busy                        %         1.29
+    --------------------------- ----------- ------------
+
+    Section: Scheduler Statistics
+    ---------------------------- ----------- ------------
+    Metric Name                  Metric Unit Metric Value
+    ---------------------------- ----------- ------------
+    One or More Eligible                   %        24.20
+    Issued Warp Per Scheduler                        0.24
+    No Eligible                            %        75.80
+    Active Warps Per Scheduler          warp         1.99
+    Eligible Warps Per Scheduler        warp         0.27
+    ---------------------------- ----------- ------------
+
+    OPT   Est. Local Speedup: 75.8%                                                                                     
+          Every scheduler is capable of issuing one instruction per cycle, but for this kernel each scheduler only      
+          issues an instruction every 4.1 cycles. This might leave hardware resources underutilized and may lead to     
+          less optimal performance. Out of the maximum of 16 warps per scheduler, this kernel allocates an average of   
+          1.99 active warps per scheduler, but only an average of 0.27 warps were eligible per cycle. Eligible warps    
+          are the subset of active warps that are ready to issue their next instruction. Every cycle with no eligible   
+          warp results in no instruction being issued and the issue slot remains unused. To increase the number of      
+          eligible warps, reduce the time the active warps are stalled by inspecting the top stall reasons on the Warp  
+          State Statistics and Source Counters sections.                                                                
+
+    Section: Warp State Statistics
+    ---------------------------------------- ----------- ------------
+    Metric Name                              Metric Unit Metric Value
+    ---------------------------------------- ----------- ------------
+    Warp Cycles Per Issued Instruction             cycle         8.21
+    Warp Cycles Per Executed Instruction           cycle         8.22
+    Avg. Active Threads Per Warp                                31.96
+    Avg. Not Predicated Off Threads Per Warp                    28.76
+    ---------------------------------------- ----------- ------------
+
+    WRN   The optional metric smsp__pcsamp_sample_count could not be found. Collecting it as an additional metric could 
+          enable the rule to provide more guidance.                                                                     
+    ----- --------------------------------------------------------------------------------------------------------------
+    OPT   Est. Speedup: 35.12%                                                                                          
+          On average, each warp of this kernel spends 2.9 cycles being stalled waiting on a fixed latency execution     
+          dependency. Typically, this stall reason should be very low and only shows up as a top contributor in         
+          already highly optimized kernels. Try to hide the corresponding instruction latencies by increasing the       
+          number of active warps, restructuring the code or unrolling loops. Furthermore, consider switching to         
+          lower-latency instructions, e.g. by making use of fast math compiler options. This stall type represents      
+          about 35.1% of the total average of 8.2 cycles between issuing two instructions.                              
+    ----- --------------------------------------------------------------------------------------------------------------
+    INF   Check the Warp Stall Sampling (All Samples) table for the top stall locations in your source based on         
+          sampling data. The Kernel Profiling Guide                                                                     
+          (https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#metrics-reference) provides more details    
+          on each stall reason.                                                                                         
+

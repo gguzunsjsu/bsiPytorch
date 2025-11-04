@@ -43,6 +43,13 @@ extern "C" void launch_weighted_reduction(
     double* out_global,
     cudaStream_t stream);
 
+extern "C" void launch_popcount_pairwise_batched(
+    const unsigned long long* A,
+    const unsigned long long* B,
+    int Sa, int Sb, int W, int R,
+    unsigned long long* out,
+    cudaStream_t stream);
+
 extern "C" void launch_ewah_decompress(
     const unsigned long long* in,
     int in_len,
@@ -630,20 +637,17 @@ static pybind11::tuple batch_dot_product_two_stage_cuda_caps(pybind11::list quer
                 torch::TensorOptions().dtype(torch::kInt64).device(torch::kCUDA));
             auto* counts_ptr = reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(counts));
 
-            // Stage 1: Popcount for all (r, j, i) combinations
-            for (int r = 0; r < Rg; ++r) {
-                const unsigned long long* B_r = B_words + (size_t)r * Sb * query->W;
-                unsigned long long* counts_r = counts_ptr + (size_t)r * Sb * query->S;
+            // Stage 1: Popcount for all (r, j, i) combinations - launch in parallel with 3D grid
+            launch_popcount_pairwise_batched(
+                A,
+                B_words,
+                query->S,
+                Sb,
+                query->W,
+                Rg,
+                counts_ptr,
+                stream.stream());
 
-                launch_popcount_pairwise(
-                    A,
-                    B_r,
-                    query->S,
-                    Sb,
-                    query->W,
-                    counts_r,
-                    stream.stream());
-            }
 
             // Stage 2: Weighted reduction
             launch_weighted_reduction(

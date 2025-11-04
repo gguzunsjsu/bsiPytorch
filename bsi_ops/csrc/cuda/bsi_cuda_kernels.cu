@@ -50,6 +50,44 @@ void popcount_pairwise_kernel(
         out[(size_t)j * Sa + i] = block_sum;
     }
 }
+
+// Batched version: processes multiple key sets in parallel
+extern "C" __global__
+void popcount_pairwise_batched_kernel(
+    const unsigned long long* __restrict__ A, // [Sa * W] - query slices
+    const unsigned long long* __restrict__ B, // [R * Sb * W] - all key slices
+    int Sa, int Sb, int W,
+    unsigned long long* __restrict__ out // [R * Sb * Sa]
+) {
+    int i = blockIdx.x;   // slice index in A (query)
+    int j = blockIdx.y;   // slice index in B (key)
+    int r = blockIdx.z;   // batch index (which key set)
+
+    if (i >= Sa || j >= Sb) return;
+
+    const unsigned long long* a = A + (size_t)i * W;
+    const unsigned long long* b = B + (size_t)r * Sb * W + (size_t)j * W;
+
+    unsigned long long partial = 0;
+    for (int w = threadIdx.x; w < W; w += blockDim.x) {
+        partial += __popcll(a[w] & b[w]);
+    }
+
+    // Reduce within block
+    __shared__ unsigned long long smem[32];
+    unsigned long long warp = warp_reduce_sum_ull(partial);
+    if ((threadIdx.x & 31) == 0) smem[threadIdx.x >> 5] = warp;
+    __syncthreads();
+
+    unsigned long long block_sum = 0;
+    int num_warps = blockDim.x >> 5;
+    if (threadIdx.x < num_warps) block_sum = smem[threadIdx.x];
+    block_sum = warp_reduce_sum_ull(block_sum);
+
+    if (threadIdx.x == 0) {
+        out[(size_t)r * Sb * Sa + (size_t)j * Sa + i] = block_sum;
+    }
+}
 // Simple scatter: out[idx[i]] = src[i]
 extern "C" __global__
 void scatter_set_double_kernel(
@@ -142,6 +180,19 @@ extern "C" void launch_weighted_reduction(
     dim3 block(256);
     weighted_reduction_kernel<<<grid, block, 0, stream>>>(
         counts, Aw, Bw, Sa, Sb, R, indices, scale_inv, out_global);
+}
+
+extern "C" void launch_popcount_pairwise_batched(
+    const unsigned long long* A,
+    const unsigned long long* B,
+    int Sa, int Sb, int W, int R,
+    unsigned long long* out,
+    cudaStream_t stream)
+{
+    dim3 grid(Sa, Sb, R);  // 3D grid: (query_slices, key_slices, batch)
+    dim3 block(256);
+    popcount_pairwise_batched_kernel<<<grid, block, 0, stream>>>(
+        A, B, Sa, Sb, W, out);
 }
 
 // EWAH decompress: interpret buffer of RLWs and literal words into W literal words.

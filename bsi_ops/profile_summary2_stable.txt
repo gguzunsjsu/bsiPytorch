@@ -1,0 +1,254 @@
+==PROF== Connected to process 4054345 (/fs/atipa/home/017510883/miniconda3/envs/bsiPytorch/bin/python3.12)
+Auto-detected device: cuda
+
+==========================================================================================
+Dataset: lambada | Split: validation[:5] | Model: facebook/opt-1.3b
+==========================================================================================
+Initializing tokenizer and dataset...
+Using device: cuda
+
+[Metric]
+  Type       : NEXT-TOKEN ACCURACY (last-token prediction)
+  Dataset    : lambada  [validation split]
+  Samples    : 5
+  Definition : Right-pad/truncate to max_seq_len=512;
+               label is the last token; logits are taken at the last non-pad position.
+
+--- Benchmarking FP baseline: facebook/opt-1.3b ---
+Baseline model dtype: torch.float16
+Model static size: 2509.609MB
+FP16 linear weights size: 2304.00MB
+-> [NEXT-TOKEN ACC] FP baseline top1=0.6000, top5=0.8000, avg_fwd=195.236ms, peak_mem=2835.62MB
+
+--- Benchmarking BSI (dec=2) ---
+Reference Full Model dtype (pre-quantization): torch.float32
+Quantizing model with BSI (decimal_places=2, scope=all, device=cuda)...
+Quantized 144 linear layers to BSI with decimalPlaces=2 (scope=all)
+Running evaluation...
+BSI eval:   0%|                                                                                                                                           | 0/5 [00:00<?, ?it/s]==PROF== Profiling "popcount_weighted_keys_literal_fused_kernel": 0%....50%....100% - 10 passes
+==PROF== Profiling "popcount_weighted_keys_literal_fused_kernel": 0%....50%....100% - 10 passes
+==PROF== Profiling "popcount_weighted_keys_literal_fused_kernel": 0%....50%....100% - 10 passes
+==PROF== Profiling "popcount_weighted_keys_literal_fused_kernel": 0%....50%....100% - 10 passes
+==PROF== Profiling "popcount_weighted_keys_literal_fused_kernel": 0%....50%....100% - 10 passes
+==PROF== Profiling "popcount_weighted_keys_literal_fused_kernel": 0%....50%....100% - 10 passes
+==PROF== Profiling "popcount_weighted_keys_literal_fused_kernel": 0%....50%....100% - 10 passes
+==PROF== Profiling "popcount_weighted_keys_literal_fused_kernel": 0%....50%....100% - 10 passes
+==PROF== Profiling "popcount_weighted_keys_literal_fused_kernel": 0%....50%....100% - 10 passes
+==PROF== Profiling "popcount_weighted_keys_literal_fused_kernel": 0%....50%....100% - 10 passes
+BSI eval:  20%|██████████████████████████                                                                                                        | 1/5 [04:06<16:25, 246.29s/it]BSI eval:  20%|███████████████▍                                                             | 1/5 [04:06<16:25, 246.29s/it, build_ms=2870737.9, dot_ms=24670.4, fwd_ms=246284.1]BSI eval:  40%|██████████████████████████████▊                                              | 2/5 [08:08<12:11, 243.84s/it, build_ms=2870737.9, dot_ms=24670.4, fwd_ms=246284.1]BSI eval:  40%|██████████████████████████████▊                                              | 2/5 [08:08<12:11, 243.84s/it, build_ms=2844364.3, dot_ms=18690.8, fwd_ms=242124.4]BSI eval:  60%|██████████████████████████████████████████████▏                              | 3/5 [12:07<08:03, 241.83s/it, build_ms=2844364.3, dot_ms=18690.8, fwd_ms=242124.4]BSI eval:  60%|██████████████████████████████████████████████▏                              | 3/5 [12:07<08:03, 241.83s/it, build_ms=2836768.5, dot_ms=18173.9, fwd_ms=239425.4]BSI eval:  80%|█████████████████████████████████████████████████████████████▌               | 4/5 [16:09<04:01, 241.58s/it, build_ms=2836768.5, dot_ms=18173.9, fwd_ms=239425.4]BSI eval:  80%|█████████████████████████████████████████████████████████████▌               | 4/5 [16:09<04:01, 241.58s/it, build_ms=2811316.8, dot_ms=18432.9, fwd_ms=241183.2]BSI eval: 100%|█████████████████████████████████████████████████████████████████████████████| 5/5 [20:08<00:00, 240.94s/it, build_ms=2811316.8, dot_ms=18432.9, fwd_ms=241183.2]BSI eval: 100%|█████████████████████████████████████████████████████████████████████████████| 5/5 [20:08<00:00, 240.94s/it, build_ms=2826465.5, dot_ms=18389.6, fwd_ms=239795.5]BSI eval: 100%|█████████████████████████████████████████████████████████████████████████████| 5/5 [20:08<00:00, 241.77s/it, build_ms=2826465.5, dot_ms=18389.6, fwd_ms=239795.5]
+  dbg batch=0 len=108, pad_len=404, label_id=8492(Ġcake), pred_id=8492, match=True
+    top5: [(8492, 'Ġcake', '13.742'), (9368, 'Ġtower', '10.331'), (27483, 'Ġtray', '9.976'), (17709, 'Ġstack', '9.929'), (2103, 'Ġtable', '9.594')]
+  dbg batch=1 len=94, pad_len=418, label_id=260(an), pred_id=260, match=True
+    top5: [(260, 'an', '16.781'), (225, 'en', '12.298'), (2156, 'Ġ,', '11.885'), (479, 'Ġ.', '11.352'), (4242, 'ena', '10.735')]
+  dbg batch=2 len=71, pad_len=441, label_id=7821(Ġmat), pred_id=7821, match=True
+    top5: [(7821, 'Ġmat', '11.707'), (1514, 'Ġspot', '10.208'), (1255, 'Ġground', '9.764'), (1929, 'Ġfloor', '9.167'), (97, 'Ġother', '9.086')]
+Completed BSI eval: top1_acc=0.6000, top5_acc=0.8000
+-> [NEXT-TOKEN ACC] BSI (dec=2) top1=0.6000, top5=0.8000, avg_fwd=241762.506ms, build=2837930.591ms, dot=19671.530ms (per-sample)
+Baseline model static size: 5019.219MB
+BSI model static size: 1512.778MB
+Compression: 3.32x
+==PROF== Disconnected from process 4054345
+[4054345] python3.12@127.0.0.1
+  popcount_weighted_keys_literal_fused_kernel (1480, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.61
+    SM Frequency                    Ghz         1.03
+    Elapsed Cycles                cycle       29,013
+    Memory Throughput                 %        23.67
+    DRAM Throughput                   %         1.94
+    Duration                         us        27.97
+    L1/TEX Cache Throughput           %        27.72
+    L2 Cache Throughput               %         3.19
+    SM Active Cycles              cycle    24,545.30
+    Compute (SM) Throughput           %        58.73
+    ----------------------- ----------- ------------
+
+    OPT   This kernel exhibits low compute throughput and memory bandwidth utilization relative to the peak performance 
+          of this device. Achieved compute throughput and/or memory bandwidth below 60.0% of peak typically indicate    
+          latency issues. Look at Scheduler Statistics and Warp State Statistics for potential reasons.                 
+
+  popcount_weighted_keys_literal_fused_kernel (43, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.61
+    SM Frequency                    Ghz         1.07
+    Elapsed Cycles                cycle       11,458
+    Memory Throughput                 %         2.27
+    DRAM Throughput                   %         0.23
+    Duration                         us        10.66
+    L1/TEX Cache Throughput           %         9.16
+    L2 Cache Throughput               %         1.09
+    SM Active Cycles              cycle     2,837.61
+    Compute (SM) Throughput           %         5.82
+    ----------------------- ----------- ------------
+
+    OPT   This kernel grid is too small to fill the available resources on this device, resulting in only 0.0 full      
+          waves across all SMs. Look at Launch Statistics for more details.                                             
+
+  popcount_weighted_keys_literal_fused_kernel (305, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.60
+    SM Frequency                    Ghz         1.07
+    Elapsed Cycles                cycle       11,235
+    Memory Throughput                 %        10.51
+    DRAM Throughput                   %         0.87
+    Duration                         us        10.50
+    L1/TEX Cache Throughput           %        14.31
+    L2 Cache Throughput               %         2.79
+    SM Active Cycles              cycle     8,229.75
+    Compute (SM) Throughput           %        25.53
+    ----------------------- ----------- ------------
+
+    OPT   This kernel grid is too small to fill the available resources on this device, resulting in only 0.3 full      
+          waves across all SMs. Look at Launch Statistics for more details.                                             
+
+  popcount_weighted_keys_literal_fused_kernel (220, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.61
+    SM Frequency                    Ghz         1.07
+    Elapsed Cycles                cycle       11,598
+    Memory Throughput                 %        10.12
+    DRAM Throughput                   %         0.91
+    Duration                         us        10.82
+    L1/TEX Cache Throughput           %        13.40
+    L2 Cache Throughput               %         3.38
+    SM Active Cycles              cycle     8,733.07
+    Compute (SM) Throughput           %        25.63
+    ----------------------- ----------- ------------
+
+    OPT   This kernel grid is too small to fill the available resources on this device, resulting in only 0.2 full      
+          waves across all SMs. Look at Launch Statistics for more details.                                             
+
+  popcount_weighted_keys_literal_fused_kernel (1480, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.62
+    SM Frequency                    Ghz         1.04
+    Elapsed Cycles                cycle       28,919
+    Memory Throughput                 %        23.76
+    DRAM Throughput                   %         1.96
+    Duration                         us        27.49
+    L1/TEX Cache Throughput           %        27.67
+    L2 Cache Throughput               %         3.22
+    SM Active Cycles              cycle    24,598.17
+    Compute (SM) Throughput           %        58.95
+    ----------------------- ----------- ------------
+
+    OPT   This kernel exhibits low compute throughput and memory bandwidth utilization relative to the peak performance 
+          of this device. Achieved compute throughput and/or memory bandwidth below 60.0% of peak typically indicate    
+          latency issues. Look at Scheduler Statistics and Warp State Statistics for potential reasons.                 
+
+  popcount_weighted_keys_literal_fused_kernel (43, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.60
+    SM Frequency                    Ghz         1.07
+    Elapsed Cycles                cycle       11,647
+    Memory Throughput                 %         2.23
+    DRAM Throughput                   %         0.23
+    Duration                         us        10.85
+    L1/TEX Cache Throughput           %         9.02
+    L2 Cache Throughput               %         0.51
+    SM Active Cycles              cycle     2,881.84
+    Compute (SM) Throughput           %         5.73
+    ----------------------- ----------- ------------
+
+    OPT   This kernel grid is too small to fill the available resources on this device, resulting in only 0.0 full      
+          waves across all SMs. Look at Launch Statistics for more details.                                             
+
+  popcount_weighted_keys_literal_fused_kernel (305, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.60
+    SM Frequency                    Ghz         1.06
+    Elapsed Cycles                cycle       10,700
+    Memory Throughput                 %        11.05
+    DRAM Throughput                   %         0.92
+    Duration                         us        10.02
+    L1/TEX Cache Throughput           %        14.33
+    L2 Cache Throughput               %         2.17
+    SM Active Cycles              cycle     8,219.99
+    Compute (SM) Throughput           %        26.81
+    ----------------------- ----------- ------------
+
+    OPT   This kernel grid is too small to fill the available resources on this device, resulting in only 0.3 full      
+          waves across all SMs. Look at Launch Statistics for more details.                                             
+
+  popcount_weighted_keys_literal_fused_kernel (220, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.61
+    SM Frequency                    Ghz         1.07
+    Elapsed Cycles                cycle       11,636
+    Memory Throughput                 %        10.07
+    DRAM Throughput                   %         0.91
+    Duration                         us        10.85
+    L1/TEX Cache Throughput           %        13.30
+    L2 Cache Throughput               %         2.67
+    SM Active Cycles              cycle     8,798.05
+    Compute (SM) Throughput           %        25.50
+    ----------------------- ----------- ------------
+
+    OPT   This kernel grid is too small to fill the available resources on this device, resulting in only 0.2 full      
+          waves across all SMs. Look at Launch Statistics for more details.                                             
+
+  popcount_weighted_keys_literal_fused_kernel (1480, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.62
+    SM Frequency                    Ghz         1.03
+    Elapsed Cycles                cycle       28,846
+    Memory Throughput                 %        23.75
+    DRAM Throughput                   %         1.94
+    Duration                         us        27.87
+    L1/TEX Cache Throughput           %        27.73
+    L2 Cache Throughput               %         3.29
+    SM Active Cycles              cycle    24,543.02
+    Compute (SM) Throughput           %        58.95
+    ----------------------- ----------- ------------
+
+    OPT   This kernel exhibits low compute throughput and memory bandwidth utilization relative to the peak performance 
+          of this device. Achieved compute throughput and/or memory bandwidth below 60.0% of peak typically indicate    
+          latency issues. Look at Scheduler Statistics and Warp State Statistics for potential reasons.                 
+
+  popcount_weighted_keys_literal_fused_kernel (43, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.60
+    SM Frequency                    Ghz         1.07
+    Elapsed Cycles                cycle       11,233
+    Memory Throughput                 %         2.32
+    DRAM Throughput                   %         0.24
+    Duration                         us        10.46
+    L1/TEX Cache Throughput           %         8.98
+    L2 Cache Throughput               %         1.62
+    SM Active Cycles              cycle     2,895.24
+    Compute (SM) Throughput           %         5.94
+    ----------------------- ----------- ------------
+
+    OPT   This kernel grid is too small to fill the available resources on this device, resulting in only 0.0 full      
+          waves across all SMs. Look at Launch Statistics for more details.                                             
+

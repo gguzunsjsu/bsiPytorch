@@ -1,0 +1,251 @@
+==PROF== Connected to process 3556019 (/fs/atipa/home/017510883/miniconda3/envs/bsiPytorch/bin/python3.12)
+Auto-detected device: cuda
+
+==========================================================================================
+Dataset: lambada | Split: validation[:5] | Model: facebook/opt-1.3b
+==========================================================================================
+Initializing tokenizer and dataset...
+Using device: cuda
+
+[Metric]
+  Type       : NEXT-TOKEN ACCURACY (last-token prediction)
+  Dataset    : lambada  [validation split]
+  Samples    : 5
+  Definition : Right-pad/truncate to max_seq_len=512;
+               label is the last token; logits are taken at the last non-pad position.
+
+--- Benchmarking FP baseline: facebook/opt-1.3b ---
+Baseline model dtype: torch.float16
+Model static size: 2509.609MB
+FP16 linear weights size: 2304.00MB
+-> [NEXT-TOKEN ACC] FP baseline top1=0.6000, top5=0.8000, avg_fwd=188.064ms, peak_mem=2835.62MB
+
+--- Benchmarking BSI (dec=2) ---
+Reference Full Model dtype (pre-quantization): torch.float32
+Quantizing model with BSI (decimal_places=2, scope=all, device=cuda)...
+Quantized 144 linear layers to BSI with decimalPlaces=2 (scope=all)
+Running evaluation...
+BSI eval:   0%|                                                                                                                                           | 0/5 [00:00<?, ?it/s]==PROF== Profiling "dot_product_optimized_kernel": 0%....50%....100% - 10 passes
+==PROF== Profiling "dot_product_optimized_kernel": 0%....50%....100% - 10 passes
+==PROF== Profiling "dot_product_optimized_kernel": 0%....50%....100% - 10 passes
+==PROF== Profiling "dot_product_optimized_kernel": 0%....50%....100% - 10 passes
+==PROF== Profiling "dot_product_optimized_kernel": 0%....50%....100% - 10 passes
+==PROF== Profiling "dot_product_optimized_kernel": 0%....50%....100% - 10 passes
+==PROF== Profiling "dot_product_optimized_kernel": 0%....50%....100% - 10 passes
+==PROF== Profiling "dot_product_optimized_kernel": 0%....50%....100% - 10 passes
+==PROF== Profiling "dot_product_optimized_kernel": 0%....50%....100% - 10 passes
+==PROF== Profiling "dot_product_optimized_kernel": 0%....50%....100% - 10 passes
+BSI eval:  20%|██████████████████████████                                                                                                        | 1/5 [04:09<16:37, 249.48s/it]BSI eval:  20%|███████████████▍                                                             | 1/5 [04:09<16:37, 249.48s/it, build_ms=2856875.8, dot_ms=25791.5, fwd_ms=249467.9]BSI eval:  40%|██████████████████████████████▊                                              | 2/5 [08:13<12:18, 246.30s/it, build_ms=2856875.8, dot_ms=25791.5, fwd_ms=249467.9]BSI eval:  40%|██████████████████████████████▊                                              | 2/5 [08:13<12:18, 246.30s/it, build_ms=2863132.3, dot_ms=19746.7, fwd_ms=244071.8]BSI eval:  60%|██████████████████████████████████████████████▏                              | 3/5 [12:17<08:10, 245.08s/it, build_ms=2863132.3, dot_ms=19746.7, fwd_ms=244071.8]BSI eval:  60%|██████████████████████████████████████████████▏                              | 3/5 [12:17<08:10, 245.08s/it, build_ms=2823110.9, dot_ms=19550.2, fwd_ms=243613.0]BSI eval:  80%|█████████████████████████████████████████████████████████████▌               | 4/5 [16:19<04:04, 244.02s/it, build_ms=2823110.9, dot_ms=19550.2, fwd_ms=243613.0]BSI eval:  80%|█████████████████████████████████████████████████████████████▌               | 4/5 [16:19<04:04, 244.02s/it, build_ms=2827887.0, dot_ms=19291.8, fwd_ms=242391.9]BSI eval: 100%|█████████████████████████████████████████████████████████████████████████████| 5/5 [20:21<00:00, 243.39s/it, build_ms=2827887.0, dot_ms=19291.8, fwd_ms=242391.9]BSI eval: 100%|█████████████████████████████████████████████████████████████████████████████| 5/5 [20:21<00:00, 243.39s/it, build_ms=2777841.5, dot_ms=19395.4, fwd_ms=242265.8]BSI eval: 100%|█████████████████████████████████████████████████████████████████████████████| 5/5 [20:21<00:00, 244.37s/it, build_ms=2777841.5, dot_ms=19395.4, fwd_ms=242265.8]
+  dbg batch=0 len=108, pad_len=404, label_id=8492(Ġcake), pred_id=8492, match=True
+    top5: [(8492, 'Ġcake', '13.742'), (9368, 'Ġtower', '10.331'), (27483, 'Ġtray', '9.976'), (17709, 'Ġstack', '9.929'), (2103, 'Ġtable', '9.594')]
+  dbg batch=1 len=94, pad_len=418, label_id=260(an), pred_id=260, match=True
+    top5: [(260, 'an', '16.781'), (225, 'en', '12.298'), (2156, 'Ġ,', '11.885'), (479, 'Ġ.', '11.352'), (4242, 'ena', '10.735')]
+  dbg batch=2 len=71, pad_len=441, label_id=7821(Ġmat), pred_id=7821, match=True
+    top5: [(7821, 'Ġmat', '11.707'), (1514, 'Ġspot', '10.208'), (1255, 'Ġground', '9.764'), (1929, 'Ġfloor', '9.167'), (97, 'Ġother', '9.086')]
+Completed BSI eval: top1_acc=0.6000, top5_acc=0.8000
+-> [NEXT-TOKEN ACC] BSI (dec=2) top1=0.6000, top5=0.8000, avg_fwd=244362.100ms, build=2829769.493ms, dot=20755.123ms (per-sample)
+Baseline model static size: 5019.219MB
+BSI model static size: 1512.778MB
+Compression: 3.32x
+==PROF== Disconnected from process 3556019
+[3556019] python3.12@127.0.0.1
+  dot_product_optimized_kernel (1480, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.62
+    SM Frequency                    Ghz         1.06
+    Elapsed Cycles                cycle      103,639
+    Memory Throughput                 %        66.83
+    DRAM Throughput                   %         0.56
+    Duration                         us        97.15
+    L1/TEX Cache Throughput           %        72.35
+    L2 Cache Throughput               %         1.12
+    SM Active Cycles              cycle    95,199.40
+    Compute (SM) Throughput           %        61.33
+    ----------------------- ----------- ------------
+
+    INF   Compute and Memory are well-balanced: To reduce runtime, both computation and memory traffic must be reduced. 
+          Check both the Compute Workload Analysis and Memory Workload Analysis sections.                               
+
+  dot_product_optimized_kernel (43, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.61
+    SM Frequency                    Ghz         1.08
+    Elapsed Cycles                cycle       47,585
+    Memory Throughput                 %         5.87
+    DRAM Throughput                   %         0.05
+    Duration                         us        44.13
+    L1/TEX Cache Throughput           %        19.11
+    L2 Cache Throughput               %         0.24
+    SM Active Cycles              cycle    14,604.13
+    Compute (SM) Throughput           %         5.39
+    ----------------------- ----------- ------------
+
+    OPT   This kernel grid is too small to fill the available resources on this device, resulting in only 0.1 full      
+          waves across all SMs. Look at Launch Statistics for more details.                                             
+
+  dot_product_optimized_kernel (305, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.61
+    SM Frequency                    Ghz         1.06
+    Elapsed Cycles                cycle       33,201
+    Memory Throughput                 %        34.50
+    DRAM Throughput                   %         0.29
+    Duration                         us        31.20
+    L1/TEX Cache Throughput           %        38.45
+    L2 Cache Throughput               %         1.07
+    SM Active Cycles              cycle    29,572.17
+    Compute (SM) Throughput           %        31.77
+    ----------------------- ----------- ------------
+
+    OPT   This kernel grid is too small to fill the available resources on this device, resulting in only 0.4 full      
+          waves across all SMs. Look at Launch Statistics for more details.                                             
+
+  dot_product_optimized_kernel (220, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.61
+    SM Frequency                    Ghz         1.06
+    Elapsed Cycles                cycle       43,947
+    Memory Throughput                 %        28.01
+    DRAM Throughput                   %         0.24
+    Duration                         us        41.09
+    L1/TEX Cache Throughput           %        30.36
+    L2 Cache Throughput               %         0.65
+    SM Active Cycles              cycle    40,364.67
+    Compute (SM) Throughput           %        25.74
+    ----------------------- ----------- ------------
+
+    OPT   This kernel grid is too small to fill the available resources on this device, resulting in only 0.3 full      
+          waves across all SMs. Look at Launch Statistics for more details.                                             
+
+  dot_product_optimized_kernel (1480, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.62
+    SM Frequency                    Ghz         1.05
+    Elapsed Cycles                cycle      103,964
+    Memory Throughput                 %        66.75
+    DRAM Throughput                   %         0.55
+    Duration                         us        98.50
+    L1/TEX Cache Throughput           %        72.78
+    L2 Cache Throughput               %         0.93
+    SM Active Cycles              cycle    94,631.25
+    Compute (SM) Throughput           %        61.27
+    ----------------------- ----------- ------------
+
+    INF   Compute and Memory are well-balanced: To reduce runtime, both computation and memory traffic must be reduced. 
+          Check both the Compute Workload Analysis and Memory Workload Analysis sections.                               
+
+  dot_product_optimized_kernel (43, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.62
+    SM Frequency                    Ghz         1.08
+    Elapsed Cycles                cycle       48,237
+    Memory Throughput                 %         5.79
+    DRAM Throughput                   %         0.05
+    Duration                         us        44.70
+    L1/TEX Cache Throughput           %        19.02
+    L2 Cache Throughput               %         0.20
+    SM Active Cycles              cycle    14,675.17
+    Compute (SM) Throughput           %         5.31
+    ----------------------- ----------- ------------
+
+    OPT   This kernel grid is too small to fill the available resources on this device, resulting in only 0.1 full      
+          waves across all SMs. Look at Launch Statistics for more details.                                             
+
+  dot_product_optimized_kernel (305, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.61
+    SM Frequency                    Ghz         1.07
+    Elapsed Cycles                cycle       33,283
+    Memory Throughput                 %        34.30
+    DRAM Throughput                   %         0.29
+    Duration                         us        31.07
+    L1/TEX Cache Throughput           %        38.09
+    L2 Cache Throughput               %         1.27
+    SM Active Cycles              cycle    29,847.65
+    Compute (SM) Throughput           %        31.60
+    ----------------------- ----------- ------------
+
+    OPT   This kernel grid is too small to fill the available resources on this device, resulting in only 0.4 full      
+          waves across all SMs. Look at Launch Statistics for more details.                                             
+
+  dot_product_optimized_kernel (220, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.62
+    SM Frequency                    Ghz         1.06
+    Elapsed Cycles                cycle       43,818
+    Memory Throughput                 %        28.08
+    DRAM Throughput                   %         0.24
+    Duration                         us        40.99
+    L1/TEX Cache Throughput           %        30.28
+    L2 Cache Throughput               %         0.90
+    SM Active Cycles              cycle    40,461.40
+    Compute (SM) Throughput           %        25.80
+    ----------------------- ----------- ------------
+
+    OPT   This kernel grid is too small to fill the available resources on this device, resulting in only 0.3 full      
+          waves across all SMs. Look at Launch Statistics for more details.                                             
+
+  dot_product_optimized_kernel (1480, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.62
+    SM Frequency                    Ghz         1.05
+    Elapsed Cycles                cycle      103,673
+    Memory Throughput                 %        66.99
+    DRAM Throughput                   %         0.55
+    Duration                         us        98.18
+    L1/TEX Cache Throughput           %        72.78
+    L2 Cache Throughput               %         0.93
+    SM Active Cycles              cycle    94,637.29
+    Compute (SM) Throughput           %        61.48
+    ----------------------- ----------- ------------
+
+    INF   Compute and Memory are well-balanced: To reduce runtime, both computation and memory traffic must be reduced. 
+          Check both the Compute Workload Analysis and Memory Workload Analysis sections.                               
+
+  dot_product_optimized_kernel (43, 1, 1)x(256, 1, 1), Context 1, Stream 7, Device 0, CC 9.0
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         2.62
+    SM Frequency                    Ghz         1.08
+    Elapsed Cycles                cycle       48,152
+    Memory Throughput                 %         5.80
+    DRAM Throughput                   %         0.05
+    Duration                         us        44.64
+    L1/TEX Cache Throughput           %        19.10
+    L2 Cache Throughput               %         0.20
+    SM Active Cycles              cycle    14,607.76
+    Compute (SM) Throughput           %         5.32
+    ----------------------- ----------- ------------
+
+    OPT   This kernel grid is too small to fill the available resources on this device, resulting in only 0.1 full      
+          waves across all SMs. Look at Launch Statistics for more details.                                             
+
