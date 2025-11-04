@@ -508,56 +508,52 @@ void popcount_weighted_keys_literal_fused_kernel(
     int r = blockIdx.x;
     if (r >= R) return;
 
-    // Pre-load global index to avoid redundant memory access
     long long global_idx = __ldg(&indices[r]);
+    const unsigned long long* B_r = B + (size_t)r * Sb * W;
+    const double* Bw_r = Bw + (size_t)r * Sb;
 
-    double local = 0.0;
-    long long total = (long long)Sa * (long long)Sb * (long long)W;
+    double sum = 0.0;
+    int total_pairs = Sa * Sb;
 
-    // Main computation loop - use async global loads (__ldg for read-only data)
-    for (long long idx = threadIdx.x; idx < total; idx += blockDim.x) {
-        // Keep original indexing for parallelism
-        int i = static_cast<int>(idx / (Sb * (long long)W));
-        int rem = static_cast<int>(idx % (Sb * (long long)W));
-        int j = rem / W;
-        int w = rem % W;
+    // Outer loop over (i,j) pairs - threads collaborate
+    for (int ij = threadIdx.x; ij < total_pairs; ij += blockDim.x) {
+        int i = ij / Sb;
+        int j = ij % Sb;
 
-        const unsigned long long* ai = A + (size_t)i * W;
-        const unsigned long long* bj = B + ((size_t)r * Sb + j) * W;
-
-        // Use __ldg for read-only cached loads (L1 cache)
-        unsigned long long a_val = __ldg(&ai[w]);
-        unsigned long long b_val = __ldg(&bj[w]);
-        int cnt = __popcll(a_val & b_val);
-
-        // Pre-load weights
+        // Load weights ONCE per (i,j) pair
         double aw = __ldg(&Aw[i]);
-        double bw = __ldg(&Bw[(size_t)r * Sb + j]);
+        double bw = __ldg(&Bw_r[j]);
+        double weight = aw * bw;
 
-        local += (double)cnt * aw * bw;
+        // Pointers to word arrays for this (i,j) pair
+        const unsigned long long* a_words = A + (size_t)i * W;
+        const unsigned long long* b_words = B_r + (size_t)j * W;
+
+        // Inner loop: popcount over all W words
+        unsigned long long pair_count = 0;
+        #pragma unroll 4
+        for (int w = 0; w < W; ++w) {
+            pair_count += __popcll(__ldg(&a_words[w]) & __ldg(&b_words[w]));
+        }
+
+        sum += (double)pair_count * weight;
     }
 
-    // Warp-level reduction (no divergence within warp)
-    local = warp_reduce_sum_double(local);
+    // Warp reduction
+    sum = warp_reduce_sum_double(sum);
 
-    // Block-level reduction using shared memory
-    __shared__ double warp_buf[32];
-    const int lane = threadIdx.x & 31;
-    const int warp_id = threadIdx.x >> 5;
+    // Block reduction
+    __shared__ double smem[32];
+    int lane = threadIdx.x & 31;
+    int warp_id = threadIdx.x >> 5;
 
-    // Only lane 0 of each warp writes (no divergence)
-    if (lane == 0) {
-        warp_buf[warp_id] = local;
-    }
+    if (lane == 0) smem[warp_id] = sum;
     __syncthreads();
 
-    // Final reduction in first warp (minimal divergence)
     if (warp_id == 0) {
         int num_warps = (blockDim.x + 31) >> 5;
-        double val = (lane < num_warps) ? warp_buf[lane] : 0.0;
+        double val = (lane < num_warps) ? smem[lane] : 0.0;
         val = warp_reduce_sum_double(val);
-
-        // Single thread writes final result
         if (lane == 0) {
             out_global[global_idx] = val * scale_inv;
         }
