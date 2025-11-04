@@ -199,8 +199,8 @@ class BSIQuantizedLinear(torch.nn.Module):
                 self._query_cache_set(cache_key, (query_capsule, query_mem))
             query_capsules.append(query_capsule)
 
-        # Single multi-query call on CUDA to compute all outputs at once
-        scores_2d, dot_ns = bsi_ops.batch_dot_product_multiquery_cuda_caps(query_capsules, self._bsi_keys_cuda)
+        # Single multi-query call on CUDA to compute all outputs at once (using two-stage approach)
+        scores_2d, dot_ns = bsi_ops.batch_dot_product_two_stage_cuda_caps(query_capsules, self._bsi_keys_cuda)
         dot_ns_this_forward += int(dot_ns)
 
         # Add bias and cast, then split rows back
