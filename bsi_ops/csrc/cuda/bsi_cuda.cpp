@@ -37,20 +37,20 @@ extern "C" void launch_ewah_decompress(
 
 extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     const unsigned long long* A,
-    const double* Aw,
+    const float* Aw,
     int Sa,
     int W,
     const unsigned long long* B,
-    const double* Bw,
+    const float* Bw,
     int Sb,
     int R,
     int Q,
     int q_tile,
     const long long* indices_r,
     const long long* indices_q,
-    double scale_inv,
+    float scale_inv,
     int R_total,
-    double* out_global,
+    float* out_global,
     cudaStream_t stream);
 
 template <typename T>
@@ -87,7 +87,7 @@ struct KeyMeta {
 
 struct PrebuiltBSIKeysCUDA {
     std::vector<at::Tensor> dev_words; // each [S_k, W], int64, cuda
-    std::vector<at::Tensor> slice_weights; // each [S_k], float64, cuda
+    std::vector<at::Tensor> slice_weights; // each [S_k], float32, cuda
     std::vector<KeyMeta> metas;
     std::vector<BsiVectorCudaData> device_views;
     // Grouped, contiguous views by Sb to avoid per-call stacking
@@ -133,15 +133,15 @@ static inline long double weight_for_meta(int offset, int idx, bool twos, int S)
 }
 
 static inline at::Tensor make_slice_weights_cuda(int S, int offset, bool twos) {
-    std::vector<double> host(S);
+    std::vector<float> host(S);
     for (int i = 0; i < S; ++i) {
         long double w = weight_for_meta(offset, i, twos, S);
-        host[i] = static_cast<double>(w);
+        host[i] = static_cast<float>(w);
     }
     return torch::from_blob(
                host.data(),
                {S},
-               torch::TensorOptions().dtype(torch::kFloat64))
+               torch::TensorOptions().dtype(torch::kFloat32))
         .clone()
         .to(torch::kCUDA);
 }
@@ -300,7 +300,7 @@ struct TempGroup {
         prepared.push_back(std::move(pg));
     }
 
-    auto out_all = torch::zeros({Q, R}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
+    auto out_all = torch::zeros({Q, R}, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
     TORCH_CHECK(common_decimals == keys->decimals, "Decimal mismatch between queries and keys");
     const int totalDecimals = common_decimals + keys->decimals;
     const double scale_inv = (totalDecimals > 0) ? (1.0 / std::pow(10.0, totalDecimals)) : 1.0;
@@ -313,7 +313,7 @@ struct TempGroup {
 
     for (const auto& pg : prepared) {
         const auto* A = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(pg.words));
-        const auto* Aw = tensor_data_ptr<double>(pg.weights);
+        const auto* Aw = tensor_data_ptr<float>(pg.weights);
         const auto* q_idx = reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(pg.q_indices));
 
         for (const auto& kv2 : keys->grouped_indices) {
@@ -324,25 +324,25 @@ struct TempGroup {
             const auto& words = keys->grouped_words.at(Sb);
             const auto& Bw_stacked = keys->grouped_weights.at(Sb);
         const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words));
-        const auto* Bw_ptr = tensor_data_ptr<double>(Bw_stacked);
+            const auto* Bw_ptr = tensor_data_ptr<float>(Bw_stacked);
         const auto& idx_dev = keys->grouped_indices_dev.at(Sb);
 
-        launch_popcount_weighted_keys_literal_fused_multiq(
-            A,
-            Aw,
-            pg.S,
-            keys->W,
-            B_words,
-            Bw_ptr,
-            Sb,
-            Rg,
-            static_cast<int>(pg.Qcount),
-            bsi_cuda_q_tile(),
-            reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev)),
-            q_idx,
-            scale_inv,
-            static_cast<int>(R),
-            tensor_data_ptr<double>(out_all),
+            launch_popcount_weighted_keys_literal_fused_multiq(
+                A,
+                Aw,
+                pg.S,
+                keys->W,
+                B_words,
+                Bw_ptr,
+                Sb,
+                Rg,
+                static_cast<int>(pg.Qcount),
+                bsi_cuda_q_tile(),
+                reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev)),
+                q_idx,
+                static_cast<float>(scale_inv),
+                static_cast<int>(R),
+                tensor_data_ptr<float>(out_all),
                 stream.stream());
         }
     }
@@ -420,7 +420,7 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
         for (auto& kv : groups) {
             int Sb = kv.first; const auto& idxs = kv.second; int R = static_cast<int>(idxs.size());
             auto gw = torch::empty({R, Sb, holder->W}, torch::TensorOptions().dtype(torch::kInt64).device(torch::kCUDA));
-            auto gwt = torch::empty({R, Sb}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
+            auto gwt = torch::empty({R, Sb}, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
             for (int i=0; i<R; ++i) {
                 int64_t r = idxs[i];
                 gw[i].copy_( holder->dev_words[r] );

@@ -121,20 +121,20 @@ void pack_bits_all_ballot_multi_kernel(
 extern "C" __global__
 void popcount_weighted_keys_literal_fused_multiq_kernel(
     const unsigned long long* __restrict__ A,    // [Q, Sa, W]
-    const double* __restrict__ Aw,               // [Q, Sa]
+    const float* __restrict__ Aw,                // [Q, Sa]
     int Sa,
     int W,
     const unsigned long long* __restrict__ B,    // [R, Sb, W]
-    const double* __restrict__ Bw,               // [R, Sb]
+    const float* __restrict__ Bw,                // [R, Sb]
     int Sb,
     int R,
     int Q,
     int q_tile,
     const long long* __restrict__ key_indices,   // [R]
     const long long* __restrict__ query_indices, // [Q]
-    double scale_inv,
+    float scale_inv,
     int R_total,
-    double* __restrict__ out_global)
+    float* __restrict__ out_global)
 {
     int r = blockIdx.x;
     int q_block = blockIdx.y;
@@ -146,9 +146,9 @@ void popcount_weighted_keys_literal_fused_multiq_kernel(
 
     long long global_r = __ldg(&key_indices[r]);
     const unsigned long long* B_base = B + ((size_t)r * Sb * W);
-    const double* Bw_base = Bw + ((size_t)r * Sb);
+    const float* Bw_base = Bw + ((size_t)r * Sb);
 
-    __shared__ double warp_buf[32];
+    __shared__ float warp_buf[32];
     const int lane = threadIdx.x & 31;
     const int warp_id = threadIdx.x >> 5;
     const int num_warps = (blockDim.x + 31) >> 5;
@@ -159,9 +159,9 @@ void popcount_weighted_keys_literal_fused_multiq_kernel(
 
         long long global_q = __ldg(&query_indices[q]);
         const unsigned long long* A_base = A + ((size_t)q * Sa * W);
-        const double* Aw_base = Aw + ((size_t)q * Sa);
+        const float* Aw_base = Aw + ((size_t)q * Sa);
 
-        double local = 0.0;
+        float local = 0.0f;
         long long total = (long long)Sa * (long long)Sb * (long long)W;
         for (long long idx = threadIdx.x; idx < total; idx += blockDim.x) {
             int i = static_cast<int>(idx / (Sb * (long long)W));
@@ -176,13 +176,13 @@ void popcount_weighted_keys_literal_fused_multiq_kernel(
             unsigned long long b_val = __ldg(&bj[w]);
             int cnt = __popcll(a_val & b_val);
 
-            double aw = __ldg(&Aw_base[i]);
-            double bw = __ldg(&Bw_base[j]);
+            float aw = __ldg(&Aw_base[i]);
+            float bw = __ldg(&Bw_base[j]);
 
-            local += (double)cnt * aw * bw;
+            local += (float)cnt * aw * bw;
         }
 
-        local = warp_reduce_sum_double(local);
+        local = warp_reduce_sum_float(local);
 
         if (lane == 0) {
             warp_buf[warp_id] = local;
@@ -190,8 +190,8 @@ void popcount_weighted_keys_literal_fused_multiq_kernel(
         __syncthreads();
 
         if (warp_id == 0) {
-            double val = (lane < num_warps) ? warp_buf[lane] : 0.0;
-            val = warp_reduce_sum_double(val);
+            float val = (lane < num_warps) ? warp_buf[lane] : 0.0f;
+            val = warp_reduce_sum_float(val);
 
             if (lane == 0) {
                 out_global[((size_t)global_q * (size_t)R_total) + (size_t)global_r] = val * scale_inv;
@@ -203,20 +203,20 @@ void popcount_weighted_keys_literal_fused_multiq_kernel(
 
 extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     const unsigned long long* A,
-    const double* Aw,
+    const float* Aw,
     int Sa,
     int W,
     const unsigned long long* B,
-    const double* Bw,
+    const float* Bw,
     int Sb,
     int R,
     int Q,
     int q_tile,
     const long long* indices_r,
     const long long* indices_q,
-    double scale_inv,
+    float scale_inv,
     int R_total,
-    double* out_global,
+    float* out_global,
     cudaStream_t stream)
 {
     static int cached_block = 0;
