@@ -124,7 +124,7 @@ void pack_bits_all_ballot_multi_kernel(
     }
 }
 
-// Multi-query fused version: process Q queries in a single launch; tile queries per block to reduce grid size
+// Multi-query fused version: process Q queries and multiple keys per block; tiles both axes to shrink grid
 extern "C" __global__
 void popcount_weighted_keys_literal_fused_multiq_kernel(
     const unsigned long long* __restrict__ A,    // [Q, Sa, W]
@@ -137,30 +137,27 @@ void popcount_weighted_keys_literal_fused_multiq_kernel(
     int R,
     int Q,
     int q_tile,
+    int r_tile,
     const long long* __restrict__ key_indices,   // [R]
     const long long* __restrict__ query_indices, // [Q]
     float scale_inv,
     int R_total,
     float* __restrict__ out_global)
 {
-    int r = blockIdx.x;
+    int r_block = blockIdx.x;
     int q_block = blockIdx.y;
-    if (r >= R) return;
-
-    const int tile = (q_tile > 0) ? q_tile : 1;
-    const int q_start = q_block * tile;
+    const int tile_q = (q_tile > 0) ? q_tile : 1;
+    const int tile_r = (r_tile > 0) ? r_tile : 1;
+    const int q_start = q_block * tile_q;
+    const int r_start = r_block * tile_r;
     if (q_start >= Q) return;
-
-    long long global_r = __ldg(&key_indices[r]);
-    const unsigned long long* B_base = B + ((size_t)r * Sb * W);
-    const float* Bw_base = Bw + ((size_t)r * Sb);
 
     __shared__ float warp_buf[32];
     const int lane = threadIdx.x & 31;
     const int warp_id = threadIdx.x >> 5;
     const int num_warps = (blockDim.x + 31) >> 5;
 
-    for (int tq = 0; tq < tile; ++tq) {
+    for (int tq = 0; tq < tile_q; ++tq) {
         int q = q_start + tq;
         if (q >= Q) break;
 
@@ -168,43 +165,52 @@ void popcount_weighted_keys_literal_fused_multiq_kernel(
         const unsigned long long* A_base = A + ((size_t)q * Sa * W);
         const float* Aw_base = Aw + ((size_t)q * Sa);
 
-        float local = 0.0f;
-        long long total = (long long)Sa * (long long)Sb * (long long)W;
-        for (long long idx = threadIdx.x; idx < total; idx += blockDim.x) {
-            int i = static_cast<int>(idx / (Sb * (long long)W));
-            int rem = static_cast<int>(idx % (Sb * (long long)W));
-            int j = rem / W;
-            int w = rem % W;
+        for (int tr = 0; tr < tile_r; ++tr) {
+            int r = r_start + tr;
+            if (r >= R) break;
 
-            const unsigned long long* ai = A_base + ((size_t)i * W);
-            const unsigned long long* bj = B_base + ((size_t)j * W);
+            long long global_r = __ldg(&key_indices[r]);
+            const unsigned long long* B_base = B + ((size_t)r * Sb * W);
+            const float* Bw_base = Bw + ((size_t)r * Sb);
 
-            unsigned long long a_val = __ldg(&ai[w]);
-            unsigned long long b_val = __ldg(&bj[w]);
-            int cnt = __popcll(a_val & b_val);
+            float local = 0.0f;
+            long long total = (long long)Sa * (long long)Sb * (long long)W;
+            for (long long idx = threadIdx.x; idx < total; idx += blockDim.x) {
+                int i = static_cast<int>(idx / (Sb * (long long)W));
+                int rem = static_cast<int>(idx % (Sb * (long long)W));
+                int j = rem / W;
+                int w = rem % W;
 
-            float aw = __ldg(&Aw_base[i]);
-            float bw = __ldg(&Bw_base[j]);
+                const unsigned long long* ai = A_base + ((size_t)i * W);
+                const unsigned long long* bj = B_base + ((size_t)j * W);
 
-            local += (float)cnt * aw * bw;
-        }
+                unsigned long long a_val = __ldg(&ai[w]);
+                unsigned long long b_val = __ldg(&bj[w]);
+                int cnt = __popcll(a_val & b_val);
 
-        local = warp_reduce_sum_float(local);
+                float aw = __ldg(&Aw_base[i]);
+                float bw = __ldg(&Bw_base[j]);
 
-        if (lane == 0) {
-            warp_buf[warp_id] = local;
-        }
-        __syncthreads();
+                local += (float)cnt * aw * bw;
+            }
 
-        if (warp_id == 0) {
-            float val = (lane < num_warps) ? warp_buf[lane] : 0.0f;
-            val = warp_reduce_sum_float(val);
+            local = warp_reduce_sum_float(local);
 
             if (lane == 0) {
-                out_global[((size_t)global_q * (size_t)R_total) + (size_t)global_r] = val * scale_inv;
+                warp_buf[warp_id] = local;
             }
+            __syncthreads();
+
+            if (warp_id == 0) {
+                float val = (lane < num_warps) ? warp_buf[lane] : 0.0f;
+                val = warp_reduce_sum_float(val);
+
+                if (lane == 0) {
+                    out_global[((size_t)global_q * (size_t)R_total) + (size_t)global_r] = val * scale_inv;
+                }
+            }
+            __syncthreads();
         }
-        __syncthreads();
     }
 }
 
@@ -219,6 +225,7 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     int R,
     int Q,
     int q_tile,
+    int r_tile,
     const long long* indices_r,
     const long long* indices_q,
     float scale_inv,
@@ -238,11 +245,12 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
         cached_block = (v / 32) * 32;
         if (cached_block == 0) cached_block = 32;
     }
-    int tile = (q_tile > 0) ? q_tile : 1;
-    dim3 grid(R, (Q + tile - 1) / tile);
+    int tile_q = (q_tile > 0) ? q_tile : 1;
+    int tile_r = (r_tile > 0) ? r_tile : 1;
+    dim3 grid((R + tile_r - 1) / tile_r, (Q + tile_q - 1) / tile_q);
     dim3 block(cached_block);
     popcount_weighted_keys_literal_fused_multiq_kernel<<<grid, block, 0, stream>>>(
-        A, Aw, Sa, W, B, Bw, Sb, R, Q, tile, indices_r, indices_q, scale_inv, R_total, out_global);
+        A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r, indices_r, indices_q, scale_inv, R_total, out_global);
 }
 
 extern "C" void launch_ewah_decompress(

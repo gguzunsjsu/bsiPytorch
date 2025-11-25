@@ -46,6 +46,7 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     int R,
     int Q,
     int q_tile,
+    int r_tile,
     const long long* indices_r,
     const long long* indices_q,
     float scale_inv,
@@ -69,6 +70,19 @@ static int bsi_cuda_q_tile() {
     if (cached > 0) return cached;
     int v = 8; // default tile size across queries
     if (const char* s = std::getenv("BSI_Q_TILE")) {
+        int t = std::atoi(s);
+        if (t > 0) v = t;
+    }
+    if (v < 1) v = 1;
+    cached = v;
+    return cached;
+}
+
+static int bsi_cuda_r_tile() {
+    static int cached = 0;
+    if (cached > 0) return cached;
+    int v = 4; // default tile size across keys
+    if (const char* s = std::getenv("BSI_R_TILE")) {
         int t = std::atoi(s);
         if (t > 0) v = t;
     }
@@ -338,6 +352,7 @@ struct TempGroup {
                 Rg,
                 static_cast<int>(pg.Qcount),
                 bsi_cuda_q_tile(),
+                bsi_cuda_r_tile(),
                 reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev)),
                 q_idx,
                 static_cast<float>(scale_inv),
