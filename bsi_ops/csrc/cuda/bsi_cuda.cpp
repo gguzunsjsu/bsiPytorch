@@ -191,6 +191,40 @@ static pybind11::tuple build_bsi_query_cuda(torch::Tensor q, int decimalPlaces, 
     return pybind11::make_tuple(cap, static_cast<uint64_t>(holder->mem_bytes), holder->S, holder->W);
 }
 
+static pybind11::list build_bsi_queries_cuda_batch(torch::Tensor q2d, int decimalPlaces, float compress_threshold = 0.2f) {
+    TORCH_CHECK(q2d.dim() == 2, "q must be 2D [Q, d]");
+    (void)compress_threshold;
+    auto device = torch::Device(torch::kCUDA, c10::cuda::current_device());
+    bool verbose = bsi_cuda_should_log();
+    const auto Q = q2d.size(0);
+    pybind11::list out;
+    for (int64_t qi = 0; qi < Q; ++qi) {
+        auto row = q2d[qi].detach();
+        auto* holder = new PrebuiltBSIQueryCUDA();
+        holder->vec = nullptr;
+        holder->device_view = build_bsi_vector_from_float_tensor(row, decimalPlaces, device, verbose);
+        holder->S = holder->device_view.slices;
+        holder->W = holder->device_view.words_per_slice;
+        holder->dev_words = holder->device_view.words;
+        holder->slice_weights = make_slice_weights_cuda(holder->S,
+                                                        holder->device_view.offset,
+                                                        holder->device_view.twos_complement);
+        holder->mem_bytes = static_cast<size_t>(holder->dev_words.numel() * holder->dev_words.element_size());
+
+        pybind11::capsule cap(holder, "PrebuiltBSIQueryCUDA",
+            [](PyObject* capsule) {
+                auto* p = reinterpret_cast<PrebuiltBSIQueryCUDA*>(PyCapsule_GetPointer(capsule, "PrebuiltBSIQueryCUDA"));
+                if (p) {
+                    delete p->vec;
+                    delete p;
+                }
+            }
+        );
+        out.append(cap);
+    }
+    return out;
+}
+
 static std::string cuda_builder_version() {
     static const std::string version = std::string("CUDA_BUILDER_PHASE2_ROUNDING_V2 ") + __DATE__ + " " + __TIME__;
     return version;
@@ -504,6 +538,12 @@ void register_bsi_cuda(pybind11::module& m) {
         pybind11::arg("decimal_places"),
         pybind11::arg("compress_threshold") = 0.2f,
         "Build BSI query vector on CUDA");
+    m.def("build_bsi_queries_cuda_batch",
+        &build_bsi_queries_cuda_batch,
+        pybind11::arg("q2d"),
+        pybind11::arg("decimal_places"),
+        pybind11::arg("compress_threshold") = 0.2f,
+        "Build BSI queries for a batch on CUDA");
 
     // Hybrid compressed query builder
     m.def("build_bsi_query_cuda_hybrid",

@@ -17,9 +17,8 @@ from typing import Dict, Any, List, Union, Tuple
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 
+# Legacy executor unused after batch CUDA builder; keep definitions minimal
 _cpu_count = os.cpu_count() or 1
-_query_builder_workers = max(1, _cpu_count // 2)
-_QUERY_BUILD_EXECUTOR = ThreadPoolExecutor(max_workers=_query_builder_workers)
 
 def _build_query_cpu(tensor_cpu: torch.Tensor, decimal_places: int, threshold: float):
     start = time.perf_counter_ns()
@@ -153,51 +152,22 @@ class BSIQuantizedLinear(torch.nn.Module):
         device_index = torch.cuda.current_device()
 
         batch_size = x.shape[0]
-        batch_inputs: List[torch.Tensor] = []
-        cache_keys: List[Any] = []
-        cpu_inputs: List[torch.Tensor] = [None] * batch_size
-        future_builds: Dict[Any, Any] = {}
-        cached_queries: Dict[Any, Tuple[Any, int]] = {}
+        # Build all queries for the batch in one CUDA call (avoids per-vector Python overhead)
+        batch_inputs = x.detach().contiguous()
+        if debug_first:
+            input_vec = batch_inputs[0]
+            print(f"\n[DEBUG {self.__class__.__name__}] First forward pass diagnostics:")
+            print(f"  Input vec stats: min={input_vec.min():.4f}, max={input_vec.max():.4f}, mean={input_vec.mean():.4f}, std={input_vec.std():.4f}")
+            print(f"  Decimal Places used: {self.decimalPlaces}")
 
-        for i in range(batch_size):
-            input_vec = x[i].detach().contiguous()
-            batch_inputs.append(input_vec)
-            cache_key = self._query_cache_key(input_vec)
-            cache_keys.append(cache_key)
-
-            cached_entry = self._query_cache_get(cache_key)
-            if cached_entry is not None:
-                cached_queries[cache_key] = cached_entry
-                continue
-
-            future_builds[cache_key] = _QUERY_BUILD_EXECUTOR.submit(
-                _build_query_cuda,
-                input_vec,
-                self.decimalPlaces,
-                float(self.query_compress_threshold),
-                device_index,
-            )
-
-        # Materialize/query or retrieve all capsules in order
-        query_capsules = []
-        for i in range(batch_size):
-            input_vec = batch_inputs[i]
-            if debug_first and i == 0:
-                print(f"\n[DEBUG {self.__class__.__name__}] First forward pass diagnostics:")
-                print(f"  Input vec stats: min={input_vec.min():.4f}, max={input_vec.max():.4f}, mean={input_vec.mean():.4f}, std={input_vec.std():.4f}")
-                print(f"  Decimal Places used: {self.decimalPlaces}")
-
-            cache_key = cache_keys[i]
-            cached_entry = cached_queries.get(cache_key)
-            if cached_entry is not None:
-                query_capsule, query_mem = cached_entry
-            else:
-                future = future_builds.pop(cache_key)
-                query_capsule, query_mem, _meta, python_build_ns = future.result()
-                self.build_ns_total += python_build_ns
-                self.build_calls += 1
-                self._query_cache_set(cache_key, (query_capsule, query_mem))
-            query_capsules.append(query_capsule)
+        t_build0 = time.perf_counter_ns()
+        query_capsules = bsi_ops.build_bsi_queries_cuda_batch(
+            batch_inputs,
+            self.decimalPlaces,
+            float(self.query_compress_threshold),
+        )
+        self.build_ns_total += (time.perf_counter_ns() - t_build0)
+        self.build_calls += 1
 
         # Single multi-query call on CUDA to compute all outputs at once
         scores_2d, dot_ns = bsi_ops.batch_dot_product_multiquery_cuda_caps(query_capsules, self._bsi_keys_cuda)
