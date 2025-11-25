@@ -26,13 +26,6 @@
 using u64 = uint64_t;
 
 // kernel launcher decls (implemented in .cu)
-extern "C" void launch_popcount_pairwise(
-    const unsigned long long* A,
-    const unsigned long long* B,
-    int Sa, int Sb, int W,
-    unsigned long long* out,
-    cudaStream_t stream);
-
 extern "C" void launch_ewah_decompress(
     const unsigned long long* in,
     int in_len,
@@ -42,14 +35,7 @@ extern "C" void launch_ewah_decompress(
 
 // no multi-slice EWAH decompress in Phase-2
 
-extern "C" void launch_scatter_set_double(
-    const long long* idx,
-    const double* src,
-    int n,
-    double* out,
-    cudaStream_t stream);
-
-extern "C" void launch_popcount_weighted_keys_literal(
+extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     const unsigned long long* A,
     const double* Aw,
     int Sa,
@@ -58,51 +44,13 @@ extern "C" void launch_popcount_weighted_keys_literal(
     const double* Bw,
     int Sb,
     int R,
+    int Q,
+    const long long* indices_r,
+    const long long* indices_q,
     double scale_inv,
-    double* out,
-    cudaStream_t stream);
-extern "C" void launch_popcount_weighted_keys_literal_tiled(
-    const unsigned long long* A,
-    const double* Aw,
-    int Sa,
-    int W,
-    const unsigned long long* B,
-    const double* Bw,
-    int Sb,
-    int R,
-    int tile_size,
-    double scale_inv,
-    double* out,
-    cudaStream_t stream);
-extern "C" void launch_popcount_weighted_keys_literal_fused(
-    const unsigned long long* A,
-    const double* Aw,
-    int Sa,
-    int W,
-    const unsigned long long* B,
-    const double* Bw,
-    int Sb,
-    int R,
-    const long long* indices,
-    double scale_inv,
+    int R_total,
     double* out_global,
     cudaStream_t stream);
-
-static bool bsi_cuda_use_tiled() {
-    static int cached = -1;
-    if (cached >= 0) return cached != 0;
-    const char* v = std::getenv("BSI_TILED");
-    if (!v) { cached = 1; return true; }
-    std::string s(v);
-    for (auto& c : s) c = (char)std::tolower(c);
-    cached = (s == "1" || s == "true" || s == "yes") ? 1 : 0;
-    return cached != 0;
-}
-
-static inline uint64_t now_ns() {
-    using namespace std::chrono;
-    return duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
-}
 
 template <typename T>
 inline T* tensor_data_ptr(torch::Tensor& t) {
@@ -113,49 +61,6 @@ template <typename T>
 inline const T* tensor_data_ptr(const torch::Tensor& t) {
     auto& nc = const_cast<torch::Tensor&>(t);
     return const_cast<const T*>(nc.data_ptr<T>());
-}
-
-// Flatten one HybridBitmap (compressed or verbatim) to verbatim word buffer of length W words
-struct PrebuiltBSIKeys {
-    std::vector<BsiVector<u64>*> keys;
-    int decimalPlaces = 0;
-    int64_t d = 0;
-    int64_t num_keys = 0;
-    float threshold = 0.2f;
-};
-
-static PrebuiltBSIKeys* capsule_to_keys(const pybind11::capsule& cap) {
-    return reinterpret_cast<PrebuiltBSIKeys*>(cap.get_pointer());
-}
-
-static double accumulate_weighted_dot(const BsiVector<u64>* a, const BsiVector<u64>* b,
-                                      const at::Tensor& counts_cpu) {
-    auto ca = counts_cpu.accessor<int64_t, 2>(); // [Sb, Sa]
-    int Sa = a->numSlices;
-    int Sb = b->numSlices;
-
-    auto weight_for = [](const BsiVector<u64>* vec, int idx) -> long double {
-        int shift = vec->offset + idx;
-        long double w = (shift >= 0) ? std::ldexp(1.0L, shift) : 0.0L;
-        if (vec->twosComplement && idx == vec->numSlices - 1) w = -w;
-        return w;
-    };
-
-    long double acc = 0.0L;
-    for (int j = 0; j < Sb; ++j) {
-        long double wb = weight_for(b, j);
-        if (wb == 0) continue;
-        for (int i = 0; i < Sa; ++i) {
-            long double wa = weight_for(a, i);
-            if (wa == 0) continue;
-            long double cnt = static_cast<long double>(ca[j][i]);
-            if (cnt == 0) continue;
-            acc += wa * wb * cnt;
-        }
-    }
-    int totalDecimals = a->decimals + b->decimals;
-    long double scale = (totalDecimals > 0) ? std::pow(10.0L, totalDecimals) : 1.0L;
-    return static_cast<double>(acc / scale);
 }
 
 // --- GPU prebuilt keys (device-packed words) ---
@@ -227,88 +132,6 @@ static inline at::Tensor make_slice_weights_cuda(int S, int offset, bool twos) {
         .to(torch::kCUDA);
 }
 
-static double accumulate_weighted_dot_meta(
-    int Sa, int offset_a, bool twos_a, int decimals_a,
-    const at::Tensor& counts_cpu,
-    const KeyMeta& kb)
-{
-    auto ca = counts_cpu.accessor<int64_t, 2>(); // [Sb, Sa]
-    long double acc = 0.0L;
-    for (int j = 0; j < kb.S; ++j) {
-        long double wb = weight_for_meta(kb.offset, j, kb.twos, kb.S);
-        if (wb == 0) continue;
-        for (int i = 0; i < Sa; ++i) {
-            long double wa = weight_for_meta(offset_a, i, twos_a, Sa);
-            if (wa == 0) continue;
-            long double cnt = static_cast<long double>(ca[j][i]);
-            if (cnt == 0) continue;
-            acc += wa * wb * cnt;
-        }
-    }
-    int totalDecimals = decimals_a + kb.decimals;
-    long double scale = (totalDecimals > 0) ? std::pow(10.0L, totalDecimals) : 1.0L;
-    return static_cast<double>(acc / scale);
-}
-
-static pybind11::tuple dot_product_decimal_cuda(torch::Tensor q, torch::Tensor k, int decimalPlaces) {
-    TORCH_CHECK(q.dim() == 1 && k.dim() == 1 && q.size(0) == k.size(0), "q,k shapes");
-    auto q_cpu = q.detach().to(torch::kFloat32).cpu().contiguous();
-    auto k_cpu = k.detach().to(torch::kFloat32).cpu().contiguous();
-
-    // Build BSI on CPU, allow compression per default threshold (0.2)
-    std::vector<double> qv(q_cpu.size(0)), kv(k_cpu.size(0));
-    auto qa = q_cpu.accessor<float,1>();
-    auto ka = k_cpu.accessor<float,1>();
-    for (int64_t i = 0; i < qa.size(0); ++i) { qv[i] = qa[i]; kv[i] = ka[i]; }
-
-    BsiSigned<u64> builder;
-    BsiVector<u64>* bsi_q = builder.buildBsiVector(qv, decimalPlaces, 0.2f);
-    BsiVector<u64>* bsi_k = builder.buildBsiVector(kv, decimalPlaces, 0.2f);
-    bsi_q->setPartitionID(0); bsi_q->setFirstSliceFlag(true); bsi_q->setLastSliceFlag(true);
-    bsi_k->setPartitionID(0); bsi_k->setFirstSliceFlag(true); bsi_k->setLastSliceFlag(true);
-
-    // Flatten to words [S,W]
-    std::vector<u64> A_host, B_host;
-    int Sa=0, Wa=0, Sb=0, Wb=0;
-    bsi_flatten_words_gpu_helper(*bsi_q, A_host, Sa, Wa);
-    bsi_flatten_words_gpu_helper(*bsi_k, B_host, Sb, Wb);
-    TORCH_CHECK(Wa == Wb, "word count mismatch");
-
-    // Device buffers
-    auto A_dev = torch::from_blob(A_host.data(), {Sa, Wa}, torch::dtype(torch::kInt64)).clone().to(torch::kCUDA);
-    auto B_dev = torch::from_blob(B_host.data(), {Sb, Wa}, torch::dtype(torch::kInt64)).clone().to(torch::kCUDA);
-    auto counts_dev = torch::empty({Sb, Sa}, torch::device(torch::kCUDA).dtype(torch::kInt64));
-
-    dim3 grid(Sa, Sb);
-    dim3 block(256);
-
-    // Kernel timing
-    cudaEvent_t start, end;
-    cudaEventCreate(&start); cudaEventCreate(&end);
-    cudaEventRecord(start);
-    auto stream = at::cuda::getCurrentCUDAStream();
-    launch_popcount_pairwise(
-        reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(A_dev)),
-        reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(B_dev)),
-        Sa, Sb, Wa,
-        reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(counts_dev)),
-        stream.stream());
-    cudaEventRecord(end);
-    cudaEventSynchronize(end);
-    float kernel_ms = 0.0f;
-    cudaEventElapsedTime(&kernel_ms, start, end);
-    cudaEventDestroy(start); cudaEventDestroy(end);
-
-    auto counts_cpu = counts_dev.to(torch::kCPU).contiguous();
-    double result = accumulate_weighted_dot(bsi_q, bsi_k, counts_cpu);
-
-    size_t mem_q = bsi_q->getSizeInMemory();
-    size_t mem_k = bsi_k->getSizeInMemory();
-    delete bsi_q; delete bsi_k;
-    uint64_t dot_ns = static_cast<uint64_t>(kernel_ms * 1.0e6);
-    return pybind11::make_tuple(result, dot_ns /*total ns*/, (uint64_t)mem_q, (uint64_t)mem_k);
-}
-
 static pybind11::tuple build_bsi_query_cuda(torch::Tensor q, int decimalPlaces, float compress_threshold = 0.2f) {
     TORCH_CHECK(q.dim() == 1, "q must be 1D [d]");
     (void)compress_threshold;
@@ -338,171 +161,6 @@ static pybind11::tuple build_bsi_query_cuda(torch::Tensor q, int decimalPlaces, 
     );
 
     return pybind11::make_tuple(cap, static_cast<uint64_t>(holder->mem_bytes), holder->S, holder->W);
-}
-
-static pybind11::tuple batch_dot_product_prebuilt_cuda(torch::Tensor q, pybind11::capsule keyset_cap,
-                                                       float query_threshold = 0.2f) {
-    TORCH_CHECK(q.dim() == 1, "q must be 1D [d]");
-    auto* keys = capsule_to_keys(keyset_cap);
-    TORCH_CHECK(keys != nullptr, "Invalid BSI keys capsule");
-
-    const int64_t d = keys->d;
-    TORCH_CHECK(q.size(0) == d, "q.size(0) must equal keys' dimension");
-    const int decimalPlaces = keys->decimalPlaces;
-    float threshold_val = query_threshold >= 0.0f ? query_threshold : keys->threshold;
-
-    // Build query BSI on CPU
-    auto q_cpu = q.detach().to(torch::kFloat32).cpu().contiguous();
-    auto qa = q_cpu.accessor<float,1>();
-    std::vector<double> qv; qv.reserve(d);
-    for (int64_t i = 0; i < d; ++i) qv.push_back(static_cast<double>(qa[i]));
-
-    uint64_t t_build0 = now_ns();
-    BsiSigned<u64> b;
-    BsiVector<u64>* bsi_q = b.buildBsiVector(qv, decimalPlaces, threshold_val);
-    bsi_q->setPartitionID(0); bsi_q->setFirstSliceFlag(true); bsi_q->setLastSliceFlag(true);
-    uint64_t build_ns = now_ns() - t_build0;
-
-    // Flatten query
-    std::vector<u64> A_host; int Sa=0, Wa=0;
-    bsi_flatten_words_gpu_helper(*bsi_q, A_host, Sa, Wa);
-    auto A_dev = torch::from_blob(A_host.data(), {Sa, Wa}, torch::dtype(torch::kInt64)).clone().to(torch::kCUDA);
-
-    // Prepare output scores (CPU double)
-    auto out = torch::empty({keys->num_keys}, torch::TensorOptions().dtype(torch::kFloat64));
-    auto out_a = out.accessor<double,1>();
-
-    float total_kernel_ms = 0.0f;
-    for (int64_t r = 0; r < keys->num_keys; ++r) {
-        BsiVector<u64>* bsi_k = keys->keys[r];
-        TORCH_CHECK(bsi_k != nullptr, "Null BSI key at ", r);
-
-        // Flatten key
-        std::vector<u64> B_host; int Sb=0, Wb=0;
-        bsi_flatten_words_gpu_helper(*bsi_k, B_host, Sb, Wb);
-        TORCH_CHECK(Wb == Wa, "word count mismatch");
-        auto B_dev = torch::from_blob(B_host.data(), {Sb, Wa}, torch::dtype(torch::kInt64)).clone().to(torch::kCUDA);
-        auto counts_dev = torch::empty({Sb, Sa}, torch::device(torch::kCUDA).dtype(torch::kInt64));
-
-        dim3 grid(Sa, Sb);
-        dim3 block(256);
-        cudaEvent_t start, end; cudaEventCreate(&start); cudaEventCreate(&end);
-        cudaEventRecord(start);
-        auto stream1 = at::cuda::getCurrentCUDAStream();
-        launch_popcount_pairwise(
-            reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(A_dev)),
-            reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(B_dev)),
-            Sa, Sb, Wa,
-            reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(counts_dev)),
-            stream1.stream());
-        cudaEventRecord(end); cudaEventSynchronize(end);
-        float kernel_ms = 0.0f; cudaEventElapsedTime(&kernel_ms, start, end);
-        cudaEventDestroy(start); cudaEventDestroy(end);
-        total_kernel_ms += kernel_ms;
-
-        auto counts_cpu = counts_dev.to(torch::kCPU).contiguous();
-        double score = accumulate_weighted_dot(bsi_q, bsi_k, counts_cpu);
-        out_a[r] = score;
-    }
-
-    delete bsi_q;
-    uint64_t dot_ns = (uint64_t)(total_kernel_ms * 1.0e6);
-    uint64_t total_ns = build_ns + dot_ns;
-    size_t mem_q = 0; // not meaningful here beyond bsi_q->getSizeInMemory, but q deleted
-    return pybind11::make_tuple(out, total_ns, build_ns, dot_ns, mem_q);
-}
-
-static pybind11::tuple batch_dot_product_prebuilt_cuda_caps(pybind11::capsule query_cap,
-                                                            pybind11::capsule keyset_cuda_cap) {
-    auto* query = capsule_to_query_cuda(query_cap);
-    TORCH_CHECK(query != nullptr, "Invalid BSI query capsule");
-    auto* keys = capsule_to_keys_cuda(keyset_cuda_cap);
-    TORCH_CHECK(keys != nullptr, "Invalid CUDA keys capsule");
-
-    TORCH_CHECK(query->W == keys->W, "Word count mismatch between query and keys");
-
-    auto out_dev = torch::zeros({keys->num_keys}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
-    const auto* query_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(query->dev_words));
-    const auto* query_weights = tensor_data_ptr<double>(query->slice_weights);
-
-    // Precompute single scale factor when decimals are fixed across keys (they are, per-layer)
-    const int totalDecimals = query->device_view.decimals + keys->decimals;
-    const double scale_inv = (totalDecimals > 0) ? (1.0 / std::pow(10.0, totalDecimals)) : 1.0;
-
-    auto stream = at::cuda::getCurrentCUDAStream();
-    cudaEvent_t start_evt, end_evt;
-    cudaEventCreate(&start_evt);
-    cudaEventCreate(&end_evt);
-    cudaEventRecord(start_evt, stream.stream());
-
-    for (const auto& kv : keys->grouped_indices) {
-        int Sb = kv.first;
-        const auto& idxs = kv.second;
-        const int R = static_cast<int>(idxs.size());
-        auto out_slice = torch::zeros({R}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
-
-        const auto& words = keys->grouped_words.at(Sb);
-        const auto& Bw_stacked = keys->grouped_weights.at(Sb);
-        const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words));
-        const auto* Bw_ptr = tensor_data_ptr<double>(Bw_stacked);
-
-        bool use_tiled = bsi_cuda_use_tiled();
-        int tile_size = 64;
-        if (const char* s = std::getenv("BSI_TILE_W")) {
-            int t = std::atoi(s);
-            if (t > 0) tile_size = t;
-        }
-        if (!use_tiled || query->W <= tile_size) {
-            launch_popcount_weighted_keys_literal(
-                query_words,
-                query_weights,
-                query->S,
-                query->W,
-                B_words,
-                Bw_ptr,
-                Sb,
-                R,
-                scale_inv,
-                tensor_data_ptr<double>(out_slice),
-                stream.stream());
-        } else {
-            tile_size = std::min(tile_size, query->W);
-            launch_popcount_weighted_keys_literal_tiled(
-                query_words,
-                query_weights,
-                query->S,
-                query->W,
-                B_words,
-                Bw_ptr,
-                Sb,
-                R,
-                tile_size,
-                scale_inv,
-                tensor_data_ptr<double>(out_slice),
-                stream.stream());
-        }
-
-        const auto& idx_dev = keys->grouped_indices_dev.at(Sb);
-        auto stream3 = at::cuda::getCurrentCUDAStream();
-        launch_scatter_set_double(
-            reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev)),
-            tensor_data_ptr<double>(out_slice),
-            R,
-            tensor_data_ptr<double>(out_dev),
-            stream3.stream());
-    }
-
-    cudaEventRecord(end_evt, stream.stream());
-    cudaEventSynchronize(end_evt);
-    float kernel_ms = 0.0f;
-    cudaEventElapsedTime(&kernel_ms, start_evt, end_evt);
-    cudaEventDestroy(start_evt);
-    cudaEventDestroy(end_evt);
-
-    // Return GPU scores directly
-    uint64_t dot_ns = static_cast<uint64_t>(kernel_ms * 1.0e6);
-    uint64_t total_ns = dot_ns;
-    return pybind11::make_tuple(out_dev, total_ns, static_cast<uint64_t>(0), dot_ns, static_cast<uint64_t>(query->mem_bytes));
 }
 
 static std::string cuda_builder_version() {
@@ -554,26 +212,6 @@ static pybind11::tuple build_bsi_query_cuda_hybrid(torch::Tensor q, int decimalP
     return pybind11::make_tuple(cap, static_cast<uint64_t>(holder->mem_bytes), holder->S, holder->W);
 }
 
-static torch::Tensor debug_bsi_query_hybrid_decompress(pybind11::capsule query_cap) {
-    auto* query = capsule_to_query_cuda(query_cap);
-    TORCH_CHECK(query != nullptr, "Invalid BSI CUDA query capsule");
-    const auto& dv = query->device_view;
-    TORCH_CHECK(dv.comp_words.defined() && dv.comp_off.defined() && dv.comp_len.defined(), "No compressed view present");
-    int S = dv.slices;
-    int W = dv.words_per_slice;
-    auto out = torch::zeros({S, W}, torch::dtype(torch::kInt64).device(torch::kCUDA));
-    auto stream = at::cuda::getCurrentCUDAStream();
-    for (int s = 0; s < S; ++s) {
-        auto off = dv.comp_off.index({s}).item<int64_t>();
-        auto len = dv.comp_len.index({s}).item<int>();
-        auto in_ptr = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(dv.comp_words) + off);
-        auto out_ptr = reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(out) + (long long)s * W);
-        launch_ewah_decompress(in_ptr, len, W, out_ptr, stream.stream());
-    }
-    auto cpu = out.to(torch::kCPU).contiguous();
-    return cpu;
-}
-
 static pybind11::tuple batch_dot_product_multiquery_cuda_caps(pybind11::list query_caps_list, pybind11::capsule keyset_cuda_cap) {
     auto* keys = capsule_to_keys_cuda(keyset_cuda_cap);
     TORCH_CHECK(keys != nullptr, "Invalid CUDA keys capsule");
@@ -581,13 +219,13 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_caps(pybind11::list que
     const int64_t Q = static_cast<int64_t>(pybind11::len(query_caps_list));
     TORCH_CHECK(R > 0 && Q > 0, "Empty keys or queries");
 
-    auto out_all = torch::zeros({Q, R}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
-
-    cudaEvent_t start_evt, end_evt;
-    cudaEventCreate(&start_evt);
-    cudaEventCreate(&end_evt);
-    auto stream = at::cuda::getCurrentCUDAStream();
-    cudaEventRecord(start_evt, stream.stream());
+    struct TempGroup {
+        int S = 0;
+        std::vector<PrebuiltBSIQueryCUDA*> queries;
+        std::vector<int64_t> indices;
+    };
+    std::unordered_map<int64_t, TempGroup> groups;
+    int common_decimals = -1;
 
     for (int64_t qi = 0; qi < Q; ++qi) {
         auto cap_obj = query_caps_list[qi];
@@ -597,12 +235,72 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_caps(pybind11::list que
         TORCH_CHECK(query != nullptr, "Invalid BSI query capsule at index ", qi);
         TORCH_CHECK(query->W == keys->W, "Word count mismatch between query and keys");
 
-        const auto* A = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(query->dev_words));
-        const auto* Aw = tensor_data_ptr<double>(query->slice_weights);
-        auto out_row = out_all[qi];
+        if (common_decimals < 0) {
+            common_decimals = query->device_view.decimals;
+        } else {
+            TORCH_CHECK(query->device_view.decimals == common_decimals, "Decimal mismatch across queries not supported");
+        }
 
-        int totalDecimals = query->device_view.decimals + keys->decimals;
-        const double scale_inv = (totalDecimals > 0) ? (1.0 / std::pow(10.0, totalDecimals)) : 1.0;
+        // Key by slice-count and sign handling; queries in one group share shapes
+        int64_t key = (static_cast<int64_t>(query->S) << 1) | (query->device_view.twos_complement ? 1LL : 0LL);
+        auto& g = groups[key];
+        if (g.queries.empty()) {
+            g.S = query->S;
+        }
+        g.queries.push_back(query);
+        g.indices.push_back(qi);
+    }
+
+    struct PreparedGroup {
+        int S = 0;
+        int64_t Qcount = 0;
+        torch::Tensor words;      // [Q, S, W]
+        torch::Tensor weights;    // [Q, S]
+        torch::Tensor q_indices;  // [Q]
+    };
+    std::vector<PreparedGroup> prepared;
+    prepared.reserve(groups.size());
+    for (auto& kv : groups) {
+        auto& g = kv.second;
+        PreparedGroup pg;
+        pg.S = g.S;
+        pg.Qcount = static_cast<int64_t>(g.queries.size());
+
+        std::vector<torch::Tensor> word_stack;
+        std::vector<torch::Tensor> weight_stack;
+        word_stack.reserve(g.queries.size());
+        weight_stack.reserve(g.queries.size());
+        for (auto* qptr : g.queries) {
+            word_stack.push_back(qptr->dev_words);
+            weight_stack.push_back(qptr->slice_weights);
+        }
+        pg.words = torch::stack(word_stack).contiguous();
+        pg.weights = torch::stack(weight_stack).contiguous();
+        pg.q_indices = torch::from_blob(
+            g.indices.data(),
+            {static_cast<int64_t>(g.indices.size())},
+            torch::TensorOptions().dtype(torch::kInt64))
+            .clone()
+            .to(torch::kCUDA)
+            .contiguous();
+        prepared.push_back(std::move(pg));
+    }
+
+    auto out_all = torch::zeros({Q, R}, torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCUDA));
+    TORCH_CHECK(common_decimals == keys->decimals, "Decimal mismatch between queries and keys");
+    const int totalDecimals = common_decimals + keys->decimals;
+    const double scale_inv = (totalDecimals > 0) ? (1.0 / std::pow(10.0, totalDecimals)) : 1.0;
+
+    cudaEvent_t start_evt, end_evt;
+    cudaEventCreate(&start_evt);
+    cudaEventCreate(&end_evt);
+    auto stream = at::cuda::getCurrentCUDAStream();
+    cudaEventRecord(start_evt, stream.stream());
+
+    for (const auto& pg : prepared) {
+        const auto* A = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(pg.words));
+        const auto* Aw = tensor_data_ptr<double>(pg.weights);
+        const auto* q_idx = reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(pg.q_indices));
 
         for (const auto& kv2 : keys->grouped_indices) {
             int Sb = kv2.first;
@@ -615,18 +313,21 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_caps(pybind11::list que
             const auto* Bw_ptr = tensor_data_ptr<double>(Bw_stacked);
             const auto& idx_dev = keys->grouped_indices_dev.at(Sb);
 
-            launch_popcount_weighted_keys_literal_fused(
+            launch_popcount_weighted_keys_literal_fused_multiq(
                 A,
                 Aw,
-                query->S,
-                query->W,
+                pg.S,
+                keys->W,
                 B_words,
                 Bw_ptr,
                 Sb,
                 Rg,
+                static_cast<int>(pg.Qcount),
                 reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev)),
+                q_idx,
                 scale_inv,
-                tensor_data_ptr<double>(out_row),
+                static_cast<int>(R),
+                tensor_data_ptr<double>(out_all),
                 stream.stream());
         }
     }
@@ -759,110 +460,12 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
     return pybind11::make_tuple(cap, (uint64_t)total_mem, num_keys, d, holder->W);
 }
 
-static pybind11::tuple batch_dot_product_prebuilt_cuda_keys(torch::Tensor q, pybind11::capsule keyset_cuda_cap, float query_threshold) {
-    TORCH_CHECK(q.dim() == 1, "q must be 1D [d]");
-    auto* keys = capsule_to_keys_cuda(keyset_cuda_cap);
-    TORCH_CHECK(keys != nullptr, "Invalid CUDA keys capsule");
-    TORCH_CHECK(q.size(0) == keys->d, "q.size(0) must match keys d");
-    int64_t d = keys->d;
-    int decimals = keys->decimals;
-    float thr = (query_threshold >= 0.0f) ? query_threshold : keys->threshold;
-
-    auto q_cpu2 = q.detach().to(torch::kFloat32).cpu().contiguous();
-    auto qa = q_cpu2.accessor<float,1>();
-    std::vector<double> qv; qv.reserve(d);
-    for (int64_t i=0;i<d;++i) qv.push_back(static_cast<double>(qa[i]));
-    uint64_t t0 = now_ns();
-    BsiSigned<u64> b;
-    BsiVector<u64>* bsi_q = b.buildBsiVector(qv, decimals, thr);
-    bsi_q->setPartitionID(0); bsi_q->setFirstSliceFlag(true); bsi_q->setLastSliceFlag(true);
-    uint64_t build_ns = now_ns() - t0;
-    int Sa, Wa; std::vector<u64> A_host; bsi_flatten_words_gpu_helper(*bsi_q, A_host, Sa, Wa);
-    TORCH_CHECK(Wa == keys->W, "word count mismatch (q vs keys)");
-    auto A_dev = torch::from_blob(A_host.data(), {Sa, Wa}, torch::dtype(torch::kInt64)).clone().to(torch::kCUDA);
-
-    auto out = torch::zeros({keys->num_keys}, torch::TensorOptions().device(torch::kCUDA).dtype(torch::kFloat64));
-    auto query_weights = make_slice_weights_cuda(Sa, bsi_q->offset, bsi_q->twosComplement);
-    float total_kernel_ms = 0.0f;
-
-    for (int64_t r=0;r<keys->num_keys;++r) {
-        const auto& B_dev = keys->dev_words[r];
-        const auto& km = keys->metas[r];
-        const auto& key_weights = keys->slice_weights[r];
-        auto counts_dev = torch::empty({km.S, Sa}, torch::device(torch::kCUDA).dtype(torch::kInt64));
-        dim3 grid(Sa, km.S); dim3 block(256);
-        cudaEvent_t s,e; cudaEventCreate(&s); cudaEventCreate(&e);
-        cudaEventRecord(s);
-        auto stream2 = at::cuda::getCurrentCUDAStream();
-    launch_popcount_pairwise(
-        reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(A_dev)),
-        reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(B_dev)),
-        Sa, km.S, Wa,
-        reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(counts_dev)),
-        stream2.stream());
-        cudaEventRecord(e); cudaEventSynchronize(e);
-        float ms=0.0f; cudaEventElapsedTime(&ms,s,e); cudaEventDestroy(s); cudaEventDestroy(e);
-        total_kernel_ms += ms;
-
-        auto counts_fp = counts_dev.to(torch::kFloat64);
-        auto weighted = counts_fp.mul(query_weights.view({1, Sa}));
-        auto slice_sums = weighted.sum(1);
-        auto raw_tensor = slice_sums.mul(key_weights).sum();
-        int totalDecimals = bsi_q->decimals + km.decimals;
-        double scale = (totalDecimals > 0) ? std::pow(10.0, totalDecimals) : 1.0;
-        auto scaled_tensor = raw_tensor / scale;
-        out.index_put_({r}, scaled_tensor);
-    }
-
-    size_t mem_q = bsi_q->getSizeInMemory();
-    delete bsi_q;
-    uint64_t dot_ns = (uint64_t)(total_kernel_ms * 1.0e6);
-    uint64_t total_ns = build_ns + dot_ns;
-    return pybind11::make_tuple(out, total_ns, build_ns, dot_ns, (uint64_t)mem_q);
-}
-
-static pybind11::tuple debug_bsi_query_cuda(pybind11::capsule query_cap) {
-    auto* query = capsule_to_query_cuda(query_cap);
-    TORCH_CHECK(query != nullptr, "Invalid BSI CUDA query capsule");
-    auto words_cpu = query->dev_words.to(torch::kCPU).clone();
-    return pybind11::make_tuple(
-        words_cpu,
-        query->device_view.rows,
-        query->device_view.offset,
-        query->device_view.decimals,
-        query->device_view.twos_complement);
-}
-
-static torch::Tensor debug_quantize_int64_cuda(torch::Tensor x, int decimal_places) {
-    auto device = x.device().is_cuda() ? x.device() : torch::kCUDA;
-    return bsi_cuda_quantize_to_int64(x, decimal_places, device);
-}
-
-static pybind11::tuple debug_quantize_details_cuda(torch::Tensor x, int decimal_places, int64_t k) {
-    auto device = x.device().is_cuda() ? x.device() : torch::kCUDA;
-    auto tup = bsi_cuda_quantize_debug(x, decimal_places, device, k);
-    return pybind11::make_tuple(std::get<0>(tup), std::get<1>(tup), std::get<2>(tup));
-}
-
 void register_bsi_cuda(pybind11::module& m) {
     m.attr("CUDA_BUILDER_VERSION") = cuda_builder_version();
 
     // Version info
     m.def("cuda_builder_version",
         &cuda_builder_version);
-
-    // Simple dot product (for testing)
-    m.def("dot_product_decimal_cuda",
-        &dot_product_decimal_cuda,
-        "BSI dot product with decimal quantization on CUDA");
-
-    // Legacy batch dot product (used by tests)
-    m.def("batch_dot_product_prebuilt_cuda",
-        &batch_dot_product_prebuilt_cuda,
-        pybind11::arg("q"),
-        pybind11::arg("keyset_cap"),
-        pybind11::arg("query_threshold") = -1.0f,
-        "Batch dot product using CPU-built BSI");
 
     // Query builder
     m.def("build_bsi_query_cuda",
@@ -880,19 +483,6 @@ void register_bsi_cuda(pybind11::module& m) {
         pybind11::arg("compress_threshold") = 0.2,
         "Build BSI query with EWAH compression");
 
-    // Debug helper for hybrid queries
-    m.def("debug_bsi_query_hybrid_decompress",
-        &debug_bsi_query_hybrid_decompress,
-        pybind11::arg("query_cap"),
-        "Decompress hybrid query to CPU for debugging");
-
-    // Legacy batch dot product with capsules (used by tests)
-    m.def("batch_dot_product_prebuilt_cuda_caps",
-        &batch_dot_product_prebuilt_cuda_caps,
-        pybind11::arg("query_cap"),
-        pybind11::arg("keyset_cuda_cap"),
-        "Batch dot product with prebuilt capsules");
-
     // OPTIMIZED: Multi-query batched dot product with fused kernel
     m.def("batch_dot_product_multiquery_cuda_caps",
         &batch_dot_product_multiquery_cuda_caps,
@@ -907,31 +497,4 @@ void register_bsi_cuda(pybind11::module& m) {
         pybind11::arg("decimal_places"),
         pybind11::arg("compress_threshold") = 0.2f,
         "Build BSI keys and prepack to CUDA");
-
-    // Legacy batch dot product with keys (used by tests)
-    m.def("batch_dot_product_prebuilt_cuda_keys",
-        &batch_dot_product_prebuilt_cuda_keys,
-        pybind11::arg("q"),
-        pybind11::arg("keyset_cuda_cap"),
-        pybind11::arg("query_threshold") = -1.0f,
-        "Batch dot product with prepacked keys");
-
-    // Debug helpers
-    m.def("debug_bsi_query_cuda",
-        &debug_bsi_query_cuda,
-        pybind11::arg("query_cap"),
-        "Debug: Extract query words and metadata");
-
-    m.def("debug_quantize_int64_cuda",
-        &debug_quantize_int64_cuda,
-        pybind11::arg("x"),
-        pybind11::arg("decimal_places"),
-        "Debug: Quantize to int64 with parity rounding");
-
-    m.def("debug_quantize_details_cuda",
-        &debug_quantize_details_cuda,
-        pybind11::arg("x"),
-        pybind11::arg("decimal_places"),
-        pybind11::arg("k") = 8,
-        "Debug: Return quantization internals");
 }
