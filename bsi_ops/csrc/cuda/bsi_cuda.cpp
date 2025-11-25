@@ -45,6 +45,7 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     int Sb,
     int R,
     int Q,
+    int q_tile,
     const long long* indices_r,
     const long long* indices_q,
     double scale_inv,
@@ -61,6 +62,19 @@ template <typename T>
 inline const T* tensor_data_ptr(const torch::Tensor& t) {
     auto& nc = const_cast<torch::Tensor&>(t);
     return const_cast<const T*>(nc.data_ptr<T>());
+}
+
+static int bsi_cuda_q_tile() {
+    static int cached = 0;
+    if (cached > 0) return cached;
+    int v = 8; // default tile size across queries
+    if (const char* s = std::getenv("BSI_Q_TILE")) {
+        int t = std::atoi(s);
+        if (t > 0) v = t;
+    }
+    if (v < 1) v = 1;
+    cached = v;
+    return cached;
 }
 
 // --- GPU prebuilt keys (device-packed words) ---
@@ -219,7 +233,7 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_caps(pybind11::list que
     const int64_t Q = static_cast<int64_t>(pybind11::len(query_caps_list));
     TORCH_CHECK(R > 0 && Q > 0, "Empty keys or queries");
 
-    struct TempGroup {
+struct TempGroup {
         int S = 0;
         std::vector<PrebuiltBSIQueryCUDA*> queries;
         std::vector<int64_t> indices;
@@ -309,25 +323,26 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_caps(pybind11::list que
 
             const auto& words = keys->grouped_words.at(Sb);
             const auto& Bw_stacked = keys->grouped_weights.at(Sb);
-            const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words));
-            const auto* Bw_ptr = tensor_data_ptr<double>(Bw_stacked);
-            const auto& idx_dev = keys->grouped_indices_dev.at(Sb);
+        const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words));
+        const auto* Bw_ptr = tensor_data_ptr<double>(Bw_stacked);
+        const auto& idx_dev = keys->grouped_indices_dev.at(Sb);
 
-            launch_popcount_weighted_keys_literal_fused_multiq(
-                A,
-                Aw,
-                pg.S,
-                keys->W,
-                B_words,
-                Bw_ptr,
-                Sb,
-                Rg,
-                static_cast<int>(pg.Qcount),
-                reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev)),
-                q_idx,
-                scale_inv,
-                static_cast<int>(R),
-                tensor_data_ptr<double>(out_all),
+        launch_popcount_weighted_keys_literal_fused_multiq(
+            A,
+            Aw,
+            pg.S,
+            keys->W,
+            B_words,
+            Bw_ptr,
+            Sb,
+            Rg,
+            static_cast<int>(pg.Qcount),
+            bsi_cuda_q_tile(),
+            reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev)),
+            q_idx,
+            scale_inv,
+            static_cast<int>(R),
+            tensor_data_ptr<double>(out_all),
                 stream.stream());
         }
     }
