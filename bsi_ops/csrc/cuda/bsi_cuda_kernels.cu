@@ -16,6 +16,13 @@ __inline__ __device__ double warp_reduce_sum_double(double v) {
     return v;
 }
 
+__inline__ __device__ float warp_reduce_sum_float(float v) {
+    for (int offset = 16; offset > 0; offset >>= 1) {
+        v += __shfl_down_sync(0xffffffff, v, offset);
+    }
+    return v;
+}
+
 // EWAH decompress: interpret buffer of RLWs and literal words into W literal words.
 // Assumes u64 words and runninglengthbits = 32, literalbits = 31.
 extern "C" __global__
