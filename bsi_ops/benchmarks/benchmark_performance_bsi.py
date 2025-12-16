@@ -11,6 +11,7 @@ import time
 from verify_accuracy_bsi import (
     quantize_model_bsi, summarize_bsi_model,
     reset_bsi_dot_counters, sum_bsi_dot_counters, sum_bsi_build_counters,
+    sum_bsi_dot_query_vectors, sum_bsi_dot_output_elements,
     enable_bsi_error_stats, collect_bsi_error_stats,
     print_compression_summary, save_bsi_model, bsi_full_model_static_bytes
 )
@@ -81,6 +82,8 @@ class Evaluator:
         print("Running evaluation...")
         dot_ns_prev = sum_bsi_dot_counters(model)
         build_ns_prev = sum_bsi_build_counters(model)
+        dot_q_prev = sum_bsi_dot_query_vectors(model)
+        dot_elem_prev = sum_bsi_dot_output_elements(model)
         top5_hit = 0
         if tqdm is not None:
             pbar = tqdm(total=self.num_samples, desc="BSI eval", dynamic_ncols=True)
@@ -136,16 +139,34 @@ class Evaluator:
 
                 dot_ns_cur = sum_bsi_dot_counters(model)
                 build_ns_cur = sum_bsi_build_counters(model)
+                dot_q_cur = sum_bsi_dot_query_vectors(model)
+                dot_elem_cur = sum_bsi_dot_output_elements(model)
+
+                batch_dot_ns = int(dot_ns_cur - dot_ns_prev)
                 batch_dot_ms = (dot_ns_cur - dot_ns_prev) / 1e6
                 batch_build_ms = (build_ns_cur - build_ns_prev) / 1e6
                 dot_ns_prev = dot_ns_cur
                 build_ns_prev = build_ns_cur
+                batch_dot_q = int(dot_q_cur - dot_q_prev)
+                batch_dot_elem = int(dot_elem_cur - dot_elem_prev)
+                dot_q_prev = dot_q_cur
+                dot_elem_prev = dot_elem_cur
+
+                # Dot-only averages derived from dot_ns + denominators.
+                batch_dot_us_per_query = (batch_dot_ns / batch_dot_q) / 1e3 if batch_dot_q > 0 else 0.0
+                batch_dot_ns_per_scalar = (batch_dot_ns / batch_dot_elem) if batch_dot_elem > 0 else 0.0
 
                 if self.layer_stats_batches and (batch_idx + 1) == self.layer_stats_batches:
                     enable_bsi_error_stats(model, False)
 
                 pbar.update(1)
-                pbar.set_postfix(fwd_ms=f"{batch_fwd_ms:.1f}", build_ms=f"{batch_build_ms:.1f}", dot_ms=f"{batch_dot_ms:.1f}")
+                pbar.set_postfix(
+                    fwd_ms=f"{batch_fwd_ms:.1f}",
+                    build_ms=f"{batch_build_ms:.1f}",
+                    dot_ms=f"{batch_dot_ms:.1f}",
+                    dot_q_us=f"{batch_dot_us_per_query:.2f}",
+                    dot_s_ns=f"{batch_dot_ns_per_scalar:.3f}",
+                )
             pbar.close()
         else:
             top5_hit = 0
@@ -201,14 +222,26 @@ class Evaluator:
 
                 dot_ns_cur = sum_bsi_dot_counters(model)
                 build_ns_cur = sum_bsi_build_counters(model)
+                dot_q_cur = sum_bsi_dot_query_vectors(model)
+                dot_elem_cur = sum_bsi_dot_output_elements(model)
+
+                batch_dot_ns = int(dot_ns_cur - dot_ns_prev)
                 batch_dot_ms = (dot_ns_cur - dot_ns_prev) / 1e6
                 batch_build_ms = (build_ns_cur - build_ns_prev) / 1e6
                 dot_ns_prev = dot_ns_cur
                 build_ns_prev = build_ns_cur
+                batch_dot_q = int(dot_q_cur - dot_q_prev)
+                batch_dot_elem = int(dot_elem_cur - dot_elem_prev)
+                dot_q_prev = dot_q_cur
+                dot_elem_prev = dot_elem_cur
+
+                batch_dot_us_per_query = (batch_dot_ns / batch_dot_q) / 1e3 if batch_dot_q > 0 else 0.0
+                batch_dot_ns_per_scalar = (batch_dot_ns / batch_dot_elem) if batch_dot_elem > 0 else 0.0
 
                 print(
                     f"  Processed batch {batch_idx + 1}/{self.num_samples} "
-                    f"(fwd_ms={batch_fwd_ms:.1f}, build_ms={batch_build_ms:.1f}, dot_ms={batch_dot_ms:.1f})"
+                    f"(fwd_ms={batch_fwd_ms:.1f}, build_ms={batch_build_ms:.1f}, dot_ms={batch_dot_ms:.1f}, "
+                    f"dot_q_us={batch_dot_us_per_query:.2f}, dot_s_ns={batch_dot_ns_per_scalar:.3f})"
                 )
 
                 if self.layer_stats_batches and (batch_idx + 1) == self.layer_stats_batches:
@@ -219,12 +252,26 @@ class Evaluator:
         avg_forward_ms = latency / max(1, self.num_samples)
         dot_ns_total = sum_bsi_dot_counters(model)
         build_ns_total = sum_bsi_build_counters(model)
+        dot_q_total = sum_bsi_dot_query_vectors(model)
+        dot_elem_total = sum_bsi_dot_output_elements(model)
         avg_dot_ms = (dot_ns_total / 1e6) / max(1, self.num_samples)
         avg_build_ms = (build_ns_total / 1e6) / max(1, self.num_samples)
+        avg_dot_us_per_query = ((dot_ns_total / dot_q_total) / 1e3) if dot_q_total > 0 else 0.0
+        avg_dot_ns_per_scalar = (dot_ns_total / dot_elem_total) if dot_elem_total > 0 else 0.0
         layer_stats = collect_bsi_error_stats(model) if self.layer_stats_batches > 0 else []
         enable_bsi_error_stats(model, False)
         print(f"Completed BSI eval: top1_acc={accuracy:.4f}, top5_acc={top5_acc:.4f}")
-        return accuracy, avg_forward_ms, avg_build_ms, avg_dot_ms, top5_acc, summary, layer_stats
+        return (
+            accuracy,
+            avg_forward_ms,
+            avg_build_ms,
+            avg_dot_ms,
+            avg_dot_us_per_query,
+            avg_dot_ns_per_scalar,
+            top5_acc,
+            summary,
+            layer_stats,
+        )
 
     @torch.no_grad()
     def evaluate(self, model):
@@ -611,7 +658,7 @@ def main():
                 else:
                     # Compute base (pre-quantization) full static size on the same model instance
                     base_full_static_mb = get_model_static_bytes(model_bsi) / (1024 ** 2)
-                    acc_bsi, fwd_ms, build_ms, dot_ms, top5_acc, summary, layer_stats = evaluator.evaluate_with_bsi(
+                    acc_bsi, fwd_ms, build_ms, dot_ms, dot_q_us, dot_s_ns, top5_acc, summary, layer_stats = evaluator.evaluate_with_bsi(
                         model_bsi,
                         decimal_cfg,
                         scope=args.scope,
@@ -639,7 +686,8 @@ def main():
                     )
                     print(
                         f"-> [NEXT-TOKEN ACC] {name} top1={acc_bsi:.4f}, top5={top5_acc:.4f}, "
-                        f"avg_fwd={fwd_ms:.3f}ms, build={build_ms:.3f}ms, dot={dot_ms:.3f}ms (per-sample)"
+                        f"avg_fwd={fwd_ms:.3f}ms, build={build_ms:.3f}ms, dot={dot_ms:.3f}ms (per-sample), "
+                        f"dot_q={dot_q_us:.3f}us, dot_s={dot_s_ns:.3f}ns"
                     )
                     print(f"Baseline model static size: {base_full_static_mb:.3f}MB")
                     print(f"BSI model static size: {bsi_full_total_mb:.3f}MB")
@@ -672,6 +720,8 @@ def main():
                         "avg_forward_ms": fwd_ms,
                         "avg_build_ms": build_ms,
                         "avg_dot_ms": dot_ms,
+                        "avg_dot_us_per_query": dot_q_us,
+                        "avg_dot_ns_per_scalar": dot_s_ns,
                         "summary": summary,
                         "bsi_full_static_mb": bsi_full_total_mb,
                         "base_full_static_mb": base_full_static_mb,
@@ -689,7 +739,8 @@ def main():
                             tf.write(
                                 f"[{stamp}] dataset={dataset_name} model={fp16_model_name} scope={args.scope} dec={dec} thr={args.compress_threshold} base_dtype={args.base_dtype} "
                                 f"base_full_mb={base_full_static_mb:.4f} bsi_full_mb={bsi_full_total_mb:.4f} compression_full={base_full_static_mb / bsi_full_total_mb if bsi_full_total_mb > 0 else 0:.4f} "
-                                f"top1={acc_bsi:.4f} top5={top5_acc:.4f} fwd_ms={fwd_ms:.3f} build_ms={build_ms:.3f} dot_ms={dot_ms:.3f}\n"
+                                f"top1={acc_bsi:.4f} top5={top5_acc:.4f} fwd_ms={fwd_ms:.3f} build_ms={build_ms:.3f} dot_ms={dot_ms:.3f} "
+                                f"dot_q_us={dot_q_us:.3f} dot_s_ns={dot_s_ns:.3f}\n"
                             )
 
                 run_results.append(result_entry)

@@ -92,6 +92,14 @@ class BSIQuantizedLinear(torch.nn.Module):
         # Tracking: only dot time (GPU), no CPU build comparisons
         self.dot_ns_total = 0
         self.dot_calls = 0
+        # Last-call dot-only averages (nanoseconds) from the CUDA extension.
+        self.dot_kernel_ns_per_query_last = 0.0
+        self.dot_kernel_ns_per_scalar_last = 0.0
+        # Dot-only denominators (for aggregate per-query / per-scalar reporting).
+        # - query_vectors: number of input rows processed by this Linear (after flatten)
+        # - output_elements: number of scalar outputs produced by this Linear (Q * out_features)
+        self.dot_query_vectors_total = 0
+        self.dot_output_elements_total = 0
         self.build_ns_total = 0  # optional: track Python-side build time if desired
         self.build_calls = 0
         self._query_cache: OrderedDict = OrderedDict()
@@ -170,8 +178,19 @@ class BSIQuantizedLinear(torch.nn.Module):
         self.build_calls += 1
 
         # Single multi-query call on CUDA to compute all outputs at once
-        scores_2d, dot_ns = bsi_ops.batch_dot_product_multiquery_cuda_caps(query_capsules, self._bsi_keys_cuda)
-        dot_ns_this_forward += int(dot_ns)
+        # Dot-only timing comes from CUDA events inside the extension. The "total" is for the full
+        # output matrix [Q, R]; the per-query/per-scalar are averages derived from that total.
+        scores_2d, dot_kernel_ns_total, dot_kernel_ns_per_query, dot_kernel_ns_per_scalar = (
+            bsi_ops.batch_dot_product_multiquery_cuda_caps(query_capsules, self._bsi_keys_cuda)
+        )
+        dot_ns_this_forward += int(dot_kernel_ns_total)
+        # Expose last-call averages for debugging/analysis (in nanoseconds).
+        self.dot_kernel_ns_per_query_last = float(dot_kernel_ns_per_query)
+        self.dot_kernel_ns_per_scalar_last = float(dot_kernel_ns_per_scalar)
+        # Track denominators to enable aggregate per-query/per-scalar dot timing.
+        q_rows = int(batch_size)
+        self.dot_query_vectors_total += q_rows
+        self.dot_output_elements_total += q_rows * int(self.out_features)
 
         # Add bias and cast, then split rows back
         scores_2d = scores_2d.to(device=original_device, dtype=original_dtype, non_blocking=(scores_2d.is_cuda and original_device.type == 'cuda'))
@@ -210,6 +229,8 @@ def reset_bsi_dot_counters(model: nn.Module):
             m.dot_calls = 0
             m.build_ns_total = 0
             m.build_calls = 0
+            m.dot_query_vectors_total = 0
+            m.dot_output_elements_total = 0
             m.clear_query_cache()
 
 def sum_bsi_dot_counters(model: nn.Module) -> int:
@@ -224,6 +245,22 @@ def sum_bsi_build_counters(model: nn.Module) -> int:
     for m in model.modules():
         if isinstance(m, BSIQuantizedLinear):
             total += int(m.build_ns_total)
+    return total
+
+def sum_bsi_dot_query_vectors(model: nn.Module) -> int:
+    """Total number of query vectors (input rows) processed by all BSIQuantizedLinear modules."""
+    total = 0
+    for m in model.modules():
+        if isinstance(m, BSIQuantizedLinear):
+            total += int(getattr(m, "dot_query_vectors_total", 0))
+    return total
+
+def sum_bsi_dot_output_elements(model: nn.Module) -> int:
+    """Total number of scalar outputs produced by all BSIQuantizedLinear modules."""
+    total = 0
+    for m in model.modules():
+        if isinstance(m, BSIQuantizedLinear):
+            total += int(getattr(m, "dot_output_elements_total", 0))
     return total
 
 

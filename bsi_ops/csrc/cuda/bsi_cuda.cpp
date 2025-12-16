@@ -403,8 +403,21 @@ struct TempGroup {
     cudaEventDestroy(start_evt);
     cudaEventDestroy(end_evt);
 
-    uint64_t dot_ns = static_cast<uint64_t>(kernel_ms * 1.0e6);
-    return pybind11::make_tuple(out_all, dot_ns);
+    // Total GPU time (ns) spent inside the fused dot kernels launched in this call.
+    // This covers computing the full output matrix of shape [Q, R].
+    const uint64_t dot_kernel_ns_total = static_cast<uint64_t>(kernel_ms * 1.0e6);
+
+    // Average GPU time per query vector (one input row producing an output vector of length R).
+    const double dot_kernel_ns_per_query =
+        (Q > 0) ? (static_cast<double>(dot_kernel_ns_total) / static_cast<double>(Q)) : 0.0;
+
+    // Average GPU time per scalar dot (one output element out_all[q, r]).
+    const double dot_kernel_ns_per_scalar =
+        (Q > 0 && R > 0)
+            ? (static_cast<double>(dot_kernel_ns_total) / (static_cast<double>(Q) * static_cast<double>(R)))
+            : 0.0;
+
+    return pybind11::make_tuple(out_all, dot_kernel_ns_total, dot_kernel_ns_per_query, dot_kernel_ns_per_scalar);
 }
 
 static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, float compress_threshold) {
