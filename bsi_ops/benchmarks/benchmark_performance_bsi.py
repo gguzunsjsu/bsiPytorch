@@ -274,113 +274,15 @@ class Evaluator:
         )
 
     @torch.no_grad()
-    def evaluate(self, model, scope: str = "all"):
+    def evaluate(self, model):
         model.eval()
         total, hit, top5_hit = 0, 0, 0
         latency = 0
-
-        # Optional: measure dot-only time for dense Linear layers (CUDA only).
-        # This is comparable to BSI's dot_ms, which aggregates across all BSIQuantizedLinear modules.
-        dense_dot_ms_total = 0.0
-        dense_dot_q_total = 0
-        dense_dot_elem_total = 0
-
-        dense_dot_timer = None
-        if self.device == 'cuda' and torch.cuda.is_available():
-            scope = (scope or "all").lower().strip()
-
-            def is_attention_linear(name: str) -> bool:
-                tokens = ['attn', 'self_attn', 'q_proj', 'k_proj', 'v_proj', 'out_proj']
-                return any(t in name for t in tokens)
-
-            def is_mlp_linear(name: str) -> bool:
-                tokens = ['mlp', 'ff', 'ffn', 'fc1', 'fc2']
-                return any(t in name for t in tokens)
-
-            name_by_module = {m: n for n, m in model.named_modules()}
-
-            class _DenseLinearCudaDotTimer:
-                def __init__(self):
-                    self._handles = []
-                    self._start_stack = {}
-                    self._records = []
-                    self._batch_q = 0
-                    self._batch_elem = 0
-
-                def reset_batch(self):
-                    self._records.clear()
-                    self._batch_q = 0
-                    self._batch_elem = 0
-
-                def install(self):
-                    for mod, name in name_by_module.items():
-                        if not isinstance(mod, torch.nn.Linear):
-                            continue
-                        if 'lm_head' in name:
-                            continue
-                        if scope == 'attention' and not is_attention_linear(name):
-                            continue
-                        if scope == 'mlp' and not is_mlp_linear(name):
-                            continue
-
-                        def _pre_hook(m, inputs):
-                            x = inputs[0] if inputs else None
-                            if (
-                                x is None
-                                or (not torch.is_tensor(x))
-                                or (not x.is_cuda)
-                                or x.numel() == 0
-                            ):
-                                q_rows = 0
-                            else:
-                                last = int(x.shape[-1]) if x.dim() > 0 else 0
-                                q_rows = int(x.numel() // last) if last > 0 else 0
-                            out_features = int(getattr(m, "out_features", 0) or 0)
-                            out_elems = q_rows * out_features
-                            if q_rows <= 0 or out_features <= 0:
-                                return
-                            evt = torch.cuda.Event(enable_timing=True)
-                            evt.record()
-                            self._start_stack.setdefault(m, []).append((evt, q_rows, out_elems))
-
-                        def _post_hook(m, inputs, outputs):
-                            evt = torch.cuda.Event(enable_timing=True)
-                            evt.record()
-                            stack = self._start_stack.get(m)
-                            if not stack:
-                                return
-                            start_evt, q_rows, out_elems = stack.pop()
-                            self._records.append((start_evt, evt))
-                            self._batch_q += int(q_rows)
-                            self._batch_elem += int(out_elems)
-
-                        self._handles.append(mod.register_forward_pre_hook(_pre_hook))
-                        self._handles.append(mod.register_forward_hook(_post_hook))
-
-                def remove(self):
-                    for h in self._handles:
-                        try:
-                            h.remove()
-                        except Exception:
-                            pass
-                    self._handles.clear()
-
-                def consume_batch_ms(self) -> float:
-                    # Assumes caller has synchronized the stream for this forward.
-                    total_ms = 0.0
-                    for s, e in self._records:
-                        total_ms += float(s.elapsed_time(e))
-                    return total_ms
-
-            dense_dot_timer = _DenseLinearCudaDotTimer()
-            dense_dot_timer.install()
         
         if self.device == 'cuda' and torch.cuda.is_available():
             torch.cuda.reset_peak_memory_stats()
         
         for batch in self.dataset:
-            if dense_dot_timer is not None:
-                dense_dot_timer.reset_batch()
             input_ids = batch['input_ids'].to(self.device).unsqueeze(0)
             label = input_ids[:, -1]
             # Truncate or pad to max_seq_len
@@ -402,11 +304,6 @@ class Evaluator:
                 
                 torch.cuda.synchronize()
                 latency += start.elapsed_time(end)
-
-                if dense_dot_timer is not None:
-                    dense_dot_ms_total += dense_dot_timer.consume_batch_ms()
-                    dense_dot_q_total += int(dense_dot_timer._batch_q)
-                    dense_dot_elem_total += int(dense_dot_timer._batch_elem)
             else:
                 start_time = time.perf_counter()
                 outputs = model(input_ids)
@@ -429,22 +326,7 @@ class Evaluator:
         avg_latency = latency / max(1, self.num_samples)
         peak_memory = torch.cuda.max_memory_allocated() / (1024**2) if self.device == 'cuda' and torch.cuda.is_available() else 0
 
-        if dense_dot_timer is not None:
-            dense_dot_timer.remove()
-        avg_dense_dot_ms = dense_dot_ms_total / max(1, self.num_samples)
-        # Dot-only averages derived from (sum of Linear CUDA time) and denominators.
-        avg_dense_dot_us_per_query = (dense_dot_ms_total * 1e3 / dense_dot_q_total) if dense_dot_q_total > 0 else 0.0
-        avg_dense_dot_ns_per_scalar = (dense_dot_ms_total * 1e6 / dense_dot_elem_total) if dense_dot_elem_total > 0 else 0.0
-
-        return (
-            accuracy,
-            top5_accuracy,
-            avg_latency,
-            peak_memory,
-            avg_dense_dot_ms,
-            avg_dense_dot_us_per_query,
-            avg_dense_dot_ns_per_scalar,
-        )
+        return accuracy, top5_accuracy, avg_latency, peak_memory
 
 def print_model_size(model):
     param_size = 0
@@ -662,13 +544,10 @@ def main():
                     if args.skip_baseline:
                         print("Skipping baseline evaluation (--skip_baseline)")
                     else:
-                        acc_fp16, top5_fp16, latency_fp16, mem_fp16, dot_fp16_ms, dot_fp16_q_us, dot_fp16_s_ns = evaluator.evaluate(
-                            model_fp16, scope=args.scope
-                        )
+                        acc_fp16, top5_fp16, latency_fp16, mem_fp16 = evaluator.evaluate(model_fp16)
                         print(
                             f"-> [NEXT-TOKEN ACC] FP baseline top1={acc_fp16:.4f}, top5={top5_fp16:.4f}, "
-                            f"avg_fwd={latency_fp16:.3f}ms, dot={dot_fp16_ms:.3f}ms, "
-                            f"dot_q={dot_fp16_q_us:.3f}us, dot_s={dot_fp16_s_ns:.3f}ns, peak_mem={mem_fp16:.2f}MB"
+                            f"avg_fwd={latency_fp16:.3f}ms, peak_mem={mem_fp16:.2f}MB"
                         )
                         baseline_acc = acc_fp16
                         baseline_top5 = top5_fp16
@@ -683,9 +562,7 @@ def main():
                     "accuracy_top5": baseline_top5,
                     "avg_forward_ms": baseline_latency,
                     "avg_build_ms": None,
-                    "avg_dot_ms": dot_fp16_ms if baseline_latency is not None else None,
-                    "avg_dot_us_per_query": dot_fp16_q_us if baseline_latency is not None else None,
-                    "avg_dot_ns_per_scalar": dot_fp16_s_ns if baseline_latency is not None else None,
+                    "avg_dot_ms": None,
                     "peak_mem_mb": baseline_peak_mem,
                     "summary": {
                         "total_dense_bytes": fp16_linear_weight_bytes,
