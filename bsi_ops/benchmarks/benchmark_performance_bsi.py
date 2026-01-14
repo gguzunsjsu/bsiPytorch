@@ -28,6 +28,93 @@ def get_device():
     else:
         return 'cpu'
 
+def _is_attention_linear(name: str) -> bool:
+    tokens = ['attn', 'self_attn', 'q_proj', 'k_proj', 'v_proj', 'out_proj']
+    return any(t in name for t in tokens)
+
+def _is_mlp_linear(name: str) -> bool:
+    tokens = ['mlp', 'ff', 'ffn', 'fc1', 'fc2']
+    return any(t in name for t in tokens)
+
+class _TimedLinearGemm(torch.nn.Module):
+    def __init__(self, linear: torch.nn.Linear, timer: "_DenseGemmTimer"):
+        super().__init__()
+        self.weight = linear.weight
+        self.bias = linear.bias
+        self.in_features = linear.in_features
+        self.out_features = linear.out_features
+        self._timer = timer
+
+    def forward(self, x):
+        if x.is_cuda:
+            start_evt = torch.cuda.Event(enable_timing=True)
+            end_evt = torch.cuda.Event(enable_timing=True)
+            start_evt.record()
+            out = torch.matmul(x, self.weight.t())
+            end_evt.record()
+            if x.numel() and x.dim() > 0:
+                last = int(x.shape[-1])
+                q_rows = int(x.numel() // last) if last > 0 else 0
+            else:
+                q_rows = 0
+            if q_rows > 0 and self.out_features > 0:
+                self._timer.record(start_evt, end_evt, q_rows, q_rows * self.out_features)
+        else:
+            out = torch.matmul(x, self.weight.t())
+        if self.bias is not None:
+            out = out + self.bias
+        return out
+
+class _DenseGemmTimer:
+    def __init__(self, model: torch.nn.Module, scope: str):
+        self._model = model
+        self._scope = (scope or "all").lower().strip()
+        self._records = []
+        self._batch_q = 0
+        self._batch_elem = 0
+        self._replacements = []
+
+    def reset_batch(self):
+        self._records.clear()
+        self._batch_q = 0
+        self._batch_elem = 0
+
+    def record(self, start_evt, end_evt, q_rows: int, out_elems: int):
+        self._records.append((start_evt, end_evt))
+        self._batch_q += int(q_rows)
+        self._batch_elem += int(out_elems)
+
+    def consume_batch_ms(self) -> float:
+        total_ms = 0.0
+        for s, e in self._records:
+            total_ms += float(s.elapsed_time(e))
+        return total_ms
+
+    def install(self):
+        for name, module in self._model.named_modules():
+            if not isinstance(module, torch.nn.Linear):
+                continue
+            if 'lm_head' in name:
+                continue
+            if self._scope == 'attention' and not _is_attention_linear(name):
+                continue
+            if self._scope == 'mlp' and not _is_mlp_linear(name):
+                continue
+            parent_name = '.'.join(name.split('.')[:-1])
+            module_name = name.split('.')[-1]
+            parent = self._model.get_submodule(parent_name) if parent_name else self._model
+            wrapped = _TimedLinearGemm(module, self)
+            setattr(parent, module_name, wrapped)
+            self._replacements.append((parent, module_name, module))
+
+    def remove(self):
+        for parent, module_name, original in self._replacements:
+            try:
+                setattr(parent, module_name, original)
+            except Exception:
+                pass
+        self._replacements.clear()
+
 class Evaluator:
     def __init__(self, dataset, tokenizer, device=None, max_seq_len=512, layer_stats_batches=0):
         if device is None:
@@ -274,15 +361,23 @@ class Evaluator:
         )
 
     @torch.no_grad()
-    def evaluate(self, model):
+    def evaluate(self, model, scope: str = "all"):
         model.eval()
         total, hit, top5_hit = 0, 0, 0
         latency = 0
+        dense_dot_ms_total = 0.0
+        dense_dot_q_total = 0
+        dense_dot_elem_total = 0
+        dense_timer = None
         
         if self.device == 'cuda' and torch.cuda.is_available():
             torch.cuda.reset_peak_memory_stats()
+            dense_timer = _DenseGemmTimer(model, scope=scope)
+            dense_timer.install()
         
         for batch in self.dataset:
+            if dense_timer is not None:
+                dense_timer.reset_batch()
             input_ids = batch['input_ids'].to(self.device).unsqueeze(0)
             label = input_ids[:, -1]
             # Truncate or pad to max_seq_len
@@ -304,6 +399,10 @@ class Evaluator:
                 
                 torch.cuda.synchronize()
                 latency += start.elapsed_time(end)
+                if dense_timer is not None:
+                    dense_dot_ms_total += dense_timer.consume_batch_ms()
+                    dense_dot_q_total += dense_timer._batch_q
+                    dense_dot_elem_total += dense_timer._batch_elem
             else:
                 start_time = time.perf_counter()
                 outputs = model(input_ids)
@@ -325,8 +424,21 @@ class Evaluator:
         top5_accuracy = top5_hit / total if total else 0.0
         avg_latency = latency / max(1, self.num_samples)
         peak_memory = torch.cuda.max_memory_allocated() / (1024**2) if self.device == 'cuda' and torch.cuda.is_available() else 0
+        if dense_timer is not None:
+            dense_timer.remove()
+        avg_dense_dot_ms = dense_dot_ms_total / max(1, self.num_samples)
+        avg_dense_dot_us_per_query = (dense_dot_ms_total * 1e3 / dense_dot_q_total) if dense_dot_q_total > 0 else 0.0
+        avg_dense_dot_ns_per_scalar = (dense_dot_ms_total * 1e6 / dense_dot_elem_total) if dense_dot_elem_total > 0 else 0.0
 
-        return accuracy, top5_accuracy, avg_latency, peak_memory
+        return (
+            accuracy,
+            top5_accuracy,
+            avg_latency,
+            peak_memory,
+            avg_dense_dot_ms,
+            avg_dense_dot_us_per_query,
+            avg_dense_dot_ns_per_scalar,
+        )
 
 def print_model_size(model):
     param_size = 0
@@ -540,19 +652,35 @@ def main():
                 baseline_top5 = None
                 baseline_latency = None
                 baseline_peak_mem = 0.0
+                baseline_dot_ms = None
+                baseline_dot_q_us = None
+                baseline_dot_s_ns = None
                 if not args.memory_only:
                     if args.skip_baseline:
                         print("Skipping baseline evaluation (--skip_baseline)")
                     else:
-                        acc_fp16, top5_fp16, latency_fp16, mem_fp16 = evaluator.evaluate(model_fp16)
+                        (
+                            acc_fp16,
+                            top5_fp16,
+                            latency_fp16,
+                            mem_fp16,
+                            dot_fp16_ms,
+                            dot_fp16_q_us,
+                            dot_fp16_s_ns,
+                        ) = evaluator.evaluate(model_fp16, scope=args.scope)
                         print(
                             f"-> [NEXT-TOKEN ACC] FP baseline top1={acc_fp16:.4f}, top5={top5_fp16:.4f}, "
-                            f"avg_fwd={latency_fp16:.3f}ms, peak_mem={mem_fp16:.2f}MB"
+                            f"avg_fwd={latency_fp16:.3f}ms, dot={dot_fp16_ms:.3f}ms, "
+                            f"dot_q={dot_fp16_q_us:.3f}us, dot_s={dot_fp16_s_ns:.3f}ns, "
+                            f"peak_mem={mem_fp16:.2f}MB"
                         )
                         baseline_acc = acc_fp16
                         baseline_top5 = top5_fp16
                         baseline_latency = latency_fp16
                         baseline_peak_mem = mem_fp16
+                        baseline_dot_ms = dot_fp16_ms
+                        baseline_dot_q_us = dot_fp16_q_us
+                        baseline_dot_s_ns = dot_fp16_s_ns
 
                 run_results.append({
                     "name": "FP16 baseline",
@@ -562,7 +690,9 @@ def main():
                     "accuracy_top5": baseline_top5,
                     "avg_forward_ms": baseline_latency,
                     "avg_build_ms": None,
-                    "avg_dot_ms": None,
+                    "avg_dot_ms": baseline_dot_ms,
+                    "avg_dot_us_per_query": baseline_dot_q_us,
+                    "avg_dot_ns_per_scalar": baseline_dot_s_ns,
                     "peak_mem_mb": baseline_peak_mem,
                     "summary": {
                         "total_dense_bytes": fp16_linear_weight_bytes,
