@@ -173,31 +173,39 @@ void popcount_weighted_keys_literal_fused_multiq_kernel(
             const unsigned long long* B_base = B + ((size_t)r * Sb * W);
             const float* Bw_base = Bw + ((size_t)r * Sb);
 
-            float local = 0.0f;
-            long long total = (long long)Sa * (long long)Sb * (long long)W;
-            for (long long idx = threadIdx.x; idx < total; idx += blockDim.x) {
-                int i = static_cast<int>(idx / (Sb * (long long)W));
-                int rem = static_cast<int>(idx % (Sb * (long long)W));
-                int j = rem / W;
-                int w = rem % W;
-
+            float warp_acc = 0.0f;
+            const int pairs = Sa * Sb;
+            for (int pair = warp_id; pair < pairs; pair += num_warps) {
+                int i = pair / Sb;
+                int j = pair - i * Sb;
                 const unsigned long long* ai = A_base + ((size_t)i * W);
                 const unsigned long long* bj = B_base + ((size_t)j * W);
 
-                unsigned long long a_val = __ldg(&ai[w]);
-                unsigned long long b_val = __ldg(&bj[w]);
-                int cnt = __popcll(a_val & b_val);
+                unsigned int cnt = 0;
+                if (W <= 32) {
+                    if (lane < W) {
+                        unsigned long long a_val = __ldg(&ai[lane]);
+                        unsigned long long b_val = __ldg(&bj[lane]);
+                        cnt = (unsigned int)__popcll(a_val & b_val);
+                    }
+                } else {
+                    for (int w = lane; w < W; w += 32) {
+                        unsigned long long a_val = __ldg(&ai[w]);
+                        unsigned long long b_val = __ldg(&bj[w]);
+                        cnt += (unsigned int)__popcll(a_val & b_val);
+                    }
+                }
 
-                float aw = __ldg(&Aw_base[i]);
-                float bw = __ldg(&Bw_base[j]);
-
-                local += (float)cnt * aw * bw;
+                unsigned long long cnt_sum = warp_reduce_sum_ull((unsigned long long)cnt);
+                if (lane == 0) {
+                    float aw = __ldg(&Aw_base[i]);
+                    float bw = __ldg(&Bw_base[j]);
+                    warp_acc += (float)cnt_sum * aw * bw;
+                }
             }
 
-            local = warp_reduce_sum_float(local);
-
             if (lane == 0) {
-                warp_buf[warp_id] = local;
+                warp_buf[warp_id] = warp_acc;
             }
             __syncthreads();
 
