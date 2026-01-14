@@ -424,7 +424,6 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     }
     int tile_q = (q_tile > 0) ? q_tile : 1;
     int tile_r = (r_tile > 0) ? r_tile : 1;
-    dim3 grid((R + tile_r - 1) / tile_r, (Q + tile_q - 1) / tile_q);
     dim3 block(cached_block);
     bool use_warp_out = false;
     if (const char* s = getenv("BSI_WARP_OUT")) {
@@ -434,11 +433,6 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
 
     bool launch_base = !use_warp_out;
     if (use_warp_out) {
-        size_t shared_bytes =
-            ((size_t)Sa * (size_t)W + (size_t)tile_r * (size_t)Sb * (size_t)W) * sizeof(unsigned long long) +
-            (size_t)tile_r * (size_t)Sa * (size_t)Sb * sizeof(float) +
-            (size_t)Sa * (size_t)Sb * (2 * sizeof(int)) +
-            ((size_t)Sa + (size_t)tile_r * (size_t)Sb) * sizeof(float);
         int dev = 0;
         cudaGetDevice(&dev);
         int max_shared_default = 0;
@@ -446,20 +440,36 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
         cudaDeviceGetAttribute(&max_shared_default, cudaDevAttrMaxSharedMemoryPerBlock, dev);
         cudaDeviceGetAttribute(&max_shared_optin, cudaDevAttrMaxSharedMemoryPerBlockOptin, dev);
         int max_shared = (max_shared_optin > max_shared_default) ? max_shared_optin : max_shared_default;
-        if (shared_bytes > (size_t)max_shared) {
-            launch_base = true;
-        } else if (shared_bytes > (size_t)max_shared_default) {
-            cudaFuncSetAttribute(
-                popcount_weighted_keys_literal_fused_multiq_kernel_warp_out,
-                cudaFuncAttributeMaxDynamicSharedMemorySize,
-                (int)shared_bytes);
+        int tile_r_eff = tile_r;
+        size_t shared_bytes = 0;
+        while (tile_r_eff > 0) {
+            shared_bytes =
+                ((size_t)Sa * (size_t)W + (size_t)tile_r_eff * (size_t)Sb * (size_t)W) * sizeof(unsigned long long) +
+                (size_t)tile_r_eff * (size_t)Sa * (size_t)Sb * sizeof(float) +
+                (size_t)Sa * (size_t)Sb * (2 * sizeof(int)) +
+                ((size_t)Sa + (size_t)tile_r_eff * (size_t)Sb) * sizeof(float);
+            if (shared_bytes <= (size_t)max_shared) break;
+            tile_r_eff = (tile_r_eff + 1) / 2;
+            if (tile_r_eff == tile_r) {
+                tile_r_eff = tile_r - 1;
+            }
         }
-        if (!launch_base) {
-            popcount_weighted_keys_literal_fused_multiq_kernel_warp_out<<<grid, block, shared_bytes, stream>>>(
-                A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r, indices_r, indices_q, scale_inv, R_total, out_global);
+        if (tile_r_eff <= 0 || shared_bytes > (size_t)max_shared) {
+            launch_base = true;
+        } else {
+            if (shared_bytes > (size_t)max_shared_default) {
+                cudaFuncSetAttribute(
+                    popcount_weighted_keys_literal_fused_multiq_kernel_warp_out,
+                    cudaFuncAttributeMaxDynamicSharedMemorySize,
+                    (int)shared_bytes);
+            }
+            dim3 grid_warp((R + tile_r_eff - 1) / tile_r_eff, (Q + tile_q - 1) / tile_q);
+            popcount_weighted_keys_literal_fused_multiq_kernel_warp_out<<<grid_warp, block, shared_bytes, stream>>>(
+                A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q, scale_inv, R_total, out_global);
         }
     }
     if (launch_base) {
+        dim3 grid((R + tile_r - 1) / tile_r, (Q + tile_q - 1) / tile_q);
         size_t shared_bytes =
             ((size_t)Sa * (size_t)W + (size_t)Sb * (size_t)W) * sizeof(unsigned long long) +
             (size_t)Sa * (size_t)Sb * (sizeof(float) + 2 * sizeof(int)) +
