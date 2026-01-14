@@ -257,9 +257,20 @@ void popcount_weighted_keys_literal_fused_multiq_kernel(
     }
 }
 
+template <bool UsePopc32>
+__device__ __forceinline__ int popcount64(unsigned long long v) {
+    if constexpr (UsePopc32) {
+        unsigned int lo = static_cast<unsigned int>(v);
+        unsigned int hi = static_cast<unsigned int>(v >> 32);
+        return __popc(lo) + __popc(hi);
+    } else {
+        return __popcll(v);
+    }
+}
+
 // Warp-per-output variant (no coefficient cache, lower shared memory).
-extern "C" __global__
-void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff(
+template <bool UsePopc32>
+__global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff(
     const unsigned long long* __restrict__ A,    // [Q, Sa, W]
     const float* __restrict__ Aw,                // [Q, Sa]
     int Sa,
@@ -336,7 +347,7 @@ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff(
                     const unsigned long long* b_row =
                         B_sh + (size_t)out_idx * (size_t)Sb * (size_t)W + (size_t)lane;
                     const float* bw_row = Bw_sh + (size_t)out_idx * (size_t)Sb;
-                    bool use_bw_cache = Sb <= 16;
+                    const bool use_bw_cache = Sb <= 16;
                     float bw_cache[16];
                     if (use_bw_cache) {
 #pragma unroll
@@ -352,17 +363,20 @@ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff(
                         a_ptr += W;
                         const unsigned long long* b_ptr = b_row;
                         if (use_bw_cache) {
-                            for (int j = 0; j < Sb; ++j) {
-                                unsigned long long b_val = *b_ptr;
-                                int cnt = __popcll(a_val & b_val);
-                                local += (float)cnt * aw * bw_cache[j];
+#pragma unroll
+                            for (int j = 0; j < 16; ++j) {
+                                if (j < Sb) {
+                                    unsigned long long b_val = *b_ptr;
+                                    int cnt = popcount64<UsePopc32>(a_val & b_val);
+                                    local += (float)cnt * aw * bw_cache[j];
+                                }
                                 b_ptr += W;
                             }
                         } else {
                             const float* bw_ptr = bw_row;
                             for (int j = 0; j < Sb; ++j) {
                                 unsigned long long b_val = *b_ptr;
-                                int cnt = __popcll(a_val & b_val);
+                                int cnt = popcount64<UsePopc32>(a_val & b_val);
                                 local += (float)cnt * aw * (*bw_ptr);
                                 b_ptr += W;
                                 ++bw_ptr;
@@ -373,7 +387,7 @@ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff(
             } else {
                 const unsigned long long* b_row = B_sh + (size_t)out_idx * (size_t)Sb * (size_t)W;
                 const float* bw_row = Bw_sh + (size_t)out_idx * (size_t)Sb;
-                bool use_bw_cache = Sb <= 16;
+                const bool use_bw_cache = Sb <= 16;
                 float bw_cache[16];
                 if (use_bw_cache) {
 #pragma unroll
@@ -388,17 +402,20 @@ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff(
                         unsigned long long a_val = a_row[(size_t)w];
                         const unsigned long long* b_ptr = b_row + (size_t)w;
                         if (use_bw_cache) {
-                            for (int j = 0; j < Sb; ++j) {
-                                unsigned long long b_val = *b_ptr;
-                                int cnt = __popcll(a_val & b_val);
-                                local += (float)cnt * aw * bw_cache[j];
+#pragma unroll
+                            for (int j = 0; j < 16; ++j) {
+                                if (j < Sb) {
+                                    unsigned long long b_val = *b_ptr;
+                                    int cnt = popcount64<UsePopc32>(a_val & b_val);
+                                    local += (float)cnt * aw * bw_cache[j];
+                                }
                                 b_ptr += W;
                             }
                         } else {
                             const float* bw_ptr = bw_row;
                             for (int j = 0; j < Sb; ++j) {
                                 unsigned long long b_val = *b_ptr;
-                                int cnt = __popcll(a_val & b_val);
+                                int cnt = popcount64<UsePopc32>(a_val & b_val);
                                 local += (float)cnt * aw * (*bw_ptr);
                                 b_ptr += W;
                                 ++bw_ptr;
@@ -456,6 +473,11 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
         int v = atoi(s);
         use_warp_out = (v != 0);
     }
+    bool use_popc32 = false;
+    if (const char* s = getenv("BSI_POPC32")) {
+        int v = atoi(s);
+        use_popc32 = (v != 0);
+    }
     bool launch_base = !use_warp_out;
     if (use_warp_out) {
         int dev = 0;
@@ -481,14 +503,26 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
             launch_base = true;
         } else {
             if (shared_bytes > (size_t)max_shared_default) {
-                cudaFuncSetAttribute(
-                    popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff,
-                    cudaFuncAttributeMaxDynamicSharedMemorySize,
-                    (int)shared_bytes);
+                if (use_popc32) {
+                    cudaFuncSetAttribute(
+                        popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff<true>,
+                        cudaFuncAttributeMaxDynamicSharedMemorySize,
+                        (int)shared_bytes);
+                } else {
+                    cudaFuncSetAttribute(
+                        popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff<false>,
+                        cudaFuncAttributeMaxDynamicSharedMemorySize,
+                        (int)shared_bytes);
+                }
             }
             dim3 grid_warp((R + tile_r_eff - 1) / tile_r_eff, (Q + tile_q - 1) / tile_q);
-            popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff<<<grid_warp, block, shared_bytes, stream>>>(
-                A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q, scale_inv, R_total, out_global);
+            if (use_popc32) {
+                popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff<true><<<grid_warp, block, shared_bytes, stream>>>(
+                    A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q, scale_inv, R_total, out_global);
+            } else {
+                popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff<false><<<grid_warp, block, shared_bytes, stream>>>(
+                    A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q, scale_inv, R_total, out_global);
+            }
         }
     }
     if (launch_base) {
