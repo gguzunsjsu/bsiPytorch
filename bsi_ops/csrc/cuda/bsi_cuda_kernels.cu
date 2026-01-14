@@ -339,8 +339,9 @@ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff(
                     bool use_bw_cache = Sb <= 16;
                     float bw_cache[16];
                     if (use_bw_cache) {
-                        for (int j = 0; j < Sb; ++j) {
-                            bw_cache[j] = bw_row[j];
+#pragma unroll
+                        for (int j = 0; j < 16; ++j) {
+                            if (j < Sb) bw_cache[j] = bw_row[j];
                         }
                     }
                     const unsigned long long* a_ptr = A_sh + (size_t)lane;
@@ -375,8 +376,9 @@ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff(
                 bool use_bw_cache = Sb <= 16;
                 float bw_cache[16];
                 if (use_bw_cache) {
-                    for (int j = 0; j < Sb; ++j) {
-                        bw_cache[j] = bw_row[j];
+#pragma unroll
+                    for (int j = 0; j < 16; ++j) {
+                        if (j < Sb) bw_cache[j] = bw_row[j];
                     }
                 }
                 for (int i = 0; i < Sa; ++i) {
