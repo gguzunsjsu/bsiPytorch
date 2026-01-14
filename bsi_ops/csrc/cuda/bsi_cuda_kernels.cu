@@ -180,6 +180,20 @@ void popcount_weighted_keys_literal_fused_multiq_kernel(
     }
     __syncthreads();
 
+    for (int tr = 0; tr < tile_r; ++tr) {
+        int r = r_start + tr;
+        if (r >= R) continue;
+        const unsigned long long* B_base = B + ((size_t)r * Sb * W);
+        const float* Bw_base = Bw + ((size_t)r * Sb);
+        for (int idx = threadIdx.x; idx < Sb * W; idx += blockDim.x) {
+            B_sh[(size_t)tr * (size_t)Sb * (size_t)W + (size_t)idx] = __ldg(&B_base[idx]);
+        }
+        for (int idx = threadIdx.x; idx < Sb; idx += blockDim.x) {
+            Bw_sh[(size_t)tr * (size_t)Sb + (size_t)idx] = __ldg(&Bw_base[idx]);
+        }
+    }
+    __syncthreads();
+
     for (int tq = 0; tq < tile_q; ++tq) {
         int q = q_start + tq;
         if (q >= Q) break;
@@ -321,20 +335,6 @@ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out(
         }
         for (int idx = threadIdx.x; idx < Sa; idx += blockDim.x) {
             Aw_sh[idx] = __ldg(&Aw_base[idx]);
-        }
-        __syncthreads();
-
-        for (int tr = 0; tr < tile_r; ++tr) {
-            int r = r_start + tr;
-            if (r >= R) continue;
-            const unsigned long long* B_base = B + ((size_t)r * Sb * W);
-            const float* Bw_base = Bw + ((size_t)r * Sb);
-            for (int idx = threadIdx.x; idx < Sb * W; idx += blockDim.x) {
-                B_sh[(size_t)tr * (size_t)Sb * (size_t)W + (size_t)idx] = __ldg(&B_base[idx]);
-            }
-            for (int idx = threadIdx.x; idx < Sb; idx += blockDim.x) {
-                Bw_sh[(size_t)tr * (size_t)Sb + (size_t)idx] = __ldg(&Bw_base[idx]);
-            }
         }
         __syncthreads();
 
