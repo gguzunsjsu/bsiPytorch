@@ -297,7 +297,9 @@ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out(
     float* coeff = reinterpret_cast<float*>(B_sh + (size_t)tile_r * (size_t)Sb * (size_t)W);
     int* pair_i = reinterpret_cast<int*>(coeff + (size_t)tile_r * (size_t)pairs);
     int* pair_j = pair_i + pairs;
-    float* Aw_sh = reinterpret_cast<float*>(pair_j + pairs);
+    int* pair_a_off = pair_j + pairs;
+    int* pair_b_off = pair_a_off + pairs;
+    float* Aw_sh = reinterpret_cast<float*>(pair_b_off + pairs);
     float* Bw_sh = Aw_sh + Sa;
 
     for (int pair = threadIdx.x; pair < pairs; pair += blockDim.x) {
@@ -305,6 +307,8 @@ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out(
         int j = pair - i * Sb;
         pair_i[pair] = i;
         pair_j[pair] = j;
+        pair_a_off[pair] = i * W;
+        pair_b_off[pair] = j * W;
     }
     __syncthreads();
 
@@ -357,24 +361,21 @@ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out(
             if (W <= 32) {
                 if (lane < W) {
                     for (int pair = 0; pair < pairs; ++pair) {
-                        int i = pair_i[pair];
-                        int j = pair_j[pair];
-                        unsigned long long a_val = A_sh[(size_t)i * (size_t)W + (size_t)lane];
+                        unsigned long long a_val = A_sh[(size_t)pair_a_off[pair] + (size_t)lane];
                         unsigned long long b_val = B_sh[(size_t)out_idx * (size_t)Sb * (size_t)W +
-                                                        (size_t)j * (size_t)W + (size_t)lane];
+                                                        (size_t)pair_b_off[pair] + (size_t)lane];
                         int cnt = __popcll(a_val & b_val);
                         local += (float)cnt * coeff[(size_t)out_idx * (size_t)pairs + (size_t)pair];
                     }
                 }
             } else {
                 for (int pair = 0; pair < pairs; ++pair) {
-                    int i = pair_i[pair];
-                    int j = pair_j[pair];
                     float c = coeff[(size_t)out_idx * (size_t)pairs + (size_t)pair];
+                    size_t a_base = (size_t)pair_a_off[pair];
+                    size_t b_base = (size_t)out_idx * (size_t)Sb * (size_t)W + (size_t)pair_b_off[pair];
                     for (int w = lane; w < W; w += 32) {
-                        unsigned long long a_val = A_sh[(size_t)i * (size_t)W + (size_t)w];
-                        unsigned long long b_val = B_sh[(size_t)out_idx * (size_t)Sb * (size_t)W +
-                                                        (size_t)j * (size_t)W + (size_t)w];
+                        unsigned long long a_val = A_sh[a_base + (size_t)w];
+                        unsigned long long b_val = B_sh[b_base + (size_t)w];
                         int cnt = __popcll(a_val & b_val);
                         local += (float)cnt * c;
                     }
@@ -435,7 +436,7 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
         size_t shared_bytes =
             ((size_t)Sa * (size_t)W + (size_t)tile_r * (size_t)Sb * (size_t)W) * sizeof(unsigned long long) +
             (size_t)tile_r * (size_t)Sa * (size_t)Sb * sizeof(float) +
-            (size_t)Sa * (size_t)Sb * (2 * sizeof(int)) +
+            (size_t)Sa * (size_t)Sb * (4 * sizeof(int)) +
             ((size_t)Sa + (size_t)tile_r * (size_t)Sb) * sizeof(float);
         popcount_weighted_keys_literal_fused_multiq_kernel_warp_out<<<grid, block, shared_bytes, stream>>>(
             A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r, indices_r, indices_q, scale_inv, R_total, out_global);
