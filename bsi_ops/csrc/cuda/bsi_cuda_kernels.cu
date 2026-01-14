@@ -217,6 +217,38 @@ void popcount_weighted_keys_literal_fused_multiq_kernel(
             }
             __syncthreads();
 
+            if (W <= 32) {
+                float warp_acc = 0.0f;
+                for (int pair = warp_id; pair < pairs; pair += num_warps) {
+                    unsigned int cnt = 0;
+                    if (lane < W) {
+                        unsigned long long a_val = A_sh[(size_t)pair_i[pair] * (size_t)W + (size_t)lane];
+                        unsigned long long b_val = B_sh[(size_t)pair_j[pair] * (size_t)W + (size_t)lane];
+                        cnt = (unsigned int)__popcll(a_val & b_val);
+                    }
+                    unsigned long long cnt_sum = warp_reduce_sum_ull((unsigned long long)cnt);
+                    if (lane == 0) {
+                        warp_acc += (float)cnt_sum * coeff[pair];
+                    }
+                }
+
+                if (lane == 0) {
+                    warp_buf[warp_id] = warp_acc;
+                }
+                __syncthreads();
+
+                if (warp_id == 0) {
+                    float val = (lane < num_warps) ? warp_buf[lane] : 0.0f;
+                    val = warp_reduce_sum_float(val);
+
+                    if (lane == 0) {
+                        out_global[((size_t)global_q * (size_t)R_total) + (size_t)global_r] = val * scale_inv;
+                    }
+                }
+                __syncthreads();
+                continue;
+            }
+
             float local = 0.0f;
             for (int idx = threadIdx.x; idx < total; idx += blockDim.x) {
                 int pair = 0;
