@@ -432,15 +432,34 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
         use_warp_out = (v != 0);
     }
 
+    bool launch_base = !use_warp_out;
     if (use_warp_out) {
         size_t shared_bytes =
             ((size_t)Sa * (size_t)W + (size_t)tile_r * (size_t)Sb * (size_t)W) * sizeof(unsigned long long) +
             (size_t)tile_r * (size_t)Sa * (size_t)Sb * sizeof(float) +
             (size_t)Sa * (size_t)Sb * (4 * sizeof(int)) +
             ((size_t)Sa + (size_t)tile_r * (size_t)Sb) * sizeof(float);
-        popcount_weighted_keys_literal_fused_multiq_kernel_warp_out<<<grid, block, shared_bytes, stream>>>(
-            A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r, indices_r, indices_q, scale_inv, R_total, out_global);
-    } else {
+        int dev = 0;
+        cudaGetDevice(&dev);
+        int max_shared_default = 0;
+        int max_shared_optin = 0;
+        cudaDeviceGetAttribute(&max_shared_default, cudaDevAttrMaxSharedMemoryPerBlock, dev);
+        cudaDeviceGetAttribute(&max_shared_optin, cudaDevAttrMaxSharedMemoryPerBlockOptin, dev);
+        int max_shared = (max_shared_optin > max_shared_default) ? max_shared_optin : max_shared_default;
+        if (shared_bytes > (size_t)max_shared) {
+            launch_base = true;
+        } else if (shared_bytes > (size_t)max_shared_default) {
+            cudaFuncSetAttribute(
+                popcount_weighted_keys_literal_fused_multiq_kernel_warp_out,
+                cudaFuncAttributeMaxDynamicSharedMemorySize,
+                (int)shared_bytes);
+        }
+        if (!launch_base) {
+            popcount_weighted_keys_literal_fused_multiq_kernel_warp_out<<<grid, block, shared_bytes, stream>>>(
+                A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r, indices_r, indices_q, scale_inv, R_total, out_global);
+        }
+    }
+    if (launch_base) {
         size_t shared_bytes =
             ((size_t)Sa * (size_t)W + (size_t)Sb * (size_t)W) * sizeof(unsigned long long) +
             (size_t)Sa * (size_t)Sb * (sizeof(float) + 2 * sizeof(int)) +
