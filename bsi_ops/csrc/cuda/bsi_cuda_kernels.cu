@@ -336,36 +336,73 @@ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff(
                     const unsigned long long* b_row =
                         B_sh + (size_t)out_idx * (size_t)Sb * (size_t)W + (size_t)lane;
                     const float* bw_row = Bw_sh + (size_t)out_idx * (size_t)Sb;
+                    bool use_bw_cache = Sb <= 16;
+                    float bw_cache[16];
+                    if (use_bw_cache) {
+#pragma unroll
+                        for (int j = 0; j < 16; ++j) {
+                            if (j < Sb) bw_cache[j] = bw_row[j];
+                        }
+                    }
+                    const unsigned long long* a_ptr = A_sh + (size_t)lane;
+                    const float* aw_ptr = Aw_sh;
                     for (int i = 0; i < Sa; ++i) {
-                        float aw = Aw_sh[i];
-                        unsigned long long a_val = A_sh[(size_t)i * (size_t)W + (size_t)lane];
+                        float aw = *aw_ptr++;
+                        unsigned long long a_val = *a_ptr;
+                        a_ptr += W;
                         const unsigned long long* b_ptr = b_row;
-                        const float* bw_ptr = bw_row;
-                        for (int j = 0; j < Sb; ++j) {
-                            unsigned long long b_val = *b_ptr;
-                            int cnt = __popcll(a_val & b_val);
-                            local += (float)cnt * aw * (*bw_ptr);
-                            b_ptr += W;
-                            ++bw_ptr;
+                        if (use_bw_cache) {
+                            for (int j = 0; j < Sb; ++j) {
+                                unsigned long long b_val = *b_ptr;
+                                int cnt = __popcll(a_val & b_val);
+                                local += (float)cnt * aw * bw_cache[j];
+                                b_ptr += W;
+                            }
+                        } else {
+                            const float* bw_ptr = bw_row;
+                            for (int j = 0; j < Sb; ++j) {
+                                unsigned long long b_val = *b_ptr;
+                                int cnt = __popcll(a_val & b_val);
+                                local += (float)cnt * aw * (*bw_ptr);
+                                b_ptr += W;
+                                ++bw_ptr;
+                            }
                         }
                     }
                 }
             } else {
                 const unsigned long long* b_row = B_sh + (size_t)out_idx * (size_t)Sb * (size_t)W;
                 const float* bw_row = Bw_sh + (size_t)out_idx * (size_t)Sb;
+                bool use_bw_cache = Sb <= 16;
+                float bw_cache[16];
+                if (use_bw_cache) {
+#pragma unroll
+                    for (int j = 0; j < 16; ++j) {
+                        if (j < Sb) bw_cache[j] = bw_row[j];
+                    }
+                }
                 for (int i = 0; i < Sa; ++i) {
                     float aw = Aw_sh[i];
                     const unsigned long long* a_row = A_sh + (size_t)i * (size_t)W;
                     for (int w = lane; w < W; w += 32) {
                         unsigned long long a_val = a_row[(size_t)w];
                         const unsigned long long* b_ptr = b_row + (size_t)w;
-                        const float* bw_ptr = bw_row;
-                        for (int j = 0; j < Sb; ++j) {
-                            unsigned long long b_val = *b_ptr;
-                            int cnt = __popcll(a_val & b_val);
-                            local += (float)cnt * aw * (*bw_ptr);
-                            b_ptr += W;
-                            ++bw_ptr;
+                        if (use_bw_cache) {
+                            for (int j = 0; j < Sb; ++j) {
+                                unsigned long long b_val = *b_ptr;
+                                int cnt = __popcll(a_val & b_val);
+                                local += (float)cnt * aw * bw_cache[j];
+                                b_ptr += W;
+                            }
+                        } else {
+                            const float* bw_ptr = bw_row;
+                            for (int j = 0; j < Sb; ++j) {
+                                unsigned long long b_val = *b_ptr;
+                                int cnt = __popcll(a_val & b_val);
+                                local += (float)cnt * aw * (*bw_ptr);
+                                b_ptr += W;
+                                ++bw_ptr;
+                            }
                         }
                     }
                 }
