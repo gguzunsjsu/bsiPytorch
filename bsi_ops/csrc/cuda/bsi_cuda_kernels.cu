@@ -144,6 +144,7 @@ void popcount_weighted_keys_literal_fused_multiq_kernel(
     int R_total,
     float* __restrict__ out_global)
 {
+    extern __shared__ unsigned char shmem[];
     int r_block = blockIdx.x;
     int q_block = blockIdx.y;
     const int tile_q = (q_tile > 0) ? q_tile : 1;
@@ -157,6 +158,28 @@ void popcount_weighted_keys_literal_fused_multiq_kernel(
     const int warp_id = threadIdx.x >> 5;
     const int num_warps = (blockDim.x + 31) >> 5;
 
+    const int pairs = Sa * Sb;
+    const int total = pairs * W;
+    const int w_mask = W - 1;
+    const bool w_pow2 = (W & w_mask) == 0;
+    const int w_shift = w_pow2 ? (__ffs(W) - 1) : 0;
+
+    unsigned long long* A_sh = reinterpret_cast<unsigned long long*>(shmem);
+    unsigned long long* B_sh = A_sh + (size_t)Sa * (size_t)W;
+    float* coeff = reinterpret_cast<float*>(B_sh + (size_t)Sb * (size_t)W);
+    int* pair_i = reinterpret_cast<int*>(coeff + pairs);
+    int* pair_j = pair_i + pairs;
+    float* Aw_sh = reinterpret_cast<float*>(pair_j + pairs);
+    float* Bw_sh = Aw_sh + Sa;
+
+    for (int pair = threadIdx.x; pair < pairs; pair += blockDim.x) {
+        int i = pair / Sb;
+        int j = pair - i * Sb;
+        pair_i[pair] = i;
+        pair_j[pair] = j;
+    }
+    __syncthreads();
+
     for (int tq = 0; tq < tile_q; ++tq) {
         int q = q_start + tq;
         if (q >= Q) break;
@@ -164,6 +187,14 @@ void popcount_weighted_keys_literal_fused_multiq_kernel(
         long long global_q = __ldg(&query_indices[q]);
         const unsigned long long* A_base = A + ((size_t)q * Sa * W);
         const float* Aw_base = Aw + ((size_t)q * Sa);
+
+        for (int idx = threadIdx.x; idx < Sa * W; idx += blockDim.x) {
+            A_sh[idx] = __ldg(&A_base[idx]);
+        }
+        for (int idx = threadIdx.x; idx < Sa; idx += blockDim.x) {
+            Aw_sh[idx] = __ldg(&Aw_base[idx]);
+        }
+        __syncthreads();
 
         for (int tr = 0; tr < tile_r; ++tr) {
             int r = r_start + tr;
@@ -173,25 +204,37 @@ void popcount_weighted_keys_literal_fused_multiq_kernel(
             const unsigned long long* B_base = B + ((size_t)r * Sb * W);
             const float* Bw_base = Bw + ((size_t)r * Sb);
 
+            for (int idx = threadIdx.x; idx < Sb * W; idx += blockDim.x) {
+                B_sh[idx] = __ldg(&B_base[idx]);
+            }
+            for (int idx = threadIdx.x; idx < Sb; idx += blockDim.x) {
+                Bw_sh[idx] = __ldg(&Bw_base[idx]);
+            }
+            __syncthreads();
+
+            for (int pair = threadIdx.x; pair < pairs; pair += blockDim.x) {
+                coeff[pair] = Aw_sh[pair_i[pair]] * Bw_sh[pair_j[pair]];
+            }
+            __syncthreads();
+
             float local = 0.0f;
-            long long total = (long long)Sa * (long long)Sb * (long long)W;
-            for (long long idx = threadIdx.x; idx < total; idx += blockDim.x) {
-                int i = static_cast<int>(idx / (Sb * (long long)W));
-                int rem = static_cast<int>(idx % (Sb * (long long)W));
-                int j = rem / W;
-                int w = rem % W;
-
-                const unsigned long long* ai = A_base + ((size_t)i * W);
-                const unsigned long long* bj = B_base + ((size_t)j * W);
-
-                unsigned long long a_val = __ldg(&ai[w]);
-                unsigned long long b_val = __ldg(&bj[w]);
+            for (int idx = threadIdx.x; idx < total; idx += blockDim.x) {
+                int pair = 0;
+                int w = 0;
+                if (w_pow2) {
+                    pair = idx >> w_shift;
+                    w = idx & w_mask;
+                } else {
+                    pair = idx / W;
+                    w = idx - pair * W;
+                }
+                const int i = pair_i[pair];
+                const int j = pair_j[pair];
+                unsigned long long a_val = A_sh[(size_t)i * (size_t)W + (size_t)w];
+                unsigned long long b_val = B_sh[(size_t)j * (size_t)W + (size_t)w];
                 int cnt = __popcll(a_val & b_val);
 
-                float aw = __ldg(&Aw_base[i]);
-                float bw = __ldg(&Bw_base[j]);
-
-                local += (float)cnt * aw * bw;
+                local += (float)cnt * coeff[pair];
             }
 
             local = warp_reduce_sum_float(local);
@@ -249,7 +292,11 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     int tile_r = (r_tile > 0) ? r_tile : 1;
     dim3 grid((R + tile_r - 1) / tile_r, (Q + tile_q - 1) / tile_q);
     dim3 block(cached_block);
-    popcount_weighted_keys_literal_fused_multiq_kernel<<<grid, block, 0, stream>>>(
+    size_t shared_bytes =
+        ((size_t)Sa * (size_t)W + (size_t)Sb * (size_t)W) * sizeof(unsigned long long) +
+        (size_t)Sa * (size_t)Sb * (sizeof(float) + 2 * sizeof(int)) +
+        ((size_t)Sa + (size_t)Sb) * sizeof(float);
+    popcount_weighted_keys_literal_fused_multiq_kernel<<<grid, block, shared_bytes, stream>>>(
         A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r, indices_r, indices_q, scale_inv, R_total, out_global);
 }
 
