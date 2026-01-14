@@ -257,135 +257,7 @@ void popcount_weighted_keys_literal_fused_multiq_kernel(
     }
 }
 
-// Warp-per-output variant: each warp computes one (q, r) output within the r_tile.
-extern "C" __global__
-void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out(
-    const unsigned long long* __restrict__ A,    // [Q, Sa, W]
-    const float* __restrict__ Aw,                // [Q, Sa]
-    int Sa,
-    int W,
-    const unsigned long long* __restrict__ B,    // [R, Sb, W]
-    const float* __restrict__ Bw,                // [R, Sb]
-    int Sb,
-    int R,
-    int Q,
-    int q_tile,
-    int r_tile,
-    const long long* __restrict__ key_indices,   // [R]
-    const long long* __restrict__ query_indices, // [Q]
-    float scale_inv,
-    int R_total,
-    float* __restrict__ out_global)
-{
-    extern __shared__ unsigned char shmem[];
-    int r_block = blockIdx.x;
-    int q_block = blockIdx.y;
-    const int tile_q = (q_tile > 0) ? q_tile : 1;
-    const int tile_r = (r_tile > 0) ? r_tile : 1;
-    const int q_start = q_block * tile_q;
-    const int r_start = r_block * tile_r;
-    if (q_start >= Q) return;
-
-    const int lane = threadIdx.x & 31;
-    const int warp_id = threadIdx.x >> 5;
-    const int num_warps = (blockDim.x + 31) >> 5;
-
-    const int pairs = Sa * Sb;
-
-    unsigned long long* A_sh = reinterpret_cast<unsigned long long*>(shmem);
-    unsigned long long* B_sh = A_sh + (size_t)Sa * (size_t)W;
-    float* coeff = reinterpret_cast<float*>(B_sh + (size_t)tile_r * (size_t)Sb * (size_t)W);
-    float* Aw_sh = reinterpret_cast<float*>(coeff + (size_t)tile_r * (size_t)pairs);
-    float* Bw_sh = Aw_sh + Sa;
-
-    for (int tr = 0; tr < tile_r; ++tr) {
-        int r = r_start + tr;
-        if (r >= R) continue;
-        const unsigned long long* B_base = B + ((size_t)r * Sb * W);
-        const float* Bw_base = Bw + ((size_t)r * Sb);
-        for (int idx = threadIdx.x; idx < Sb * W; idx += blockDim.x) {
-            B_sh[(size_t)tr * (size_t)Sb * (size_t)W + (size_t)idx] = __ldg(&B_base[idx]);
-        }
-        for (int idx = threadIdx.x; idx < Sb; idx += blockDim.x) {
-            Bw_sh[(size_t)tr * (size_t)Sb + (size_t)idx] = __ldg(&Bw_base[idx]);
-        }
-    }
-    __syncthreads();
-
-    for (int tq = 0; tq < tile_q; ++tq) {
-        int q = q_start + tq;
-        if (q >= Q) break;
-
-        long long global_q = __ldg(&query_indices[q]);
-        const unsigned long long* A_base = A + ((size_t)q * Sa * W);
-        const float* Aw_base = Aw + ((size_t)q * Sa);
-
-        for (int idx = threadIdx.x; idx < Sa * W; idx += blockDim.x) {
-            A_sh[idx] = __ldg(&A_base[idx]);
-        }
-        for (int idx = threadIdx.x; idx < Sa; idx += blockDim.x) {
-            Aw_sh[idx] = __ldg(&Aw_base[idx]);
-        }
-        __syncthreads();
-
-        for (int tr = 0; tr < tile_r; ++tr) {
-            int r = r_start + tr;
-            if (r >= R) continue;
-            for (int pair = threadIdx.x; pair < pairs; pair += blockDim.x) {
-                int i = pair / Sb;
-                int j = pair - i * Sb;
-                coeff[(size_t)tr * (size_t)pairs + (size_t)pair] =
-                    Aw_sh[i] * Bw_sh[(size_t)tr * (size_t)Sb + (size_t)j];
-            }
-        }
-        __syncthreads();
-
-        for (int out_idx = warp_id; out_idx < tile_r; out_idx += num_warps) {
-            int r = r_start + out_idx;
-            if (r >= R) continue;
-            long long global_r = __ldg(&key_indices[r]);
-
-            float local = 0.0f;
-            if (W <= 32) {
-                if (lane < W) {
-                    for (int i = 0; i < Sa; ++i) {
-                        unsigned long long a_val = A_sh[(size_t)i * (size_t)W + (size_t)lane];
-                        size_t base_pair = (size_t)i * (size_t)Sb;
-                        for (int j = 0; j < Sb; ++j) {
-                            unsigned long long b_val = B_sh[(size_t)out_idx * (size_t)Sb * (size_t)W +
-                                                            (size_t)j * (size_t)W + (size_t)lane];
-                            int cnt = __popcll(a_val & b_val);
-                            local += (float)cnt * coeff[(size_t)out_idx * (size_t)pairs + base_pair + (size_t)j];
-                        }
-                    }
-                }
-            } else {
-                for (int i = 0; i < Sa; ++i) {
-                    size_t a_base = (size_t)i * (size_t)W;
-                    size_t base_pair = (size_t)i * (size_t)Sb;
-                    for (int w = lane; w < W; w += 32) {
-                        unsigned long long a_val = A_sh[a_base + (size_t)w];
-                        for (int j = 0; j < Sb; ++j) {
-                            size_t b_base = (size_t)out_idx * (size_t)Sb * (size_t)W + (size_t)j * (size_t)W;
-                            unsigned long long b_val = B_sh[b_base + (size_t)w];
-                            int cnt = __popcll(a_val & b_val);
-                            float c = coeff[(size_t)out_idx * (size_t)pairs + base_pair + (size_t)j];
-                            local += (float)cnt * c;
-                        }
-                    }
-                }
-            }
-
-            local = warp_reduce_sum_float(local);
-            if (lane == 0) {
-                out_global[((size_t)global_q * (size_t)R_total) + (size_t)global_r] = local * scale_inv;
-            }
-        }
-        __syncthreads();
-    }
-}
-
-// Warp-per-output variant without coefficient cache (lower shared memory, more arithmetic).
+// Warp-per-output variant (no coefficient cache, lower shared memory).
 extern "C" __global__
 void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff(
     const unsigned long long* __restrict__ A,    // [Q, Sa, W]
@@ -461,30 +333,39 @@ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff(
             float local = 0.0f;
             if (W <= 32) {
                 if (lane < W) {
-                    size_t b_base = (size_t)out_idx * (size_t)Sb * (size_t)W + (size_t)lane;
-                    size_t bw_base = (size_t)out_idx * (size_t)Sb;
+                    const unsigned long long* b_row =
+                        B_sh + (size_t)out_idx * (size_t)Sb * (size_t)W + (size_t)lane;
+                    const float* bw_row = Bw_sh + (size_t)out_idx * (size_t)Sb;
                     for (int i = 0; i < Sa; ++i) {
-                        unsigned long long a_val = A_sh[(size_t)i * (size_t)W + (size_t)lane];
                         float aw = Aw_sh[i];
+                        unsigned long long a_val = A_sh[(size_t)i * (size_t)W + (size_t)lane];
+                        const unsigned long long* b_ptr = b_row;
+                        const float* bw_ptr = bw_row;
                         for (int j = 0; j < Sb; ++j) {
-                            unsigned long long b_val = B_sh[b_base + (size_t)j * (size_t)W];
+                            unsigned long long b_val = *b_ptr;
                             int cnt = __popcll(a_val & b_val);
-                            local += (float)cnt * aw * Bw_sh[bw_base + (size_t)j];
+                            local += (float)cnt * aw * (*bw_ptr);
+                            b_ptr += W;
+                            ++bw_ptr;
                         }
                     }
                 }
             } else {
-                size_t bw_base = (size_t)out_idx * (size_t)Sb;
+                const unsigned long long* b_row = B_sh + (size_t)out_idx * (size_t)Sb * (size_t)W;
+                const float* bw_row = Bw_sh + (size_t)out_idx * (size_t)Sb;
                 for (int i = 0; i < Sa; ++i) {
                     float aw = Aw_sh[i];
-                    size_t a_base = (size_t)i * (size_t)W;
-                    size_t b_base = (size_t)out_idx * (size_t)Sb * (size_t)W;
+                    const unsigned long long* a_row = A_sh + (size_t)i * (size_t)W;
                     for (int w = lane; w < W; w += 32) {
-                        unsigned long long a_val = A_sh[a_base + (size_t)w];
+                        unsigned long long a_val = a_row[(size_t)w];
+                        const unsigned long long* b_ptr = b_row + (size_t)w;
+                        const float* bw_ptr = bw_row;
                         for (int j = 0; j < Sb; ++j) {
-                            unsigned long long b_val = B_sh[b_base + (size_t)j * (size_t)W + (size_t)w];
+                            unsigned long long b_val = *b_ptr;
                             int cnt = __popcll(a_val & b_val);
-                            local += (float)cnt * aw * Bw_sh[bw_base + (size_t)j];
+                            local += (float)cnt * aw * (*bw_ptr);
+                            b_ptr += W;
+                            ++bw_ptr;
                         }
                     }
                 }
@@ -538,12 +419,6 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
         int v = atoi(s);
         use_warp_out = (v != 0);
     }
-    bool use_nocoeff = false;
-    if (const char* s = getenv("BSI_WARP_OUT_NOCOEFF")) {
-        int v = atoi(s);
-        use_nocoeff = (v != 0);
-    }
-
     bool launch_base = !use_warp_out;
     if (use_warp_out) {
         int dev = 0;
@@ -556,16 +431,9 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
         int tile_r_eff = tile_r;
         size_t shared_bytes = 0;
         while (tile_r_eff > 0) {
-            if (use_nocoeff) {
-                shared_bytes =
-                    ((size_t)Sa * (size_t)W + (size_t)tile_r_eff * (size_t)Sb * (size_t)W) * sizeof(unsigned long long) +
-                    ((size_t)Sa + (size_t)tile_r_eff * (size_t)Sb) * sizeof(float);
-            } else {
-                shared_bytes =
-                    ((size_t)Sa * (size_t)W + (size_t)tile_r_eff * (size_t)Sb * (size_t)W) * sizeof(unsigned long long) +
-                    (size_t)tile_r_eff * (size_t)Sa * (size_t)Sb * sizeof(float) +
-                    ((size_t)Sa + (size_t)tile_r_eff * (size_t)Sb) * sizeof(float);
-            }
+            shared_bytes =
+                ((size_t)Sa * (size_t)W + (size_t)tile_r_eff * (size_t)Sb * (size_t)W) * sizeof(unsigned long long) +
+                ((size_t)Sa + (size_t)tile_r_eff * (size_t)Sb) * sizeof(float);
             if (shared_bytes <= (size_t)max_shared) break;
             tile_r_eff = (tile_r_eff + 1) / 2;
             if (tile_r_eff == tile_r) {
@@ -577,18 +445,13 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
         } else {
             if (shared_bytes > (size_t)max_shared_default) {
                 cudaFuncSetAttribute(
-                    popcount_weighted_keys_literal_fused_multiq_kernel_warp_out,
+                    popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff,
                     cudaFuncAttributeMaxDynamicSharedMemorySize,
                     (int)shared_bytes);
             }
             dim3 grid_warp((R + tile_r_eff - 1) / tile_r_eff, (Q + tile_q - 1) / tile_q);
-            if (use_nocoeff) {
-                popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff<<<grid_warp, block, shared_bytes, stream>>>(
-                    A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q, scale_inv, R_total, out_global);
-            } else {
-                popcount_weighted_keys_literal_fused_multiq_kernel_warp_out<<<grid_warp, block, shared_bytes, stream>>>(
-                    A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q, scale_inv, R_total, out_global);
-            }
+            popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff<<<grid_warp, block, shared_bytes, stream>>>(
+                A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q, scale_inv, R_total, out_global);
         }
     }
     if (launch_base) {
