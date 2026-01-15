@@ -506,6 +506,13 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_
             for (int j = 0; j < SB; ++j) {
                 bw_cache[j] = bw_row[j];
             }
+            unsigned long long b_cache[SB];
+            const unsigned long long* b_ptr_init = b_row;
+#pragma unroll
+            for (int j = 0; j < SB; ++j) {
+                b_cache[j] = *b_ptr_init;
+                b_ptr_init += Wc;
+            }
 
             const unsigned long long* a_ptr = A_sh + (size_t)lane;
             if (Sa <= 16) {
@@ -516,13 +523,11 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_
                         if (lane == 0) aw = Aw_sh[i];
                         aw = __shfl_sync(full_mask, aw, 0);
                         unsigned long long a_val = *a_ptr;
-                        const unsigned long long* b_ptr = b_row;
 #pragma unroll
                         for (int j = 0; j < SB; ++j) {
-                            unsigned long long b_val = *b_ptr;
+                            unsigned long long b_val = b_cache[j];
                             int cnt = __popcll(a_val & b_val);
                             local += (float)cnt * aw * bw_cache[j];
-                            b_ptr += Wc;
                         }
                     }
                     a_ptr += Wc;
@@ -534,13 +539,11 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_
                     aw = __shfl_sync(full_mask, aw, 0);
                     unsigned long long a_val = *a_ptr;
                     a_ptr += Wc;
-                    const unsigned long long* b_ptr = b_row;
 #pragma unroll
                     for (int j = 0; j < SB; ++j) {
-                        unsigned long long b_val = *b_ptr;
+                        unsigned long long b_val = b_cache[j];
                         int cnt = __popcll(a_val & b_val);
                         local += (float)cnt * aw * bw_cache[j];
-                        b_ptr += Wc;
                     }
                 }
             }
