@@ -632,14 +632,10 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_
 
         int out0 = warp_id * 2;
         int out1 = out0 + 1;
-        bool valid0 = out0 < tile_r;
-        bool valid1 = out1 < tile_r;
         int r0 = r_start + out0;
         int r1 = r_start + out1;
-        if (!valid0 && !valid1) {
-            __syncthreads();
-            continue;
-        }
+        bool valid0 = (out0 < tile_r) && (r0 < R);
+        bool valid1 = (out1 < tile_r) && (r1 < R);
 
         long long global_r0 = valid0 ? __ldg(&key_indices[r0]) : 0;
         long long global_r1 = valid1 ? __ldg(&key_indices[r1]) : 0;
@@ -685,14 +681,17 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_
                     aw = __shfl_sync(full_mask, aw, 0);
                     unsigned long long a_val = *a_ptr;
 #pragma unroll
-                    for (int j = 0; j < SB; ++j) {
-                        if (valid0) {
-                            int cnt0 = __popcll(a_val & b0[j]);
-                            local0 += (float)cnt0 * aw * bw0[j];
-                        }
-                        if (valid1) {
-                            int cnt1 = __popcll(a_val & b1[j]);
-                            local1 += (float)cnt1 * aw * bw1[j];
+                    if (valid0 || valid1) {
+#pragma unroll
+                        for (int j = 0; j < SB; ++j) {
+                            if (valid0) {
+                                int cnt0 = __popcll(a_val & b0[j]);
+                                local0 += (float)cnt0 * aw * bw0[j];
+                            }
+                            if (valid1) {
+                                int cnt1 = __popcll(a_val & b1[j]);
+                                local1 += (float)cnt1 * aw * bw1[j];
+                            }
                         }
                     }
                 }
@@ -706,24 +705,29 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_
                 unsigned long long a_val = *a_ptr;
                 a_ptr += Wc;
 #pragma unroll
-                for (int j = 0; j < SB; ++j) {
-                    if (valid0) {
-                        int cnt0 = __popcll(a_val & b0[j]);
-                        local0 += (float)cnt0 * aw * bw0[j];
-                    }
-                    if (valid1) {
-                        int cnt1 = __popcll(a_val & b1[j]);
-                        local1 += (float)cnt1 * aw * bw1[j];
+                if (valid0 || valid1) {
+#pragma unroll
+                    for (int j = 0; j < SB; ++j) {
+                        if (valid0) {
+                            int cnt0 = __popcll(a_val & b0[j]);
+                            local0 += (float)cnt0 * aw * bw0[j];
+                        }
+                        if (valid1) {
+                            int cnt1 = __popcll(a_val & b1[j]);
+                            local1 += (float)cnt1 * aw * bw1[j];
+                        }
                     }
                 }
             }
         }
 
-        local0 = warp_reduce_sum_float(local0);
-        local1 = warp_reduce_sum_float(local1);
-        if (lane == 0) {
-            if (valid0) out_global[((size_t)global_q * (size_t)R_total) + (size_t)global_r0] = local0 * scale_inv;
-            if (valid1) out_global[((size_t)global_q * (size_t)R_total) + (size_t)global_r1] = local1 * scale_inv;
+        if (valid0 || valid1) {
+            local0 = warp_reduce_sum_float(local0);
+            local1 = warp_reduce_sum_float(local1);
+            if (lane == 0) {
+                if (valid0) out_global[((size_t)global_q * (size_t)R_total) + (size_t)global_r0] = local0 * scale_inv;
+                if (valid1) out_global[((size_t)global_q * (size_t)R_total) + (size_t)global_r1] = local1 * scale_inv;
+            }
         }
         __syncthreads();
     }
