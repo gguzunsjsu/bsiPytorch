@@ -363,19 +363,15 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_
     const float* Aw_base0 = Aw + ((size_t)q_start * (size_t)Sa);
     if (buf0 == 0) {
         cp_async_copy_ull(A_sh0, A_base0, Sa * Wc);
-        cp_async_copy_float(Aw_sh0, Aw_base0, Sa);
     } else {
         cp_async_copy_ull(A_sh1, A_base0, Sa * Wc);
-        cp_async_copy_float(Aw_sh1, Aw_base0, Sa);
     }
     cp_async_commit();
     cp_async_wait();
     if (buf0 == 0) {
         cp_async_tail_ull(A_sh0, A_base0, Sa * Wc);
-        cp_async_tail_float(Aw_sh0, Aw_base0, Sa);
     } else {
         cp_async_tail_ull(A_sh1, A_base0, Sa * Wc);
-        cp_async_tail_float(Aw_sh1, Aw_base0, Sa);
     }
     __syncthreads();
 
@@ -385,20 +381,21 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_
         float* Aw_sh = buf ? Aw_sh1 : Aw_sh0;
 
         long long global_q = __ldg(&query_indices[q]);
+        const float* Aw_base = Aw + ((size_t)q * (size_t)Sa);
         int q_next = q + 1;
         unsigned long long* A_sh_next = nullptr;
-        float* Aw_sh_next = nullptr;
         const unsigned long long* A_base_next = nullptr;
-        const float* Aw_base_next = nullptr;
         if (q_next < q_end) {
             A_base_next = A + ((size_t)q_next * (size_t)Sa * (size_t)Wc);
-            Aw_base_next = Aw + ((size_t)q_next * (size_t)Sa);
             A_sh_next = buf ? A_sh0 : A_sh1;
-            Aw_sh_next = buf ? Aw_sh0 : Aw_sh1;
             cp_async_copy_ull(A_sh_next, A_base_next, Sa * Wc);
-            cp_async_copy_float(Aw_sh_next, Aw_base_next, Sa);
             cp_async_commit();
         }
+
+        for (int idx = threadIdx.x; idx < Sa; idx += blockDim.x) {
+            Aw_sh[idx] = __ldg(&Aw_base[idx]);
+        }
+        __syncthreads();
 
         for (int out_idx = warp_id; out_idx < tile_r; out_idx += num_warps) {
             int r = r_start + out_idx;
@@ -467,7 +464,6 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_
         if (q_next < q_end) {
             cp_async_wait();
             cp_async_tail_ull(A_sh_next, A_base_next, Sa * Wc);
-            cp_async_tail_float(Aw_sh_next, Aw_base_next, Sa);
             __syncthreads();
         }
     }

@@ -47,15 +47,6 @@ __inline__ __device__ void cp_async_copy_ull(unsigned long long* dst,
     }
 }
 
-__inline__ __device__ void cp_async_copy_float(float* dst,
-                                               const float* src,
-                                               int count) {
-    int quads = count >> 2;
-    for (int idx = threadIdx.x; idx < quads; idx += blockDim.x) {
-        cp_async_16(dst + idx * 4, src + idx * 4);
-    }
-}
-
 __inline__ __device__ void cp_async_tail_ull(unsigned long long* dst,
                                              const unsigned long long* src,
                                              int count) {
@@ -63,15 +54,5 @@ __inline__ __device__ void cp_async_tail_ull(unsigned long long* dst,
         if (threadIdx.x == 0) {
             dst[count - 1] = __ldg(src + count - 1);
         }
-    }
-}
-
-__inline__ __device__ void cp_async_tail_float(float* dst,
-                                               const float* src,
-                                               int count) {
-    int rem = count & 3;
-    int base = count & ~3;
-    for (int idx = threadIdx.x; idx < rem; idx += blockDim.x) {
-        dst[base + idx] = __ldg(src + base + idx);
     }
 }
