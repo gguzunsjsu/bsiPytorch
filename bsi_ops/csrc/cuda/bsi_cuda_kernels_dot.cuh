@@ -370,6 +370,13 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_
     }
     cp_async_commit();
     cp_async_wait();
+    if (buf0 == 0) {
+        cp_async_tail_ull(A_sh0, A_base0, Sa * Wc);
+        cp_async_tail_float(Aw_sh0, Aw_base0, Sa);
+    } else {
+        cp_async_tail_ull(A_sh1, A_base0, Sa * Wc);
+        cp_async_tail_float(Aw_sh1, Aw_base0, Sa);
+    }
     __syncthreads();
 
     for (int q = q_start; q < q_end; ++q) {
@@ -379,16 +386,17 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_
 
         long long global_q = __ldg(&query_indices[q]);
         int q_next = q + 1;
+        unsigned long long* A_sh_next = nullptr;
+        float* Aw_sh_next = nullptr;
+        const unsigned long long* A_base_next = nullptr;
+        const float* Aw_base_next = nullptr;
         if (q_next < q_end) {
-            const unsigned long long* A_base_next = A + ((size_t)q_next * (size_t)Sa * (size_t)Wc);
-            const float* Aw_base_next = Aw + ((size_t)q_next * (size_t)Sa);
-            if (buf == 0) {
-                cp_async_copy_ull(A_sh1, A_base_next, Sa * Wc);
-                cp_async_copy_float(Aw_sh1, Aw_base_next, Sa);
-            } else {
-                cp_async_copy_ull(A_sh0, A_base_next, Sa * Wc);
-                cp_async_copy_float(Aw_sh0, Aw_base_next, Sa);
-            }
+            A_base_next = A + ((size_t)q_next * (size_t)Sa * (size_t)Wc);
+            Aw_base_next = Aw + ((size_t)q_next * (size_t)Sa);
+            A_sh_next = buf ? A_sh0 : A_sh1;
+            Aw_sh_next = buf ? Aw_sh0 : Aw_sh1;
+            cp_async_copy_ull(A_sh_next, A_base_next, Sa * Wc);
+            cp_async_copy_float(Aw_sh_next, Aw_base_next, Sa);
             cp_async_commit();
         }
 
@@ -458,6 +466,8 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_
         }
         if (q_next < q_end) {
             cp_async_wait();
+            cp_async_tail_ull(A_sh_next, A_base_next, Sa * Wc);
+            cp_async_tail_float(Aw_sh_next, Aw_base_next, Sa);
             __syncthreads();
         }
     }
