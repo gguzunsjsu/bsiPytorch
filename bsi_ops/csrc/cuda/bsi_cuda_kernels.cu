@@ -557,6 +557,178 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_
     }
 }
 
+// W==32 fast path: two outputs per warp (out0/out1).
+template <int SB>
+__global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_sb2(
+    const unsigned long long* __restrict__ A,    // [Q, Sa, 32]
+    const float* __restrict__ Aw,                // [Q, Sa]
+    int Sa,
+    int W,
+    const unsigned long long* __restrict__ B,    // [R, SB, 32]
+    const float* __restrict__ Bw,                // [R, SB]
+    int Sb,
+    int R,
+    int Q,
+    int q_tile,
+    int r_tile,
+    const long long* __restrict__ key_indices,   // [R]
+    const long long* __restrict__ query_indices, // [Q]
+    float scale_inv,
+    int R_total,
+    float* __restrict__ out_global)
+{
+    constexpr int Wc = 32;
+    (void)W;
+    (void)Sb;
+    static_assert(SB >= 1 && SB <= 16, "SB out of range");
+
+    extern __shared__ unsigned char shmem[];
+    int r_block = blockIdx.x;
+    int q_block = blockIdx.y;
+    const int tile_q = (q_tile > 0) ? q_tile : 1;
+    const int tile_r = (r_tile > 0) ? r_tile : 1;
+    const int q_start = q_block * tile_q;
+    const int r_start = r_block * tile_r;
+    if (q_start >= Q) return;
+
+    const int lane = threadIdx.x & 31;
+    const int warp_id = threadIdx.x >> 5;
+    const int num_warps = (blockDim.x + 31) >> 5;
+
+    unsigned long long* A_sh = reinterpret_cast<unsigned long long*>(shmem);
+    unsigned long long* B_sh = A_sh + (size_t)Sa * (size_t)Wc;
+    float* Aw_sh = reinterpret_cast<float*>(B_sh + (size_t)tile_r * (size_t)SB * (size_t)Wc);
+    float* Bw_sh = Aw_sh + Sa;
+
+    for (int tr = 0; tr < tile_r; ++tr) {
+        int r = r_start + tr;
+        if (r >= R) continue;
+        const unsigned long long* B_base = B + ((size_t)r * (size_t)SB * (size_t)Wc);
+        const float* Bw_base = Bw + ((size_t)r * (size_t)SB);
+        for (int idx = threadIdx.x; idx < SB * Wc; idx += blockDim.x) {
+            B_sh[(size_t)tr * (size_t)SB * (size_t)Wc + (size_t)idx] = __ldg(&B_base[idx]);
+        }
+        for (int idx = threadIdx.x; idx < SB; idx += blockDim.x) {
+            Bw_sh[(size_t)tr * (size_t)SB + (size_t)idx] = __ldg(&Bw_base[idx]);
+        }
+    }
+    __syncthreads();
+
+    for (int tq = 0; tq < tile_q; ++tq) {
+        int q = q_start + tq;
+        if (q >= Q) break;
+
+        long long global_q = __ldg(&query_indices[q]);
+        const unsigned long long* A_base = A + ((size_t)q * (size_t)Sa * (size_t)Wc);
+        const float* Aw_base = Aw + ((size_t)q * (size_t)Sa);
+
+        for (int idx = threadIdx.x; idx < Sa * Wc; idx += blockDim.x) {
+            A_sh[idx] = __ldg(&A_base[idx]);
+        }
+        for (int idx = threadIdx.x; idx < Sa; idx += blockDim.x) {
+            Aw_sh[idx] = __ldg(&Aw_base[idx]);
+        }
+        __syncthreads();
+
+        int out0 = warp_id * 2;
+        int out1 = out0 + 1;
+        bool valid0 = out0 < tile_r;
+        bool valid1 = out1 < tile_r;
+        int r0 = r_start + out0;
+        int r1 = r_start + out1;
+        if (!valid0 && !valid1) {
+            __syncthreads();
+            continue;
+        }
+
+        long long global_r0 = valid0 ? __ldg(&key_indices[r0]) : 0;
+        long long global_r1 = valid1 ? __ldg(&key_indices[r1]) : 0;
+        const unsigned int full_mask = 0xffffffffu;
+
+        float bw0[SB];
+        float bw1[SB];
+        unsigned long long b0[SB];
+        unsigned long long b1[SB];
+
+        if (valid0) {
+            const float* bw_row0 = Bw_sh + (size_t)out0 * (size_t)SB;
+            const unsigned long long* b_row0 =
+                B_sh + (size_t)out0 * (size_t)SB * (size_t)Wc + (size_t)lane;
+#pragma unroll
+            for (int j = 0; j < SB; ++j) {
+                bw0[j] = bw_row0[j];
+                b0[j] = *b_row0;
+                b_row0 += Wc;
+            }
+        }
+        if (valid1) {
+            const float* bw_row1 = Bw_sh + (size_t)out1 * (size_t)SB;
+            const unsigned long long* b_row1 =
+                B_sh + (size_t)out1 * (size_t)SB * (size_t)Wc + (size_t)lane;
+#pragma unroll
+            for (int j = 0; j < SB; ++j) {
+                bw1[j] = bw_row1[j];
+                b1[j] = *b_row1;
+                b_row1 += Wc;
+            }
+        }
+
+        float local0 = 0.0f;
+        float local1 = 0.0f;
+        const unsigned long long* a_ptr = A_sh + (size_t)lane;
+        if (Sa <= 16) {
+#pragma unroll
+            for (int i = 0; i < 16; ++i) {
+                float aw = 0.0f;
+                if (i < Sa) {
+                    if (lane == 0) aw = Aw_sh[i];
+                    aw = __shfl_sync(full_mask, aw, 0);
+                    unsigned long long a_val = *a_ptr;
+#pragma unroll
+                    for (int j = 0; j < SB; ++j) {
+                        if (valid0) {
+                            int cnt0 = __popcll(a_val & b0[j]);
+                            local0 += (float)cnt0 * aw * bw0[j];
+                        }
+                        if (valid1) {
+                            int cnt1 = __popcll(a_val & b1[j]);
+                            local1 += (float)cnt1 * aw * bw1[j];
+                        }
+                    }
+                }
+                a_ptr += Wc;
+            }
+        } else {
+            for (int i = 0; i < Sa; ++i) {
+                float aw = 0.0f;
+                if (lane == 0) aw = Aw_sh[i];
+                aw = __shfl_sync(full_mask, aw, 0);
+                unsigned long long a_val = *a_ptr;
+                a_ptr += Wc;
+#pragma unroll
+                for (int j = 0; j < SB; ++j) {
+                    if (valid0) {
+                        int cnt0 = __popcll(a_val & b0[j]);
+                        local0 += (float)cnt0 * aw * bw0[j];
+                    }
+                    if (valid1) {
+                        int cnt1 = __popcll(a_val & b1[j]);
+                        local1 += (float)cnt1 * aw * bw1[j];
+                    }
+                }
+            }
+        }
+
+        local0 = warp_reduce_sum_float(local0);
+        local1 = warp_reduce_sum_float(local1);
+        if (lane == 0) {
+            if (valid0) out_global[((size_t)global_q * (size_t)R_total) + (size_t)global_r0] = local0 * scale_inv;
+            if (valid1) out_global[((size_t)global_q * (size_t)R_total) + (size_t)global_r1] = local1 * scale_inv;
+        }
+        __syncthreads();
+    }
+}
+
 template <int SB>
 static inline void launch_w32_sb_kernel(
     const unsigned long long* A,
@@ -588,6 +760,40 @@ static inline void launch_w32_sb_kernel(
             (int)shared_bytes);
     }
     popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_sb<SB><<<grid_warp, block, shared_bytes, stream>>>(
+        A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r, indices_r, indices_q, scale_inv, R_total, out_global);
+}
+
+template <int SB>
+static inline void launch_w32_sb2_kernel(
+    const unsigned long long* A,
+    const float* Aw,
+    int Sa,
+    int W,
+    const unsigned long long* B,
+    const float* Bw,
+    int Sb,
+    int R,
+    int Q,
+    int tile_q,
+    int tile_r,
+    const long long* indices_r,
+    const long long* indices_q,
+    float scale_inv,
+    int R_total,
+    float* out_global,
+    size_t shared_bytes,
+    dim3 grid_warp,
+    dim3 block,
+    cudaStream_t stream,
+    int max_shared_default)
+{
+    if (shared_bytes > (size_t)max_shared_default) {
+        cudaFuncSetAttribute(
+            popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_sb2<SB>,
+            cudaFuncAttributeMaxDynamicSharedMemorySize,
+            (int)shared_bytes);
+    }
+    popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_sb2<SB><<<grid_warp, block, shared_bytes, stream>>>(
         A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r, indices_r, indices_q, scale_inv, R_total, out_global);
 }
 
@@ -630,6 +836,11 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
         int v = atoi(s);
         use_warp_out = (v != 0);
     }
+    bool use_warp_out2 = false;
+    if (const char* s = getenv("BSI_WARP_OUT2")) {
+        int v = atoi(s);
+        use_warp_out2 = (v != 0);
+    }
     bool launch_base = !use_warp_out;
     if (use_warp_out) {
         int dev = 0;
@@ -658,72 +869,157 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
             if (W == 32 && Sb >= 1 && Sb <= 16) {
                 switch (Sb) {
                     case 1:
-                        launch_w32_sb_kernel<1>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        if (use_warp_out2) {
+                            launch_w32_sb2_kernel<1>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        } else {
+                            launch_w32_sb_kernel<1>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                    scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        }
                         break;
                     case 2:
-                        launch_w32_sb_kernel<2>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        if (use_warp_out2) {
+                            launch_w32_sb2_kernel<2>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        } else {
+                            launch_w32_sb_kernel<2>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                    scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        }
                         break;
                     case 3:
-                        launch_w32_sb_kernel<3>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        if (use_warp_out2) {
+                            launch_w32_sb2_kernel<3>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        } else {
+                            launch_w32_sb_kernel<3>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                    scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        }
                         break;
                     case 4:
-                        launch_w32_sb_kernel<4>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        if (use_warp_out2) {
+                            launch_w32_sb2_kernel<4>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        } else {
+                            launch_w32_sb_kernel<4>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                    scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        }
                         break;
                     case 5:
-                        launch_w32_sb_kernel<5>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        if (use_warp_out2) {
+                            launch_w32_sb2_kernel<5>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        } else {
+                            launch_w32_sb_kernel<5>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                    scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        }
                         break;
                     case 6:
-                        launch_w32_sb_kernel<6>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        if (use_warp_out2) {
+                            launch_w32_sb2_kernel<6>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        } else {
+                            launch_w32_sb_kernel<6>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                    scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        }
                         break;
                     case 7:
-                        launch_w32_sb_kernel<7>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        if (use_warp_out2) {
+                            launch_w32_sb2_kernel<7>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        } else {
+                            launch_w32_sb_kernel<7>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                    scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        }
                         break;
                     case 8:
-                        launch_w32_sb_kernel<8>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        if (use_warp_out2) {
+                            launch_w32_sb2_kernel<8>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        } else {
+                            launch_w32_sb_kernel<8>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                    scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        }
                         break;
                     case 9:
-                        launch_w32_sb_kernel<9>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        if (use_warp_out2) {
+                            launch_w32_sb2_kernel<9>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        } else {
+                            launch_w32_sb_kernel<9>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                    scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        }
                         break;
                     case 10:
-                        launch_w32_sb_kernel<10>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                 scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        if (use_warp_out2) {
+                            launch_w32_sb2_kernel<10>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                      scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        } else {
+                            launch_w32_sb_kernel<10>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        }
                         break;
                     case 11:
-                        launch_w32_sb_kernel<11>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                 scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        if (use_warp_out2) {
+                            launch_w32_sb2_kernel<11>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                      scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        } else {
+                            launch_w32_sb_kernel<11>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        }
                         break;
                     case 12:
-                        launch_w32_sb_kernel<12>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                 scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        if (use_warp_out2) {
+                            launch_w32_sb2_kernel<12>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                      scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        } else {
+                            launch_w32_sb_kernel<12>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        }
                         break;
                     case 13:
-                        launch_w32_sb_kernel<13>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                 scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        if (use_warp_out2) {
+                            launch_w32_sb2_kernel<13>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                      scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        } else {
+                            launch_w32_sb_kernel<13>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        }
                         break;
                     case 14:
-                        launch_w32_sb_kernel<14>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                 scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        if (use_warp_out2) {
+                            launch_w32_sb2_kernel<14>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                      scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        } else {
+                            launch_w32_sb_kernel<14>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        }
                         break;
                     case 15:
-                        launch_w32_sb_kernel<15>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                 scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        if (use_warp_out2) {
+                            launch_w32_sb2_kernel<15>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                      scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        } else {
+                            launch_w32_sb_kernel<15>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        }
                         break;
                     case 16:
-                        launch_w32_sb_kernel<16>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                 scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        if (use_warp_out2) {
+                            launch_w32_sb2_kernel<16>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                      scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        } else {
+                            launch_w32_sb_kernel<16>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        }
                         break;
                     default:
-                        launch_w32_sb_kernel<16>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                 scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        if (use_warp_out2) {
+                            launch_w32_sb2_kernel<16>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                      scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        } else {
+                            launch_w32_sb_kernel<16>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                        }
                         break;
                 }
             } else {
