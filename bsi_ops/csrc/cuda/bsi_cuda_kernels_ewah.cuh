@@ -131,23 +131,18 @@ void ewah_size_kernel(
     int idx = 0;
     int compress = flags[s];
     while (idx < W) {
-        int run_len = 0;
-        int run_bit = 0;
         if (compress && idx < W) {
             unsigned long long v = base[idx];
             bool cz = (v == 0ULL);
             bool co = (v == ~0ULL);
             if (cz || co) {
-                run_bit = co ? 1 : 0;
                 unsigned long long fill = co ? ~0ULL : 0ULL;
                 int k = idx;
                 while (k < W && base[k] == fill) { ++k; }
-                run_len = k - idx;
                 idx = k;
             }
         }
         int lit_count = 0;
-        int lit_start = idx;
         while (idx < W) {
             unsigned long long v = base[idx];
             bool cz = (v == 0ULL), co = (v == ~0ULL);
