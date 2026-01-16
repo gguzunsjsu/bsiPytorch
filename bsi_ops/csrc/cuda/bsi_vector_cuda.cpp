@@ -39,13 +39,6 @@ inline torch::Tensor make_words_tensor(const std::vector<uint64_t>& words,
 }
 } // namespace
 
-extern "C" void launch_pack_bits_all(const int64_t* values,
-                                     int64_t n,
-                                     int slices,
-                                     int words_per_slice,
-                                     unsigned long long value_mask,
-                                     unsigned long long* out,
-                                     cudaStream_t stream);
 extern "C" void launch_pack_bits_all_ballot(
     const long long* values,
     long long n,
