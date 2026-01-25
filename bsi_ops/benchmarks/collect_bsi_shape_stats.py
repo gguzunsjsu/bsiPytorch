@@ -1,12 +1,19 @@
 import argparse
 from collections import Counter, defaultdict
+import os
+import sys
 
 import torch
 from transformers import AutoModelForCausalLM
 
 import bsi_ops
-from bsi_ops.benchmarks.verify_accuracy_bsi import BSIQuantizedLinear
-from bsi_ops.benchmarks.benchmark_performance_bsi import quantize_model_bsi
+
+_BENCH_DIR = os.path.dirname(__file__)
+if _BENCH_DIR not in sys.path:
+    sys.path.insert(0, _BENCH_DIR)
+
+from verify_accuracy_bsi import BSIQuantizedLinear
+from benchmark_performance_bsi import quantize_model_bsi
 
 
 def main() -> None:
