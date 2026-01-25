@@ -30,11 +30,13 @@ def main() -> None:
     model.eval()
 
     # Quantize in-place to BSI
+    prefer_cuda = torch.cuda.is_available()
     model = quantize_model_bsi(
         model,
         decimalPlaces=args.decimal_places,
         scope=args.scope,
         compress_threshold=args.compress_threshold,
+        prefer_cuda=prefer_cuda,
     )
 
     sb_hist = Counter()
