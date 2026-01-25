@@ -420,6 +420,52 @@ struct TempGroup {
     return pybind11::make_tuple(out_all, dot_kernel_ns_total, dot_kernel_ns_per_query, dot_kernel_ns_per_scalar);
 }
 
+static pybind11::dict bsi_keys_cuda_stats(pybind11::capsule keyset_cuda_cap) {
+    auto* keys = capsule_to_keys_cuda(keyset_cuda_cap);
+    TORCH_CHECK(keys != nullptr, "Invalid CUDA keys capsule");
+    pybind11::dict sb_counts;
+    for (const auto& kv : keys->grouped_indices) {
+        sb_counts[pybind11::int_(kv.first)] = pybind11::int_(kv.second.size());
+    }
+    pybind11::dict out;
+    out["W"] = pybind11::int_(keys->W);
+    out["d"] = pybind11::int_(keys->d);
+    out["num_keys"] = pybind11::int_(keys->num_keys);
+    out["decimals"] = pybind11::int_(keys->decimals);
+    out["threshold"] = pybind11::float_(keys->threshold);
+    out["Sb_counts"] = sb_counts;
+    return out;
+}
+
+static pybind11::dict bsi_query_caps_stats(pybind11::list query_caps_list) {
+    const int64_t Q = static_cast<int64_t>(pybind11::len(query_caps_list));
+    TORCH_CHECK(Q > 0, "Empty query capsule list");
+    std::unordered_map<int, int64_t> counts;
+    int W = -1;
+    for (int64_t qi = 0; qi < Q; ++qi) {
+        auto cap_obj = query_caps_list[qi];
+        TORCH_CHECK(pybind11::isinstance<pybind11::capsule>(cap_obj), "Each item must be a capsule");
+        auto cap = pybind11::cast<pybind11::capsule>(cap_obj);
+        auto* query = capsule_to_query_cuda(cap);
+        TORCH_CHECK(query != nullptr, "Invalid BSI query capsule at index ", qi);
+        counts[query->S] += 1;
+        if (W < 0) {
+            W = query->W;
+        } else {
+            TORCH_CHECK(query->W == W, "Word count mismatch across queries");
+        }
+    }
+    pybind11::dict s_counts;
+    for (const auto& kv : counts) {
+        s_counts[pybind11::int_(kv.first)] = pybind11::int_(kv.second);
+    }
+    pybind11::dict out;
+    out["Q"] = pybind11::int_(Q);
+    out["W"] = pybind11::int_(W);
+    out["S_counts"] = s_counts;
+    return out;
+}
+
 static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, float compress_threshold) {
     TORCH_CHECK(K.dim() == 2, "K must be 2D [num_keys, d]");
     auto Kc = K.detach().to(torch::kCPU, /*non_blocking=*/false).contiguous();
@@ -572,6 +618,14 @@ void register_bsi_cuda(pybind11::module& m) {
         pybind11::arg("query_caps_list"),
         pybind11::arg("keyset_cuda_cap"),
         "Multi-query batch dot product with fused kernel (28% faster)");
+    m.def("bsi_keys_cuda_stats",
+        &bsi_keys_cuda_stats,
+        pybind11::arg("keyset_cuda_cap"),
+        "Return shape/group stats for a CUDA BSI keyset");
+    m.def("bsi_query_caps_stats",
+        &bsi_query_caps_stats,
+        pybind11::arg("query_caps_list"),
+        "Return shape stats for a list of CUDA BSI query capsules");
 
     // Key builder for CUDA
     m.def("build_bsi_keys_cuda",
