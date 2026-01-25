@@ -91,6 +91,25 @@ static int bsi_cuda_r_tile() {
     return cached;
 }
 
+static int bsi_cuda_pad_sb_mode() {
+    static int cached = -1;
+    if (cached >= 0) return cached;
+    int v = 0;
+    if (const char* s = std::getenv("BSI_PAD_SB")) {
+        int t = std::atoi(s);
+        if (t > 0) v = 1;
+    }
+    cached = v;
+    return cached;
+}
+
+static int bsi_cuda_pad_sb_target(int sb) {
+    if (!bsi_cuda_pad_sb_mode()) return sb;
+    if (sb <= 6) return 6;
+    if (sb <= 8) return 8;
+    return sb;
+}
+
 // --- GPU prebuilt keys (device-packed words) ---
 struct KeyMeta {
     int S = 0;
@@ -524,15 +543,19 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
     }
     {
         std::unordered_map<int, std::vector<int64_t>> groups;
-        for (int64_t r=0; r<num_keys; ++r) groups[ holder->metas[r].S ].push_back(r);
+        for (int64_t r=0; r<num_keys; ++r) {
+            int Sb = bsi_cuda_pad_sb_target(holder->metas[r].S);
+            groups[Sb].push_back(r);
+        }
         for (auto& kv : groups) {
             int Sb = kv.first; const auto& idxs = kv.second; int R = static_cast<int>(idxs.size());
-            auto gw = torch::empty({R, Sb, holder->W}, torch::TensorOptions().dtype(torch::kInt64).device(torch::kCUDA));
-            auto gwt = torch::empty({R, Sb}, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
+            auto gw = torch::zeros({R, Sb, holder->W}, torch::TensorOptions().dtype(torch::kInt64).device(torch::kCUDA));
+            auto gwt = torch::zeros({R, Sb}, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
             for (int i=0; i<R; ++i) {
                 int64_t r = idxs[i];
-                gw[i].copy_( holder->dev_words[r] );
-                gwt[i].copy_( holder->slice_weights[r] );
+                int Sb_actual = holder->metas[r].S;
+                gw[i].narrow(0, 0, Sb_actual).copy_(holder->dev_words[r]);
+                gwt[i].narrow(0, 0, Sb_actual).copy_(holder->slice_weights[r]);
             }
             holder->grouped_words[Sb] = gw.contiguous();
             holder->grouped_weights[Sb] = gwt.contiguous();
@@ -554,7 +577,7 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
             const auto& lens = comp_len_per_key[r];
             long long base = total_u64;
             for (int s = 0; s < Sb; ++s) {
-                int L = lens[s];
+                int L = (s < (int)lens.size()) ? lens[s] : 0;
                 h_off[(size_t)i * Sb + s] = base;
                 h_len[(size_t)i * Sb + s] = L;
                 base += L;
