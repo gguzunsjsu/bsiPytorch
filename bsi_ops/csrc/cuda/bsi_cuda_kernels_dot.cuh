@@ -612,11 +612,14 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w128
                         unsigned long long a3 = a_ptr[96];
 #pragma unroll
                         for (int j = 0; j < SB; ++j) {
-                            int cnt = __popcll(a0 & b_cache0[j]);
+                            unsigned long long cnt = __popcll(a0 & b_cache0[j]);
                             cnt += __popcll(a1 & b_cache1[j]);
                             cnt += __popcll(a2 & b_cache2[j]);
                             cnt += __popcll(a3 & b_cache3[j]);
-                            local += (float)cnt * aw * bw_cache[j];
+                            cnt = warp_reduce_sum_ull(cnt);
+                            if (lane == 0) {
+                                local += (float)cnt * aw * bw_cache[j];
+                            }
                         }
                     }
                     a_ptr += Wc;
@@ -634,16 +637,18 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w128
                     a_ptr += Wc;
 #pragma unroll
                     for (int j = 0; j < SB; ++j) {
-                        int cnt = __popcll(a0 & b_cache0[j]);
+                        unsigned long long cnt = __popcll(a0 & b_cache0[j]);
                         cnt += __popcll(a1 & b_cache1[j]);
                         cnt += __popcll(a2 & b_cache2[j]);
                         cnt += __popcll(a3 & b_cache3[j]);
-                        local += (float)cnt * aw * bw_cache[j];
+                        cnt = warp_reduce_sum_ull(cnt);
+                        if (lane == 0) {
+                            local += (float)cnt * aw * bw_cache[j];
+                        }
                     }
                 }
             }
 
-            local = warp_reduce_sum_float(local);
             if (lane == 0) {
                 out_global[((size_t)global_q * (size_t)R_total) + (size_t)global_r] = local * scale_inv;
             }
@@ -791,8 +796,11 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_
                         unsigned long long a_val = *a_ptr;
 #pragma unroll
                         for (int j = 0; j < SB; ++j) {
-                            int cnt = __popcll(a_val & b_cache[j]);
-                            local += (float)cnt * aw * bw_cache[j];
+                            unsigned long long cnt = __popcll(a_val & b_cache[j]);
+                            cnt = warp_reduce_sum_ull(cnt);
+                            if (lane == 0) {
+                                local += (float)cnt * aw * bw_cache[j];
+                            }
                         }
                     }
                     a_ptr += Wc;
@@ -807,13 +815,15 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_
                     a_ptr += Wc;
 #pragma unroll
                     for (int j = 0; j < SB; ++j) {
-                        int cnt = __popcll(a_val & b_cache[j]);
-                        local += (float)cnt * aw * bw_cache[j];
+                        unsigned long long cnt = __popcll(a_val & b_cache[j]);
+                        cnt = warp_reduce_sum_ull(cnt);
+                        if (lane == 0) {
+                            local += (float)cnt * aw * bw_cache[j];
+                        }
                     }
                 }
             }
 
-            local = warp_reduce_sum_float(local);
             if (lane == 0) {
                 out_global[((size_t)global_q * (size_t)R_total) + (size_t)global_r] = local * scale_inv;
             }
