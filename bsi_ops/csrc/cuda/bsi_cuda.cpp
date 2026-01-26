@@ -49,7 +49,6 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     int r_tile,
     const long long* indices_r,
     const long long* indices_q,
-    const int* sb_len,
     float scale_inv,
     int R_total,
     float* out_global,
@@ -92,18 +91,6 @@ static int bsi_cuda_r_tile() {
     return cached;
 }
 
-static int bsi_cuda_merge_sb8_mode() {
-    static int cached = -1;
-    if (cached >= 0) return cached;
-    int v = 0;
-    if (const char* s = std::getenv("BSI_MERGE_SB8")) {
-        int t = std::atoi(s);
-        if (t > 0) v = 1;
-    }
-    cached = v;
-    return cached;
-}
-
 // --- GPU prebuilt keys (device-packed words) ---
 struct KeyMeta {
     int S = 0;
@@ -122,7 +109,6 @@ struct PrebuiltBSIKeysCUDA {
     std::unordered_map<int, at::Tensor> grouped_weights; // Sb -> [R_sb, Sb]
     std::unordered_map<int, std::vector<int64_t>> grouped_indices; // Sb -> original key indices
     std::unordered_map<int, at::Tensor> grouped_indices_dev; // Sb -> [R_sb] int64 cuda
-    std::unordered_map<int, at::Tensor> grouped_sb_len; // Sb -> [R_sb] int32 (optional)
     // Compressed grouped layout (EWAH):
     // For each Sb group: a big 1D comp_words buffer, plus absolute per-slice offsets and lengths per key
     std::unordered_map<int, at::Tensor> grouped_comp_words; // Sb -> [total_u64]
@@ -387,12 +373,6 @@ struct TempGroup {
         const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words));
             const auto* Bw_ptr = tensor_data_ptr<float>(Bw_stacked);
         const auto& idx_dev = keys->grouped_indices_dev.at(Sb);
-            const int* sb_len_ptr = nullptr;
-            auto it_sb = keys->grouped_sb_len.find(Sb);
-            if (it_sb != keys->grouped_sb_len.end()) {
-                sb_len_ptr = tensor_data_ptr<int>(it_sb->second);
-            }
-
             launch_popcount_weighted_keys_literal_fused_multiq(
                 A,
                 Aw,
@@ -407,7 +387,6 @@ struct TempGroup {
                 bsi_cuda_r_tile(),
                 reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev)),
                 q_idx,
-                sb_len_ptr,
                 static_cast<float>(scale_inv),
                 static_cast<int>(R),
                 tensor_data_ptr<float>(out_all),
@@ -543,33 +522,16 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
     }
     {
         std::unordered_map<int, std::vector<int64_t>> groups;
-        int max_sb = 0;
-        for (const auto& meta : holder->metas) {
-            if (meta.S > max_sb) max_sb = meta.S;
-        }
-        bool merge_sb8 = bsi_cuda_merge_sb8_mode() && max_sb <= 8;
-        if (merge_sb8) {
-            groups[8].reserve(num_keys);
-            for (int64_t r=0; r<num_keys; ++r) groups[8].push_back(r);
-        } else {
-            for (int64_t r=0; r<num_keys; ++r) groups[ holder->metas[r].S ].push_back(r);
-        }
+        for (int64_t r=0; r<num_keys; ++r) groups[ holder->metas[r].S ].push_back(r);
         for (auto& kv : groups) {
             int Sb = kv.first; const auto& idxs = kv.second; int R = static_cast<int>(idxs.size());
             auto gw = torch::zeros({R, Sb, holder->W}, torch::TensorOptions().dtype(torch::kInt64).device(torch::kCUDA));
             auto gwt = torch::zeros({R, Sb}, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
-            at::Tensor sb_len;
-            if (merge_sb8 && Sb == 8) {
-                sb_len = torch::empty({R}, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
-            }
             for (int i=0; i<R; ++i) {
                 int64_t r = idxs[i];
                 int Sb_actual = holder->metas[r].S;
                 gw[i].narrow(0, 0, Sb_actual).copy_(holder->dev_words[r]);
                 gwt[i].narrow(0, 0, Sb_actual).copy_(holder->slice_weights[r]);
-                if (sb_len.defined()) {
-                    sb_len[i] = Sb_actual;
-                }
             }
             holder->grouped_words[Sb] = gw.contiguous();
             holder->grouped_weights[Sb] = gwt.contiguous();
@@ -579,9 +541,6 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
                 {R},
                 torch::TensorOptions().dtype(torch::kInt64)).clone();
             holder->grouped_indices_dev[Sb] = idx_cpu.to(torch::kCUDA).contiguous();
-            if (sb_len.defined()) {
-                holder->grouped_sb_len[Sb] = sb_len.contiguous();
-            }
         }
     }
     for (const auto& kv : holder->grouped_indices) {
