@@ -656,6 +656,364 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w128
     }
 }
 
+__global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_sb_var8(
+    const unsigned long long* __restrict__ A,    // [Q, Sa, 32]
+    const float* __restrict__ Aw,                // [Q, Sa]
+    int Sa,
+    int W,
+    const unsigned long long* __restrict__ B,    // [R, 8, 32]
+    const float* __restrict__ Bw,                // [R, 8]
+    int Sb,
+    int R,
+    int Q,
+    int q_tile,
+    int r_tile,
+    const long long* __restrict__ key_indices,   // [R]
+    const long long* __restrict__ query_indices, // [Q]
+    const int* __restrict__ sb_len,
+    float scale_inv,
+    int R_total,
+    float* __restrict__ out_global)
+{
+    constexpr int Wc = 32;
+    constexpr int SB = 8;
+    (void)W;
+    (void)Sb;
+
+    extern __shared__ unsigned char shmem[];
+    int r_block = blockIdx.x;
+    int q_block = blockIdx.y;
+    const int tile_q = (q_tile > 0) ? q_tile : 1;
+    const int tile_r = (r_tile > 0) ? r_tile : 1;
+    const int q_start = q_block * tile_q;
+    const int r_start = r_block * tile_r;
+    if (q_start >= Q) return;
+
+    const int lane = threadIdx.x & 31;
+    const int warp_id = threadIdx.x >> 5;
+    const int num_warps = (blockDim.x + 31) >> 5;
+
+    unsigned long long* A_sh0 = reinterpret_cast<unsigned long long*>(shmem);
+    unsigned long long* A_sh1 = A_sh0 + (size_t)Sa * (size_t)Wc;
+    unsigned long long* B_sh = A_sh1 + (size_t)Sa * (size_t)Wc;
+    float* Aw_sh0 = reinterpret_cast<float*>(B_sh + (size_t)tile_r * (size_t)SB * (size_t)Wc);
+    float* Aw_sh1 = Aw_sh0 + Sa;
+    float* Bw_sh = Aw_sh1 + Sa;
+
+    for (int tr = 0; tr < tile_r; ++tr) {
+        int r = r_start + tr;
+        if (r >= R) continue;
+        const unsigned long long* B_base = B + ((size_t)r * (size_t)SB * (size_t)Wc);
+        const float* Bw_base = Bw + ((size_t)r * (size_t)SB);
+        for (int idx = threadIdx.x; idx < SB * Wc; idx += blockDim.x) {
+            B_sh[(size_t)tr * (size_t)SB * (size_t)Wc + (size_t)idx] = __ldg(&B_base[idx]);
+        }
+        for (int idx = threadIdx.x; idx < SB; idx += blockDim.x) {
+            Bw_sh[(size_t)tr * (size_t)SB + (size_t)idx] = __ldg(&Bw_base[idx]);
+        }
+    }
+    __syncthreads();
+
+    int q_end = q_start + tile_q;
+    if (q_end > Q) q_end = Q;
+    if (q_start >= q_end) return;
+
+    int buf0 = q_start & 1;
+    const unsigned long long* A_base0 = A + ((size_t)q_start * (size_t)Sa * (size_t)Wc);
+    if (buf0 == 0) {
+        cp_async_copy_ull(A_sh0, A_base0, Sa * Wc);
+    } else {
+        cp_async_copy_ull(A_sh1, A_base0, Sa * Wc);
+    }
+    cp_async_commit();
+    cp_async_wait();
+    if (buf0 == 0) {
+        cp_async_tail_ull(A_sh0, A_base0, Sa * Wc);
+    } else {
+        cp_async_tail_ull(A_sh1, A_base0, Sa * Wc);
+    }
+    __syncthreads();
+
+    for (int q = q_start; q < q_end; ++q) {
+        int buf = q & 1;
+        unsigned long long* A_sh = buf ? A_sh1 : A_sh0;
+        float* Aw_sh = buf ? Aw_sh1 : Aw_sh0;
+
+        long long global_q = __ldg(&query_indices[q]);
+        const float* Aw_base = Aw + ((size_t)q * (size_t)Sa);
+        int q_next = q + 1;
+        unsigned long long* A_sh_next = nullptr;
+        const unsigned long long* A_base_next = nullptr;
+        if (q_next < q_end) {
+            A_base_next = A + ((size_t)q_next * (size_t)Sa * (size_t)Wc);
+            A_sh_next = buf ? A_sh0 : A_sh1;
+            cp_async_copy_ull(A_sh_next, A_base_next, Sa * Wc);
+            cp_async_commit();
+        }
+
+        for (int idx = threadIdx.x; idx < Sa; idx += blockDim.x) {
+            Aw_sh[idx] = __ldg(&Aw_base[idx]);
+        }
+        __syncthreads();
+
+        for (int out_idx = warp_id; out_idx < tile_r; out_idx += num_warps) {
+            int r = r_start + out_idx;
+            if (r >= R) continue;
+            long long global_r = __ldg(&key_indices[r]);
+            int sbn = sb_len ? __ldg(&sb_len[r]) : SB;
+            if (sbn <= 0) continue;
+
+            float local = 0.0f;
+            const unsigned long long* b_row =
+                B_sh + (size_t)out_idx * (size_t)SB * (size_t)Wc + (size_t)lane;
+            const float* bw_row = Bw_sh + (size_t)out_idx * (size_t)SB;
+            const unsigned int full_mask = 0xffffffffu;
+
+            float bw_cache[SB];
+            unsigned long long b_cache[SB];
+            const unsigned long long* b_ptr_init = b_row;
+#pragma unroll
+            for (int j = 0; j < SB; ++j) {
+                bool ok = (j < sbn);
+                bw_cache[j] = ok ? bw_row[j] : 0.0f;
+                b_cache[j] = ok ? *b_ptr_init : 0ull;
+                b_ptr_init += Wc;
+            }
+
+            if (Sa <= 16) {
+                const unsigned long long* a_ptr = A_sh + (size_t)lane;
+#pragma unroll
+                for (int i = 0; i < 16; ++i) {
+                    float aw = 0.0f;
+                    if (i < Sa) {
+                        if (lane == 0) aw = Aw_sh[i];
+                        aw = __shfl_sync(full_mask, aw, 0);
+                        unsigned long long a_val = *a_ptr;
+#pragma unroll
+                        for (int j = 0; j < SB; ++j) {
+                            int cnt = __popcll(a_val & b_cache[j]);
+                            local += (float)cnt * aw * bw_cache[j];
+                        }
+                    }
+                    a_ptr += Wc;
+                }
+            } else {
+                const unsigned long long* a_ptr = A_sh + (size_t)lane;
+                for (int i = 0; i < Sa; ++i) {
+                    float aw = 0.0f;
+                    if (lane == 0) aw = Aw_sh[i];
+                    aw = __shfl_sync(full_mask, aw, 0);
+                    unsigned long long a_val = *a_ptr;
+                    a_ptr += Wc;
+#pragma unroll
+                    for (int j = 0; j < SB; ++j) {
+                        int cnt = __popcll(a_val & b_cache[j]);
+                        local += (float)cnt * aw * bw_cache[j];
+                    }
+                }
+            }
+
+            local = warp_reduce_sum_float(local);
+            if (lane == 0) {
+                out_global[((size_t)global_q * (size_t)R_total) + (size_t)global_r] = local * scale_inv;
+            }
+        }
+        if (q_next < q_end) {
+            cp_async_wait();
+            cp_async_tail_ull(A_sh_next, A_base_next, Sa * Wc);
+            __syncthreads();
+        }
+    }
+}
+
+__global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w128_sb_var8(
+    const unsigned long long* __restrict__ A,    // [Q, Sa, 128]
+    const float* __restrict__ Aw,                // [Q, Sa]
+    int Sa,
+    int W,
+    const unsigned long long* __restrict__ B,    // [R, 8, 128]
+    const float* __restrict__ Bw,                // [R, 8]
+    int Sb,
+    int R,
+    int Q,
+    int q_tile,
+    int r_tile,
+    const long long* __restrict__ key_indices,   // [R]
+    const long long* __restrict__ query_indices, // [Q]
+    const int* __restrict__ sb_len,
+    float scale_inv,
+    int R_total,
+    float* __restrict__ out_global)
+{
+    constexpr int Wc = 128;
+    constexpr int SB = 8;
+    (void)W;
+    (void)Sb;
+
+    extern __shared__ unsigned char shmem[];
+    int r_block = blockIdx.x;
+    int q_block = blockIdx.y;
+    const int tile_q = (q_tile > 0) ? q_tile : 1;
+    const int tile_r = (r_tile > 0) ? r_tile : 1;
+    const int q_start = q_block * tile_q;
+    const int r_start = r_block * tile_r;
+    if (q_start >= Q) return;
+
+    const int lane = threadIdx.x & 31;
+    const int warp_id = threadIdx.x >> 5;
+    const int num_warps = (blockDim.x + 31) >> 5;
+
+    unsigned long long* A_sh0 = reinterpret_cast<unsigned long long*>(shmem);
+    unsigned long long* A_sh1 = A_sh0 + (size_t)Sa * (size_t)Wc;
+    unsigned long long* B_sh = A_sh1 + (size_t)Sa * (size_t)Wc;
+    float* Aw_sh0 = reinterpret_cast<float*>(B_sh + (size_t)tile_r * (size_t)SB * (size_t)Wc);
+    float* Aw_sh1 = Aw_sh0 + Sa;
+    float* Bw_sh = Aw_sh1 + Sa;
+
+    for (int tr = 0; tr < tile_r; ++tr) {
+        int r = r_start + tr;
+        if (r >= R) continue;
+        const unsigned long long* B_base = B + ((size_t)r * (size_t)SB * (size_t)Wc);
+        const float* Bw_base = Bw + ((size_t)r * (size_t)SB);
+        for (int idx = threadIdx.x; idx < SB * Wc; idx += blockDim.x) {
+            B_sh[(size_t)tr * (size_t)SB * (size_t)Wc + (size_t)idx] = __ldg(&B_base[idx]);
+        }
+        for (int idx = threadIdx.x; idx < SB; idx += blockDim.x) {
+            Bw_sh[(size_t)tr * (size_t)SB + (size_t)idx] = __ldg(&Bw_base[idx]);
+        }
+    }
+    __syncthreads();
+
+    int q_end = q_start + tile_q;
+    if (q_end > Q) q_end = Q;
+    if (q_start >= q_end) return;
+
+    int buf0 = q_start & 1;
+    const unsigned long long* A_base0 = A + ((size_t)q_start * (size_t)Sa * (size_t)Wc);
+    if (buf0 == 0) {
+        cp_async_copy_ull(A_sh0, A_base0, Sa * Wc);
+    } else {
+        cp_async_copy_ull(A_sh1, A_base0, Sa * Wc);
+    }
+    cp_async_commit();
+    cp_async_wait();
+    if (buf0 == 0) {
+        cp_async_tail_ull(A_sh0, A_base0, Sa * Wc);
+    } else {
+        cp_async_tail_ull(A_sh1, A_base0, Sa * Wc);
+    }
+    __syncthreads();
+
+    for (int q = q_start; q < q_end; ++q) {
+        int buf = q & 1;
+        unsigned long long* A_sh = buf ? A_sh1 : A_sh0;
+        float* Aw_sh = buf ? Aw_sh1 : Aw_sh0;
+
+        long long global_q = __ldg(&query_indices[q]);
+        const float* Aw_base = Aw + ((size_t)q * (size_t)Sa);
+        int q_next = q + 1;
+        unsigned long long* A_sh_next = nullptr;
+        const unsigned long long* A_base_next = nullptr;
+        if (q_next < q_end) {
+            A_base_next = A + ((size_t)q_next * (size_t)Sa * (size_t)Wc);
+            A_sh_next = buf ? A_sh0 : A_sh1;
+            cp_async_copy_ull(A_sh_next, A_base_next, Sa * Wc);
+            cp_async_commit();
+        }
+
+        for (int idx = threadIdx.x; idx < Sa; idx += blockDim.x) {
+            Aw_sh[idx] = __ldg(&Aw_base[idx]);
+        }
+        __syncthreads();
+
+        for (int out_idx = warp_id; out_idx < tile_r; out_idx += num_warps) {
+            int r = r_start + out_idx;
+            if (r >= R) continue;
+            long long global_r = __ldg(&key_indices[r]);
+            int sbn = sb_len ? __ldg(&sb_len[r]) : SB;
+            if (sbn <= 0) continue;
+
+            float local = 0.0f;
+            const unsigned long long* b_row =
+                B_sh + (size_t)out_idx * (size_t)SB * (size_t)Wc + (size_t)lane;
+            const float* bw_row = Bw_sh + (size_t)out_idx * (size_t)SB;
+            const unsigned int full_mask = 0xffffffffu;
+
+            float bw_cache[SB];
+            unsigned long long b_cache0[SB];
+            unsigned long long b_cache1[SB];
+            unsigned long long b_cache2[SB];
+            unsigned long long b_cache3[SB];
+            const unsigned long long* b_ptr_init = b_row;
+#pragma unroll
+            for (int j = 0; j < SB; ++j) {
+                bool ok = (j < sbn);
+                bw_cache[j] = ok ? bw_row[j] : 0.0f;
+                b_cache0[j] = ok ? b_ptr_init[0] : 0ull;
+                b_cache1[j] = ok ? b_ptr_init[32] : 0ull;
+                b_cache2[j] = ok ? b_ptr_init[64] : 0ull;
+                b_cache3[j] = ok ? b_ptr_init[96] : 0ull;
+                b_ptr_init += Wc;
+            }
+
+            if (Sa <= 16) {
+                const unsigned long long* a_ptr = A_sh + (size_t)lane;
+#pragma unroll
+                for (int i = 0; i < 16; ++i) {
+                    float aw = 0.0f;
+                    if (i < Sa) {
+                        if (lane == 0) aw = Aw_sh[i];
+                        aw = __shfl_sync(full_mask, aw, 0);
+                        unsigned long long a0 = a_ptr[0];
+                        unsigned long long a1 = a_ptr[32];
+                        unsigned long long a2 = a_ptr[64];
+                        unsigned long long a3 = a_ptr[96];
+#pragma unroll
+                        for (int j = 0; j < SB; ++j) {
+                            int cnt = __popcll(a0 & b_cache0[j]);
+                            cnt += __popcll(a1 & b_cache1[j]);
+                            cnt += __popcll(a2 & b_cache2[j]);
+                            cnt += __popcll(a3 & b_cache3[j]);
+                            local += (float)cnt * aw * bw_cache[j];
+                        }
+                    }
+                    a_ptr += Wc;
+                }
+            } else {
+                const unsigned long long* a_ptr = A_sh + (size_t)lane;
+                for (int i = 0; i < Sa; ++i) {
+                    float aw = 0.0f;
+                    if (lane == 0) aw = Aw_sh[i];
+                    aw = __shfl_sync(full_mask, aw, 0);
+                    unsigned long long a0 = a_ptr[0];
+                    unsigned long long a1 = a_ptr[32];
+                    unsigned long long a2 = a_ptr[64];
+                    unsigned long long a3 = a_ptr[96];
+                    a_ptr += Wc;
+#pragma unroll
+                    for (int j = 0; j < SB; ++j) {
+                        int cnt = __popcll(a0 & b_cache0[j]);
+                        cnt += __popcll(a1 & b_cache1[j]);
+                        cnt += __popcll(a2 & b_cache2[j]);
+                        cnt += __popcll(a3 & b_cache3[j]);
+                        local += (float)cnt * aw * bw_cache[j];
+                    }
+                }
+            }
+
+            local = warp_reduce_sum_float(local);
+            if (lane == 0) {
+                out_global[((size_t)global_q * (size_t)R_total) + (size_t)global_r] = local * scale_inv;
+            }
+        }
+        if (q_next < q_end) {
+            cp_async_wait();
+            cp_async_tail_ull(A_sh_next, A_base_next, Sa * Wc);
+            __syncthreads();
+        }
+    }
+}
+
 template <int SB>
 static inline void launch_w32_sb_kernel(
     const unsigned long long* A,
@@ -724,6 +1082,74 @@ static inline void launch_w128_sb_kernel(
         A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r, indices_r, indices_q, scale_inv, R_total, out_global);
 }
 
+static inline void launch_w32_sb_var8(
+    const unsigned long long* A,
+    const float* Aw,
+    int Sa,
+    int W,
+    const unsigned long long* B,
+    const float* Bw,
+    int Sb,
+    int R,
+    int Q,
+    int tile_q,
+    int tile_r,
+    const long long* indices_r,
+    const long long* indices_q,
+    const int* sb_len,
+    float scale_inv,
+    int R_total,
+    float* out_global,
+    size_t shared_bytes,
+    dim3 grid_warp,
+    dim3 block,
+    cudaStream_t stream,
+    int max_shared_default)
+{
+    if (shared_bytes > (size_t)max_shared_default) {
+        cudaFuncSetAttribute(
+            popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_sb_var8,
+            cudaFuncAttributeMaxDynamicSharedMemorySize,
+            (int)shared_bytes);
+    }
+    popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_sb_var8<<<grid_warp, block, shared_bytes, stream>>>(
+        A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r, indices_r, indices_q, sb_len, scale_inv, R_total, out_global);
+}
+
+static inline void launch_w128_sb_var8(
+    const unsigned long long* A,
+    const float* Aw,
+    int Sa,
+    int W,
+    const unsigned long long* B,
+    const float* Bw,
+    int Sb,
+    int R,
+    int Q,
+    int tile_q,
+    int tile_r,
+    const long long* indices_r,
+    const long long* indices_q,
+    const int* sb_len,
+    float scale_inv,
+    int R_total,
+    float* out_global,
+    size_t shared_bytes,
+    dim3 grid_warp,
+    dim3 block,
+    cudaStream_t stream,
+    int max_shared_default)
+{
+    if (shared_bytes > (size_t)max_shared_default) {
+        cudaFuncSetAttribute(
+            popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w128_sb_var8,
+            cudaFuncAttributeMaxDynamicSharedMemorySize,
+            (int)shared_bytes);
+    }
+    popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w128_sb_var8<<<grid_warp, block, shared_bytes, stream>>>(
+        A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r, indices_r, indices_q, sb_len, scale_inv, R_total, out_global);
+}
+
 extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     const unsigned long long* A,
     const float* Aw,
@@ -738,6 +1164,7 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     int r_tile,
     const long long* indices_r,
     const long long* indices_q,
+    const int* sb_len,
     float scale_inv,
     int R_total,
     float* out_global,
@@ -774,6 +1201,7 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
         int max_shared = (max_shared_optin > max_shared_default) ? max_shared_optin : max_shared_default;
         bool use_w32 = (W == 32 && Sb >= 1 && Sb <= 16);
         bool use_w128 = (W == 128 && Sb >= 1 && Sb <= 8);
+        bool use_sb_len = (sb_len != nullptr && Sb == 8);
         size_t a_word_factor = (use_w32 || use_w128) ? 2u : 1u;
         size_t a_float_factor = (use_w32 || use_w128) ? 2u : 1u;
         int tile_r_eff = tile_r;
@@ -794,6 +1222,10 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
         } else {
             dim3 grid_warp((R + tile_r_eff - 1) / tile_r_eff, (Q + tile_q - 1) / tile_q);
             if (use_w32) {
+                if (use_sb_len) {
+                    launch_w32_sb_var8(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                       sb_len, scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                } else {
                 switch (Sb) {
                     case 1:
                         launch_w32_sb_kernel<1>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
@@ -861,7 +1293,12 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                                                      scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
                         break;
                 }
+                }
             } else if (use_w128) {
+                if (use_sb_len) {
+                    launch_w128_sb_var8(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                                        sb_len, scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+                } else {
                 switch (Sb) {
                     case 1:
                         launch_w128_sb_kernel<1>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
@@ -896,6 +1333,7 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                         launch_w128_sb_kernel<8>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
                                                      scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
                         break;
+                }
                 }
             } else {
                 if (shared_bytes > (size_t)max_shared_default) {
