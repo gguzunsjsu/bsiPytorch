@@ -214,10 +214,14 @@ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff(
                     const float* bw_row = Bw_sh + (size_t)out_idx * (size_t)Sb;
                     bool use_bw_cache = Sb <= 16;
                     float bw_cache[16];
+                    unsigned long long b_cache[16];
                     if (use_bw_cache) {
 #pragma unroll
                         for (int j = 0; j < 16; ++j) {
-                            if (j < Sb) bw_cache[j] = bw_row[j];
+                            if (j < Sb) {
+                                bw_cache[j] = bw_row[j];
+                                b_cache[j] = b_row[(size_t)j * (size_t)W];
+                            }
                         }
                     }
                     const unsigned long long* a_ptr = A_sh + (size_t)lane;
@@ -228,11 +232,12 @@ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff(
                         a_ptr += W;
                         const unsigned long long* b_ptr = b_row;
                         if (use_bw_cache) {
-                            for (int j = 0; j < Sb; ++j) {
-                                unsigned long long b_val = *b_ptr;
-                                int cnt = __popcll(a_val & b_val);
-                                local += (float)cnt * aw * bw_cache[j];
-                                b_ptr += W;
+#pragma unroll
+                            for (int j = 0; j < 16; ++j) {
+                                if (j < Sb) {
+                                    int cnt = __popcll(a_val & b_cache[j]);
+                                    local += (float)cnt * aw * bw_cache[j];
+                                }
                             }
                         } else {
                             const float* bw_ptr = bw_row;
@@ -260,15 +265,25 @@ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff(
                 for (int i = 0; i < Sa; ++i) {
                     float aw = Aw_sh[i];
                     const unsigned long long* a_row = A_sh + (size_t)i * (size_t)W;
+                    float coeff_cache[16];
+                    if (use_bw_cache) {
+#pragma unroll
+                        for (int j = 0; j < 16; ++j) {
+                            if (j < Sb) coeff_cache[j] = aw * bw_cache[j];
+                        }
+                    }
                     for (int w = lane; w < W; w += 32) {
                         unsigned long long a_val = a_row[(size_t)w];
                         const unsigned long long* b_ptr = b_row + (size_t)w;
                         if (use_bw_cache) {
-                            for (int j = 0; j < Sb; ++j) {
-                                unsigned long long b_val = *b_ptr;
-                                int cnt = __popcll(a_val & b_val);
-                                local += (float)cnt * aw * bw_cache[j];
-                                b_ptr += W;
+#pragma unroll
+                            for (int j = 0; j < 16; ++j) {
+                                if (j < Sb) {
+                                    unsigned long long b_val = *b_ptr;
+                                    int cnt = __popcll(a_val & b_val);
+                                    local += (float)cnt * coeff_cache[j];
+                                    b_ptr += W;
+                                }
                             }
                         } else {
                             const float* bw_ptr = bw_row;
@@ -758,7 +773,7 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     int tile_q = (q_tile > 0) ? q_tile : 1;
     int tile_r = (r_tile > 0) ? r_tile : 1;
     dim3 block(cached_block);
-    bool use_warp_out = false;
+    bool use_warp_out = true; // default to warp-out path for better perf/SMEM usage
     if (const char* s = getenv("BSI_WARP_OUT")) {
         int v = atoi(s);
         use_warp_out = (v != 0);
