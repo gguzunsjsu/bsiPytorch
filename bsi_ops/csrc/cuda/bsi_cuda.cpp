@@ -91,6 +91,27 @@ static int bsi_cuda_r_tile() {
     return cached;
 }
 
+static int bsi_cuda_pad_sa_mode() {
+    static int cached = -1;
+    if (cached >= 0) return cached;
+    int v = 0;
+    if (const char* s = std::getenv("BSI_PAD_SA")) {
+        int t = std::atoi(s);
+        if (t > 0) v = 1;
+    }
+    cached = v;
+    return cached;
+}
+
+static int bsi_cuda_pad_sa_target(int sa) {
+    if (!bsi_cuda_pad_sa_mode()) return sa;
+    if (sa <= 6) return 6;
+    if (sa <= 8) return 8;
+    if (sa <= 12) return 12;
+    if (sa <= 16) return 16;
+    return sa;
+}
+
 static int bsi_cuda_pad_sb_mode() {
     static int cached = -1;
     if (cached >= 0) return cached;
@@ -322,11 +343,11 @@ struct TempGroup {
             TORCH_CHECK(query->device_view.decimals == common_decimals, "Decimal mismatch across queries not supported");
         }
 
-        // Key by slice-count and sign handling; queries in one group share shapes
-        int64_t key = (static_cast<int64_t>(query->S) << 1) | (query->device_view.twos_complement ? 1LL : 0LL);
+        int target_S = bsi_cuda_pad_sa_target(query->S);
+        int64_t key = (static_cast<int64_t>(target_S) << 1) | (query->device_view.twos_complement ? 1LL : 0LL);
         auto& g = groups[key];
         if (g.queries.empty()) {
-            g.S = query->S;
+            g.S = target_S;
         }
         g.queries.push_back(query);
         g.indices.push_back(qi);
@@ -352,8 +373,17 @@ struct TempGroup {
         word_stack.reserve(g.queries.size());
         weight_stack.reserve(g.queries.size());
         for (auto* qptr : g.queries) {
-            word_stack.push_back(qptr->dev_words);
-            weight_stack.push_back(qptr->slice_weights);
+            if (qptr->S == g.S) {
+                word_stack.push_back(qptr->dev_words);
+                weight_stack.push_back(qptr->slice_weights);
+            } else {
+                auto words_pad = torch::zeros({g.S, qptr->W}, qptr->dev_words.options());
+                words_pad.narrow(0, 0, qptr->S).copy_(qptr->dev_words);
+                word_stack.push_back(words_pad);
+                auto weights_pad = torch::zeros({g.S}, qptr->slice_weights.options());
+                weights_pad.narrow(0, 0, qptr->S).copy_(qptr->slice_weights);
+                weight_stack.push_back(weights_pad);
+            }
         }
         pg.words = torch::stack(word_stack).contiguous();
         pg.weights = torch::stack(weight_stack).contiguous();
