@@ -91,6 +91,17 @@ bool bsi_cuda_should_log() {
     return cached;
 }
 
+static int bsi_cuda_max_slices() {
+    static int cached = -2; // -2 = uninitialized, -1 = unlimited
+    if (cached != -2) return cached;
+    cached = 0;
+    if (const char* s = std::getenv("BSI_MAX_SLICES")) {
+        int v = std::atoi(s);
+        if (v > 0) cached = v;
+    }
+    return cached;
+}
+
 static void maybe_log_scaled(const torch::Tensor& scaled);
 
 void BsiVectorCudaData::log(const char* tag) const {
@@ -144,6 +155,10 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& input,
     // For parity with CPU decimal builder, do not trim low zero bitplanes.
     int offset = 0;
     int stored_slices = std::max(1, total_slices);
+    const int max_slices = bsi_cuda_max_slices();
+    if (max_slices > 0 && stored_slices > max_slices) {
+        stored_slices = std::max(1, max_slices);
+    }
     torch::Tensor shifted = scaled.contiguous();
 
     const int words_per_slice = rows > 0 ? static_cast<int>((rows + 63) / 64) : 1;
@@ -212,6 +227,10 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor_hybrid(const torch::Tensor&
 
     int offset = 0;
     int stored_slices = std::max(1, total_slices);
+    const int max_slices = bsi_cuda_max_slices();
+    if (max_slices > 0 && stored_slices > max_slices) {
+        stored_slices = std::max(1, max_slices);
+    }
     const int W = rows > 0 ? static_cast<int>((rows + 63) / 64) : 1;
 
     // Build temporary verbatim words on device quickly; we release them after compression
@@ -306,6 +325,17 @@ BsiVectorCudaData create_bsi_vector_cuda_from_cpu(const BsiVector<uint64_t>& src
     int slices = 0;
     int words_per_slice = 0;
     bsi_flatten_words_gpu_helper<uint64_t>(src, words, slices, words_per_slice);
+    const int max_slices = bsi_cuda_max_slices();
+    if (max_slices > 0 && slices > max_slices) {
+        const int keep = std::max(1, max_slices);
+        std::vector<uint64_t> trimmed;
+        trimmed.resize(static_cast<size_t>(keep) * static_cast<size_t>(words_per_slice));
+        std::copy(words.begin(),
+                  words.begin() + static_cast<size_t>(keep) * static_cast<size_t>(words_per_slice),
+                  trimmed.begin());
+        words.swap(trimmed);
+        slices = keep;
+    }
 
     BsiVectorCudaData data;
     data.rows = src.getNumberOfRows();
