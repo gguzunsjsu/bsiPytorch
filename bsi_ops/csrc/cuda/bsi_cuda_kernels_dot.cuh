@@ -809,14 +809,17 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
         // accumulate into the final float output tile with per-row/per-col weights.
         for (int i = 0; i < Sa; ++i) {
             for (int j = 0; j < Sb; ++j) {
-                // Per-lane weights (one row, four cols).
+                // IMPORTANT: mma.sync is warp-synchronous. Do not per-lane branch/continue
+                // around it (can deadlock on real hardware). If we want to skip work, it
+                // must be a warp-uniform decision.
                 const float aw = Aw_tile[(size_t)row * (size_t)Sa + (size_t)i];
-                if (aw == 0.0f) continue;
                 const float bw0 = Bw_tile[(size_t)(col_start + 0) * (size_t)Sb + (size_t)j];
                 const float bw1 = Bw_tile[(size_t)(col_start + 1) * (size_t)Sb + (size_t)j];
                 const float bw2 = Bw_tile[(size_t)(col_start + 2) * (size_t)Sb + (size_t)j];
                 const float bw3 = Bw_tile[(size_t)(col_start + 3) * (size_t)Sb + (size_t)j];
-                if (bw0 == 0.0f && bw1 == 0.0f && bw2 == 0.0f && bw3 == 0.0f) continue;
+
+                const bool lane_active = (aw != 0.0f) && ((bw0 != 0.0f) || (bw1 != 0.0f) || (bw2 != 0.0f) || (bw3 != 0.0f));
+                if (__ballot_sync(0xffffffffu, lane_active) == 0u) continue;
 
                 // Pack A/B operands into registers for BMMA.
                 // The layout here follows the natural m16n8 mapping:
