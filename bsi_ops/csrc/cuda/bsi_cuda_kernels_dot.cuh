@@ -842,10 +842,9 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     }
     int tile_q = (q_tile > 0) ? q_tile : 1;
     int tile_r = (r_tile > 0) ? r_tile : 1;
-    // Auto-tiling heuristic: scale up tiling to reduce global reloads of A across the R dimension.
-    // Enabled by default only when the caller uses the historical defaults (8x4), but can be
-    // forced on/off via BSI_AUTO_TILES=1/0.
-    bool auto_tiles = (q_tile == 8 && r_tile == 4);
+    // Optional auto-tiling: can help some shapes by increasing data reuse, but it can also
+    // reduce occupancy if shared memory gets too large. Keep it opt-in.
+    bool auto_tiles = false;
     if (const char* s = getenv("BSI_AUTO_TILES")) {
         auto_tiles = (atoi(s) != 0);
     }
