@@ -2,9 +2,6 @@
 
 // Multi-query fused version: process Q queries and multiple keys per block; tiles both axes to shrink grid
 #include <stdint.h>
-#ifdef __CUDACC__
-#include <mma.h>
-#endif
 
 extern "C" __global__
 void popcount_weighted_keys_literal_fused_multiq_kernel(
@@ -686,7 +683,7 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w128
     }
 }
 
-// Tensor-core BMMA path for H100/A100+: compute a 16x8 output tile per block using 1-bit MMA.
+// Tensor-core BMMA path for H100+: compute a 16x8 output tile per block using 1-bit MMA.
 //
 // This is the only plausible route to a large dot_ms drop: the existing popcount kernels are
 // already ALU-bound (SM busy ~90-95% in NCU) so cache/tiling tweaks don't move the needle.
@@ -711,10 +708,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
     int R_total,
     float* __restrict__ out_global)
 {
-#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
-    using namespace nvcuda;
-    using namespace nvcuda::wmma;
-
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900)
     constexpr int TM = 16;
     constexpr int TN = 8;
     constexpr int K_BITS = 256;
@@ -731,7 +725,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
     // --- Shared memory layout (dynamic) ---
     extern __shared__ unsigned char smem_raw[];
     uintptr_t p = reinterpret_cast<uintptr_t>(smem_raw);
-    // Keep WMMA loads happy; 16B alignment is generally sufficient for bit-packed tiles.
+    // 16B alignment keeps PTX loads/stores happy and avoids bank conflicts on most layouts.
     p = (p + 15u) & ~uintptr_t(15u);
 
     auto* A_bits = reinterpret_cast<uint32_t*>(p); // [Sa, TM, 8]
@@ -742,22 +736,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
     p += (size_t)TM * (size_t)Sa * sizeof(float);
     auto* Bw_tile = reinterpret_cast<float*>(p);   // [TN, Sb]
     p += (size_t)TN * (size_t)Sb * sizeof(float);
-    auto* C_tile = reinterpret_cast<int*>(p);      // [TM, TN]
-    p += (size_t)TM * (size_t)TN * sizeof(int);
-    auto* q_ids = reinterpret_cast<long long*>(p); // [TM]
-    p += (size_t)TM * sizeof(long long);
-    auto* r_ids = reinterpret_cast<long long*>(p); // [TN]
     (void)p;
-
-    // Load q/r indices once for the tile (used for output scatter).
-    if (lane < TM) {
-        const int q = q0 + lane;
-        q_ids[lane] = (q < Q) ? __ldg(&query_indices[q]) : -1;
-    }
-    if (lane < TN) {
-        const int r = r0 + lane;
-        r_ids[lane] = (r < R) ? __ldg(&key_indices[r]) : -1;
-    }
 
     // Load all slice weights for the tile.
     for (int idx = lane; idx < TM * Sa; idx += 32) {
@@ -776,15 +755,10 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
     }
     __syncwarp();
 
-    // Each thread accumulates 4 outputs in row-major order.
-    const int out0 = lane * 4 + 0;
-    const int out1 = lane * 4 + 1;
-    const int out2 = lane * 4 + 2;
-    const int out3 = lane * 4 + 3;
-    const int r0_0 = out0 >> 3, c0_0 = out0 & 7;
-    const int r0_1 = out1 >> 3, c0_1 = out1 & 7;
-    const int r0_2 = out2 >> 3, c0_2 = out2 & 7;
-    const int r0_3 = out3 >> 3, c0_3 = out3 & 7;
+    // Output mapping (m16n8): each lane owns one row and 4 columns.
+    // Half warp 0 -> columns [0..3], half warp 1 -> columns [4..7].
+    const int row = lane & 15;            // 0..15
+    const int col_start = (lane >> 4) * 4; // 0 or 4
     float acc0 = 0.0f, acc1 = 0.0f, acc2 = 0.0f, acc3 = 0.0f;
 
     // Number of 256-bit chunks in the bit dimension.
@@ -834,50 +808,34 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
         // For each slice pair (i,j), compute 16x8 popcounts for this 256-bit chunk and
         // accumulate into the final float output tile with per-row/per-col weights.
         for (int i = 0; i < Sa; ++i) {
-            // Warp-uniform skip: if the whole tile has Aw==0 for slice i, skip.
-            bool row_nz = false;
-            if (lane < TM) {
-                row_nz = (Aw_tile[(size_t)lane * (size_t)Sa + (size_t)i] != 0.0f);
-            }
-            if (__ballot_sync(0xffffffffu, row_nz) == 0u) continue;
-
-            const float aw0 = Aw_tile[(size_t)r0_0 * (size_t)Sa + (size_t)i];
-            const float aw1 = Aw_tile[(size_t)r0_1 * (size_t)Sa + (size_t)i];
-            const float aw2 = Aw_tile[(size_t)r0_2 * (size_t)Sa + (size_t)i];
-            const float aw3 = Aw_tile[(size_t)r0_3 * (size_t)Sa + (size_t)i];
-
-            const uint32_t* A_ptr = A_bits + (size_t)i * (size_t)TM * (size_t)K_WORDS32;
-
             for (int j = 0; j < Sb; ++j) {
-                // Warp-uniform skip: if the whole tile has Bw==0 for slice j, skip.
-                bool col_nz = false;
-                if (lane < TN) {
-                    col_nz = (Bw_tile[(size_t)lane * (size_t)Sb + (size_t)j] != 0.0f);
-                }
-                if (__ballot_sync(0xffffffffu, col_nz) == 0u) continue;
+                // Per-lane weights (one row, four cols).
+                const float aw = Aw_tile[(size_t)row * (size_t)Sa + (size_t)i];
+                if (aw == 0.0f) continue;
+                const float bw0 = Bw_tile[(size_t)(col_start + 0) * (size_t)Sb + (size_t)j];
+                const float bw1 = Bw_tile[(size_t)(col_start + 1) * (size_t)Sb + (size_t)j];
+                const float bw2 = Bw_tile[(size_t)(col_start + 2) * (size_t)Sb + (size_t)j];
+                const float bw3 = Bw_tile[(size_t)(col_start + 3) * (size_t)Sb + (size_t)j];
+                if (bw0 == 0.0f && bw1 == 0.0f && bw2 == 0.0f && bw3 == 0.0f) continue;
 
-                const float bw0 = Bw_tile[(size_t)c0_0 * (size_t)Sb + (size_t)j];
-                const float bw1 = Bw_tile[(size_t)c0_1 * (size_t)Sb + (size_t)j];
-                const float bw2 = Bw_tile[(size_t)c0_2 * (size_t)Sb + (size_t)j];
-                const float bw3 = Bw_tile[(size_t)c0_3 * (size_t)Sb + (size_t)j];
+                // Pack A/B operands into registers for BMMA.
+                // The layout here follows the natural m16n8 mapping:
+                // - A: 2 half-warps per row split (K=256 bits -> 2x128 bits), so lane/16 selects K-half.
+                // - B: 4 lanes per output column (K=256 bits -> 4x64 bits), so lane%4 selects K-quarter.
+                const int khalf = lane >> 4;           // 0..1 (128-bit halves)
+                const int bcol = lane >> 2;            // 0..7
+                const int bq = lane & 3;               // 0..3 (64-bit quarters)
 
-                const uint32_t* B_ptr = B_bits + (size_t)j * (size_t)TN * (size_t)K_WORDS32;
+                const uint32_t* a_row = A_bits + ((size_t)i * (size_t)TM + (size_t)row) * (size_t)K_WORDS32 + (size_t)khalf * 4u;
+                const uint32_t* b_col = B_bits + ((size_t)j * (size_t)TN + (size_t)bcol) * (size_t)K_WORDS32 + (size_t)bq * 2u;
 
-                using FragA = fragment<matrix_a, TM, TN, K_BITS, experimental::precision::b1, row_major>;
-                using FragB = fragment<matrix_b, TM, TN, K_BITS, experimental::precision::b1, col_major>;
-                using FragC = fragment<accumulator, TM, TN, K_BITS, int>;
-                static_assert(FragA::num_elements == 4, "BMMA m16n8k256 expects 4 A regs/thread");
-                static_assert(FragB::num_elements == 2, "BMMA m16n8k256 expects 2 B regs/thread");
-                static_assert(FragC::num_elements == 4, "BMMA m16n8k256 expects 4 C regs/thread");
+                uint32_t a0 = a_row[0];
+                uint32_t a1 = a_row[1];
+                uint32_t a2 = a_row[2];
+                uint32_t a3 = a_row[3];
+                uint32_t b0 = b_col[0];
+                uint32_t b1 = b_col[1];
 
-                FragA a_frag;
-                FragB b_frag;
-
-                // Leading dimension is in 32-bit words for bit-packed operands (K_BITS/32 == 8).
-                load_matrix_sync(a_frag, reinterpret_cast<const unsigned int*>(A_ptr), K_WORDS32);
-                load_matrix_sync(b_frag, reinterpret_cast<const unsigned int*>(B_ptr), K_WORDS32);
-
-                // BMMA: exact op we want, on tensor cores.
                 int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
                 asm volatile(
                     "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
@@ -886,67 +844,47 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
                     "{%8, %9}, "
                     "{%0, %1, %2, %3};\n"
                     : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
-                    : "r"(a_frag.x[0]),
-                      "r"(a_frag.x[1]),
-                      "r"(a_frag.x[2]),
-                      "r"(a_frag.x[3]),
-                      "r"(b_frag.x[0]),
-                      "r"(b_frag.x[1]));
+                    : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
+                      "r"(b0), "r"(b1));
 
-                FragC c_frag;
-                c_frag.x[0] = c0;
-                c_frag.x[1] = c1;
-                c_frag.x[2] = c2;
-                c_frag.x[3] = c3;
-
-                store_matrix_sync(C_tile, c_frag, TN, mem_row_major);
-                __syncwarp();
-
-                // Update 4 outputs owned by this thread (row-major order).
-                const float k0 = aw0 * bw0;
-                const float k1 = aw1 * bw1;
-                const float k2 = aw2 * bw2;
-                const float k3 = aw3 * bw3;
-
-                acc0 += static_cast<float>(C_tile[out0]) * k0;
-                acc1 += static_cast<float>(C_tile[out1]) * k1;
-                acc2 += static_cast<float>(C_tile[out2]) * k2;
-                acc3 += static_cast<float>(C_tile[out3]) * k3;
+                const float k0 = aw * bw0;
+                const float k1 = aw * bw1;
+                const float k2 = aw * bw2;
+                const float k3 = aw * bw3;
+                acc0 += static_cast<float>(c0) * k0;
+                acc1 += static_cast<float>(c1) * k1;
+                acc2 += static_cast<float>(c2) * k2;
+                acc3 += static_cast<float>(c3) * k3;
             }
         }
         __syncwarp();
     }
 
     // Scatter store the 16x8 tile back to the global output.
-    // Each thread stores its 4 outputs (if in-bounds).
-    const int q_out0 = q0 + r0_0;
-    const int q_out1 = q0 + r0_1;
-    const int q_out2 = q0 + r0_2;
-    const int q_out3 = q0 + r0_3;
-    const int r_out0 = r0 + c0_0;
-    const int r_out1 = r0 + c0_1;
-    const int r_out2 = r0 + c0_2;
-    const int r_out3 = r0 + c0_3;
+    // Each lane stores its 4 outputs (if in-bounds).
+    const int q_out = q0 + row;
+    if (q_out >= Q) return;
+    const long long gq = __ldg(&query_indices[q_out]);
 
-    if (q_out0 < Q && r_out0 < R) {
-        const long long gq = q_ids[r0_0];
-        const long long gr = r_ids[c0_0];
-        if (gq >= 0 && gr >= 0) out_global[(size_t)gq * (size_t)R_total + (size_t)gr] = acc0 * scale_inv;
+    const int r_out0 = r0 + col_start + 0;
+    const int r_out1 = r0 + col_start + 1;
+    const int r_out2 = r0 + col_start + 2;
+    const int r_out3 = r0 + col_start + 3;
+    if (r_out0 < R) {
+        const long long gr = __ldg(&key_indices[r_out0]);
+        out_global[(size_t)gq * (size_t)R_total + (size_t)gr] = acc0 * scale_inv;
     }
-    if (q_out1 < Q && r_out1 < R) {
-        const long long gq = q_ids[r0_1];
-        const long long gr = r_ids[c0_1];
-        if (gq >= 0 && gr >= 0) out_global[(size_t)gq * (size_t)R_total + (size_t)gr] = acc1 * scale_inv;
+    if (r_out1 < R) {
+        const long long gr = __ldg(&key_indices[r_out1]);
+        out_global[(size_t)gq * (size_t)R_total + (size_t)gr] = acc1 * scale_inv;
     }
-    if (q_out2 < Q && r_out2 < R) {
-        const long long gq = q_ids[r0_2];
-        const long long gr = r_ids[c0_2];
-        if (gq >= 0 && gr >= 0) out_global[(size_t)gq * (size_t)R_total + (size_t)gr] = acc2 * scale_inv;
+    if (r_out2 < R) {
+        const long long gr = __ldg(&key_indices[r_out2]);
+        out_global[(size_t)gq * (size_t)R_total + (size_t)gr] = acc2 * scale_inv;
     }
-    if (q_out3 < Q && r_out3 < R) {
-        const long long gq = q_ids[r0_3];
-        const long long gr = r_ids[c0_3];
-        if (gq >= 0 && gr >= 0) out_global[(size_t)gq * (size_t)R_total + (size_t)gr] = acc3 * scale_inv;
+    if (r_out3 < R) {
+        const long long gr = __ldg(&key_indices[r_out3]);
+        out_global[(size_t)gq * (size_t)R_total + (size_t)gr] = acc3 * scale_inv;
     }
 #else
     (void)A;
@@ -1062,15 +1000,15 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
         cached_tc = v;
     }
     if (cached_tc) {
-        // BMMA is available on SM80+. Keep a runtime guard so we can still build
-        // fatbins / run on older GPUs using the existing kernels.
+        // BMMA (1-bit MMA with AND+POPC) is available on H100+ (SM90+). Keep a runtime
+        // guard so we can still build fatbins / run on older GPUs using the existing kernels.
         static int cached_tc_ok = -1;
         if (cached_tc_ok < 0) {
             int dev = 0;
             cudaGetDevice(&dev);
             int major = 0;
             cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, dev);
-            cached_tc_ok = (major >= 8) ? 1 : 0;
+            cached_tc_ok = (major >= 9) ? 1 : 0;
         }
         if (cached_tc_ok && Sa > 0 && Sb > 0 && (W % 4 == 0) && W >= 4) {
             constexpr int TM = 16;
@@ -1086,10 +1024,7 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                 (size_t)Sa * (size_t)TM * (size_t)K_WORDS32 * sizeof(uint32_t) +
                 (size_t)Sb * (size_t)TN * (size_t)K_WORDS32 * sizeof(uint32_t) +
                 (size_t)TM * (size_t)Sa * sizeof(float) +
-                (size_t)TN * (size_t)Sb * sizeof(float) +
-                (size_t)TM * (size_t)TN * sizeof(int) +
-                (size_t)TM * sizeof(long long) +
-                (size_t)TN * sizeof(long long);
+                (size_t)TN * (size_t)Sb * sizeof(float);
 
             popcount_weighted_keys_literal_fused_bmma_tc_kernel<<<grid_tc, block_tc, shared_bytes, stream>>>(
                 A,
