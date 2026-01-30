@@ -755,10 +755,10 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
     }
     __syncwarp();
 
-    // Output mapping (m16n8): each lane owns one row and 4 columns.
-    // Half warp 0 -> columns [0..3], half warp 1 -> columns [4..7].
-    const int row = lane & 15;            // 0..15
-    const int col_start = (lane >> 4) * 4; // 0 or 4
+    // Output mapping: each row uses 2 lanes.
+    // lane even -> cols [0..3], lane odd -> cols [4..7].
+    const int row = lane >> 1;               // 0..15
+    const int col_start = (lane & 1) * 4;    // 0 or 4
     float acc0 = 0.0f, acc1 = 0.0f, acc2 = 0.0f, acc3 = 0.0f;
 
     // Number of 256-bit chunks in the bit dimension.
@@ -825,9 +825,9 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
                 // The layout here follows the natural m16n8 mapping:
                 // - A: 2 half-warps per row split (K=256 bits -> 2x128 bits), so lane/16 selects K-half.
                 // - B: 4 lanes per output column (K=256 bits -> 4x64 bits), so lane%4 selects K-quarter.
-                const int khalf = lane >> 4;           // 0..1 (128-bit halves)
-                const int bcol = lane >> 2;            // 0..7
-                const int bq = lane & 3;               // 0..3 (64-bit quarters)
+                const int khalf = lane & 1;            // 0..1 (128-bit halves)
+                const int bcol = lane & 7;             // 0..7
+                const int bq = lane >> 3;              // 0..3 (64-bit quarters)
 
                 const uint32_t* a_row = A_bits + ((size_t)i * (size_t)TM + (size_t)row) * (size_t)K_WORDS32 + (size_t)khalf * 4u;
                 const uint32_t* b_col = B_bits + ((size_t)j * (size_t)TN + (size_t)bcol) * (size_t)K_WORDS32 + (size_t)bq * 2u;
@@ -996,13 +996,9 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
 {
     // Optional tensor-core (BMMA) path. On H100 this is the only realistic way to
     // get a large dot_ms win; the scalar popcount kernels are already ALU-bound.
-    static int cached_tc = -1;
-    if (cached_tc < 0) {
-        int v = 0;
-        if (const char* s = getenv("BSI_TC_DOT")) v = (atoi(s) != 0) ? 1 : 0;
-        cached_tc = v;
-    }
-    if (cached_tc) {
+    int use_tc = 0;
+    if (const char* s = getenv("BSI_TC_DOT")) use_tc = (atoi(s) != 0) ? 1 : 0;
+    if (use_tc) {
         // BMMA (1-bit MMA with AND+POPC) is available on H100+ (SM90+). Keep a runtime
         // guard so we can still build fatbins / run on older GPUs using the existing kernels.
         static int cached_tc_ok = -1;
