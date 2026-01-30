@@ -683,14 +683,8 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w128
     }
 }
 
-// Tensor-core BMMA path for H100+: compute a 16x8 output tile per block using 1-bit MMA.
-//
-// This is the only plausible route to a large dot_ms drop: the existing popcount kernels are
-// already ALU-bound (SM busy ~90-95% in NCU) so cache/tiling tweaks don't move the needle.
-//
-// The kernel computes:
-//   out[q, r] += sum_{i,j} Aw[q,i] * Bw[r,j] * popcount( A[q,i] & B[r,j] )
-// by processing the bit dimension in 256-bit chunks using BMMA m16n8k256.
+// Tensor-core BMMA path (SM90+): computes a TMxTN output tile using
+// mma.sync.aligned.m16n8k256.*.b1.b1.s32.and.popc over 256-bit chunks.
 extern "C" __global__
 void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
     const unsigned long long* __restrict__ A,    // [Q, Sa, W64]
@@ -710,14 +704,18 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
 {
 #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900)
     constexpr int TM = 16;
-    constexpr int TN = 8;
+    // Use 4 warps per block to cover a 16x32 output tile. This increases reuse of
+    // the A tile across more output columns and reduces redundant loads of A across blocks.
+    constexpr int TN = 32;
+    constexpr int SB_MAX = 16;
     constexpr int K_BITS = 256;
     constexpr int K_WORDS64 = K_BITS / 64;   // 4
     constexpr int K_WORDS32 = K_BITS / 32;   // 8
 
-    // This kernel is defined as 1 warp per block.
-    if (blockDim.x != 32) return;
+    // This kernel is defined as 4 warps per block.
+    if (blockDim.x != 128) return;
     const int lane = threadIdx.x & 31;
+    const int warp_id = threadIdx.x >> 5; // 0..3
 
     const int q0 = blockIdx.y * TM;
     const int r0 = blockIdx.x * TN;
@@ -739,21 +737,21 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
     (void)p;
 
     // Load all slice weights for the tile.
-    for (int idx = lane; idx < TM * Sa; idx += 32) {
+    for (int idx = threadIdx.x; idx < TM * Sa; idx += blockDim.x) {
         const int m = idx / Sa;
         const int i = idx - m * Sa;
         const int q = q0 + m;
         Aw_tile[(size_t)m * (size_t)Sa + (size_t)i] =
             (q < Q) ? __ldg(&Aw[(size_t)q * (size_t)Sa + (size_t)i]) : 0.0f;
     }
-    for (int idx = lane; idx < TN * Sb; idx += 32) {
+    for (int idx = threadIdx.x; idx < TN * Sb; idx += blockDim.x) {
         const int n = idx / Sb;
         const int j = idx - n * Sb;
         const int r = r0 + n;
         Bw_tile[(size_t)n * (size_t)Sb + (size_t)j] =
             (r < R) ? __ldg(&Bw[(size_t)r * (size_t)Sb + (size_t)j]) : 0.0f;
     }
-    __syncwarp();
+    __syncthreads();
 
     // PTX fragment mapping for mma.sync.aligned.m16n8k256.*.b1.b1.s32.and.popc:
     // groupID = laneid >> 2, threadID = laneid & 3.
@@ -764,9 +762,30 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
     const int threadID = lane & 3;           // 0..3
     const int row0 = groupID;                // 0..7
     const int row1 = groupID + 8;            // 8..15
-    const int col0 = threadID * 2;           // 0,2,4,6
+    const int col_base = warp_id * 8;        // 0,8,16,24
+    const int col0 = col_base + threadID * 2; // 0..31 even
     const int col1 = col0 + 1;               // 1,3,5,7
     float acc00 = 0.0f, acc01 = 0.0f, acc10 = 0.0f, acc11 = 0.0f;
+
+    // Cache Bw for the 2 columns this lane owns (reused across all chunks and Sa slices).
+    // This cuts shared-memory traffic in the hot inner loop.
+    float bw0_cache[SB_MAX];
+    float bw1_cache[SB_MAX];
+    const bool cache_sb = (Sb <= SB_MAX);
+    if (cache_sb) {
+        const float* bw_col0 = Bw_tile + (size_t)col0 * (size_t)Sb;
+        const float* bw_col1 = Bw_tile + (size_t)col1 * (size_t)Sb;
+#pragma unroll
+        for (int j = 0; j < SB_MAX; ++j) {
+            if (j < Sb) {
+                bw0_cache[j] = bw_col0[j];
+                bw1_cache[j] = bw_col1[j];
+            } else {
+                bw0_cache[j] = 0.0f;
+                bw1_cache[j] = 0.0f;
+            }
+        }
+    }
 
     // Number of 256-bit chunks in the bit dimension.
     const int chunks = W64 / K_WORDS64;
@@ -775,7 +794,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
     for (int chunk = 0; chunk < chunks; ++chunk) {
         // Load A bits for all slices and all 16 queries for this chunk into shared.
         // A_bits layout: ((i*TM + m)*8 + w32)
-        for (int idx = lane; idx < TM * Sa * K_WORDS32; idx += 32) {
+        for (int idx = threadIdx.x; idx < TM * Sa * K_WORDS32; idx += blockDim.x) {
             int t = idx;
             const int w32 = t & (K_WORDS32 - 1);
             t >>= 3; // /8
@@ -792,14 +811,14 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
             A_bits[idx] = v;
         }
 
-        // Load B bits for all slices and all 8 keys for this chunk into shared.
+        // Load B bits for all slices and all TN keys for this chunk into shared.
         // B_bits layout: ((j*TN + n)*8 + w32)
-        for (int idx = lane; idx < TN * Sb * K_WORDS32; idx += 32) {
+        for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS32; idx += blockDim.x) {
             int t = idx;
             const int w32 = t & (K_WORDS32 - 1);
             t >>= 3;
-            const int n = t & (TN - 1);
-            const int j = t >> 3; // /8
+            const int n = t & (TN - 1);      // /TN
+            const int j = t >> 5;            // /32
 
             uint32_t v = 0;
             const int r = r0 + n;
@@ -810,71 +829,118 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
             }
             B_bits[idx] = v;
         }
-        __syncwarp();
+        __syncthreads();
 
         // For each slice pair (i,j), compute 16x8 popcounts for this 256-bit chunk and
         // accumulate into the final float output tile with per-row/per-col weights.
-        for (int i = 0; i < Sa; ++i) {
-            // Weights and A regs depend only on the A slice (i) for this lane. Hoist them
-            // out of the inner (j) loop to cut shared-memory traffic and pointer math.
-            const float aw0 = Aw_tile[(size_t)row0 * (size_t)Sa + (size_t)i];
-            const float aw1 = Aw_tile[(size_t)row1 * (size_t)Sa + (size_t)i];
-            const bool aw_nonzero = (aw0 != 0.0f) || (aw1 != 0.0f);
-            if (__ballot_sync(0xffffffffu, aw_nonzero) == 0u) continue;
+        if (cache_sb) {
+            // Cache the 2 B fragment regs for each j (reused across all Sa slices).
+            uint32_t b0_cache[SB_MAX];
+            uint32_t b1_cache[SB_MAX];
+            const size_t b_slice_stride = (size_t)TN * (size_t)K_WORDS32;
+            const uint32_t* b_col_base = B_bits + (size_t)(col_base + groupID) * (size_t)K_WORDS32;
+#pragma unroll
+            for (int j = 0; j < SB_MAX; ++j) {
+                if (j < Sb) {
+                    const uint32_t* b_col = b_col_base + (size_t)j * b_slice_stride;
+                    b0_cache[j] = b_col[(size_t)threadID];
+                    b1_cache[j] = b_col[(size_t)(threadID + 4)];
+                } else {
+                    b0_cache[j] = 0u;
+                    b1_cache[j] = 0u;
+                }
+            }
 
-            const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM * (size_t)K_WORDS32;
-            const uint32_t a0 = A_i[(size_t)row0 * (size_t)K_WORDS32 + (size_t)threadID];
-            // NOTE: Empirically, SM90 BMMA expects the second 32b A register for the
-            // (row1=groupID+8) row to use the same 0..31 column window as a0, not +32.
-            // This differs from the PTX HTML wording (which suggests +i for i<64) but
-            // matches the m16n8k128 pattern and avoids missing/duplicated K lanes.
-            const uint32_t a1 = A_i[(size_t)row1 * (size_t)K_WORDS32 + (size_t)threadID];
-            const uint32_t a2 = A_i[(size_t)row0 * (size_t)K_WORDS32 + (size_t)(threadID + 4)];
-            const uint32_t a3 = A_i[(size_t)row1 * (size_t)K_WORDS32 + (size_t)(threadID + 4)];
+            for (int i = 0; i < Sa; ++i) {
+                const float aw0 = Aw_tile[(size_t)row0 * (size_t)Sa + (size_t)i];
+                const float aw1 = Aw_tile[(size_t)row1 * (size_t)Sa + (size_t)i];
 
-            for (int j = 0; j < Sb; ++j) {
-                // IMPORTANT: mma.sync is warp-synchronous. Do not per-lane branch/continue
-                // around it (can deadlock on real hardware). If we want to skip work, it
-                // must be a warp-uniform decision.
-                const float bw0 = Bw_tile[(size_t)col0 * (size_t)Sb + (size_t)j];
-                const float bw1 = Bw_tile[(size_t)col1 * (size_t)Sb + (size_t)j];
+                const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM * (size_t)K_WORDS32;
+                const uint32_t a0 = A_i[(size_t)row0 * (size_t)K_WORDS32 + (size_t)threadID];
+                // NOTE: For SM90 BMMA the second 32b A reg for row1 uses the same 0..31 column window as row0.
+                const uint32_t a1 = A_i[(size_t)row1 * (size_t)K_WORDS32 + (size_t)threadID];
+                const uint32_t a2 = A_i[(size_t)row0 * (size_t)K_WORDS32 + (size_t)(threadID + 4)];
+                const uint32_t a3 = A_i[(size_t)row1 * (size_t)K_WORDS32 + (size_t)(threadID + 4)];
 
-                const bool lane_active = aw_nonzero && ((bw0 != 0.0f) || (bw1 != 0.0f));
-                if (__ballot_sync(0xffffffffu, lane_active) == 0u) continue;
+                float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
+                // IMPORTANT: mma.sync is warp-synchronous. Do not per-lane branch around it.
+#pragma unroll
+                for (int j = 0; j < SB_MAX; ++j) {
+                    if (j < Sb) {
+                        const float bw0 = bw0_cache[j];
+                        const float bw1 = bw1_cache[j];
+                        const uint32_t b0 = b0_cache[j];
+                        const uint32_t b1 = b1_cache[j];
 
-                // Pack A/B operands into registers for BMMA using the PTX-defined fragment mapping.
-                // See: "Matrix Fragments for mma.m16n8k256 with .b1 type" in the PTX ISA docs.
-                const uint32_t* B_j = B_bits + (size_t)j * (size_t)TN * (size_t)K_WORDS32;
+                        int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
+                        asm volatile(
+                            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
+                            "{%0, %1, %2, %3}, "
+                            "{%4, %5, %6, %7}, "
+                            "{%8, %9}, "
+                            "{%0, %1, %2, %3};\n"
+                            : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
+                            : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
+                              "r"(b0), "r"(b1));
 
-                // B regs: (row, col) mapping:
-                // b0: col=groupID row=(threadID*32) + [0..31]        => word=threadID
-                // b1: col=groupID row=(threadID*32) + [128..159]     => word=threadID+4
-                const uint32_t* B_col = B_j + (size_t)groupID * (size_t)K_WORDS32;
-                const uint32_t b0 = B_col[(size_t)threadID];
-                const uint32_t b1 = B_col[(size_t)(threadID + 4)];
+                        sum00 = __fmaf_rn(static_cast<float>(c0), bw0, sum00);
+                        sum01 = __fmaf_rn(static_cast<float>(c1), bw1, sum01);
+                        sum10 = __fmaf_rn(static_cast<float>(c2), bw0, sum10);
+                        sum11 = __fmaf_rn(static_cast<float>(c3), bw1, sum11);
+                    }
+                }
+                acc00 = __fmaf_rn(aw0, sum00, acc00);
+                acc01 = __fmaf_rn(aw0, sum01, acc01);
+                acc10 = __fmaf_rn(aw1, sum10, acc10);
+                acc11 = __fmaf_rn(aw1, sum11, acc11);
+            }
+        } else {
+            for (int i = 0; i < Sa; ++i) {
+                const float aw0 = Aw_tile[(size_t)row0 * (size_t)Sa + (size_t)i];
+                const float aw1 = Aw_tile[(size_t)row1 * (size_t)Sa + (size_t)i];
 
-                int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
-                asm volatile(
-                    "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
-                    "{%0, %1, %2, %3}, "
-                    "{%4, %5, %6, %7}, "
-                    "{%8, %9}, "
-                    "{%0, %1, %2, %3};\n"
-                    : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
-                    : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
-                      "r"(b0), "r"(b1));
+                const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM * (size_t)K_WORDS32;
+                const uint32_t a0 = A_i[(size_t)row0 * (size_t)K_WORDS32 + (size_t)threadID];
+                const uint32_t a1 = A_i[(size_t)row1 * (size_t)K_WORDS32 + (size_t)threadID];
+                const uint32_t a2 = A_i[(size_t)row0 * (size_t)K_WORDS32 + (size_t)(threadID + 4)];
+                const uint32_t a3 = A_i[(size_t)row1 * (size_t)K_WORDS32 + (size_t)(threadID + 4)];
 
-                acc00 += static_cast<float>(c0) * (aw0 * bw0);
-                acc01 += static_cast<float>(c1) * (aw0 * bw1);
-                acc10 += static_cast<float>(c2) * (aw1 * bw0);
-                acc11 += static_cast<float>(c3) * (aw1 * bw1);
+                float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
+                for (int j = 0; j < Sb; ++j) {
+                    const float bw0 = Bw_tile[(size_t)col0 * (size_t)Sb + (size_t)j];
+                    const float bw1 = Bw_tile[(size_t)col1 * (size_t)Sb + (size_t)j];
+
+                    const uint32_t* B_j = B_bits + (size_t)j * (size_t)TN * (size_t)K_WORDS32;
+                    const uint32_t* B_col = B_j + (size_t)(col_base + groupID) * (size_t)K_WORDS32;
+                    const uint32_t b0 = B_col[(size_t)threadID];
+                    const uint32_t b1 = B_col[(size_t)(threadID + 4)];
+
+                    int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
+                    asm volatile(
+                        "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
+                        "{%0, %1, %2, %3}, "
+                        "{%4, %5, %6, %7}, "
+                        "{%8, %9}, "
+                        "{%0, %1, %2, %3};\n"
+                        : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
+                        : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
+                          "r"(b0), "r"(b1));
+
+                    sum00 = __fmaf_rn(static_cast<float>(c0), bw0, sum00);
+                    sum01 = __fmaf_rn(static_cast<float>(c1), bw1, sum01);
+                    sum10 = __fmaf_rn(static_cast<float>(c2), bw0, sum10);
+                    sum11 = __fmaf_rn(static_cast<float>(c3), bw1, sum11);
+                }
+                acc00 = __fmaf_rn(aw0, sum00, acc00);
+                acc01 = __fmaf_rn(aw0, sum01, acc01);
+                acc10 = __fmaf_rn(aw1, sum10, acc10);
+                acc11 = __fmaf_rn(aw1, sum11, acc11);
             }
         }
-        __syncwarp();
+        __syncthreads();
     }
 
-    // Scatter store the 16x8 tile back to the global output.
-    // Each lane stores its 4 outputs (if in-bounds).
+    // Each lane stores its 4 outputs (if in-bounds). Each warp covers an independent 16x8 tile.
     const int q_out0 = q0 + row0;
     const int q_out1 = q0 + row1;
     const int r_out0 = r0 + col0;
@@ -1002,8 +1068,7 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     float* out_global,
     cudaStream_t stream)
 {
-    // Optional tensor-core (BMMA) path. On H100 this is the only realistic way to
-    // get a large dot_ms win; the scalar popcount kernels are already ALU-bound.
+    // Optional SM90+ tensor-core (BMMA) path (guarded by BSI_TC_DOT).
     int use_tc = 0;
     if (const char* s = getenv("BSI_TC_DOT")) use_tc = (atoi(s) != 0) ? 1 : 0;
     if (use_tc) {
@@ -1019,10 +1084,10 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
         }
         if (cached_tc_ok && Sa > 0 && Sb > 0 && (W % 4 == 0) && W >= 4) {
             constexpr int TM = 16;
-            constexpr int TN = 8;
+            constexpr int TN = 32;
             constexpr int K_WORDS32 = 8; // 256 bits / 32
 
-            dim3 block_tc(32, 1, 1);
+            dim3 block_tc(128, 1, 1);
             dim3 grid_tc((R + TN - 1) / TN, (Q + TM - 1) / TM, 1);
 
             // +16 bytes for internal alignment padding in the kernel.
@@ -1033,22 +1098,38 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                 (size_t)TM * (size_t)Sa * sizeof(float) +
                 (size_t)TN * (size_t)Sb * sizeof(float);
 
-            popcount_weighted_keys_literal_fused_bmma_tc_kernel<<<grid_tc, block_tc, shared_bytes, stream>>>(
-                A,
-                Aw,
-                Sa,
-                W,
-                B,
-                Bw,
-                Sb,
-                R,
-                Q,
-                indices_r,
-                indices_q,
-                scale_inv,
-                R_total,
-                out_global);
-            return;
+            int dev = 0;
+            cudaGetDevice(&dev);
+            int max_shared_default = 0;
+            int max_shared_optin = 0;
+            cudaDeviceGetAttribute(&max_shared_default, cudaDevAttrMaxSharedMemoryPerBlock, dev);
+            cudaDeviceGetAttribute(&max_shared_optin, cudaDevAttrMaxSharedMemoryPerBlockOptin, dev);
+            int max_shared = (max_shared_optin > max_shared_default) ? max_shared_optin : max_shared_default;
+
+            if (shared_bytes <= (size_t)max_shared) {
+                if (shared_bytes > (size_t)max_shared_default) {
+                    cudaFuncSetAttribute(
+                        popcount_weighted_keys_literal_fused_bmma_tc_kernel,
+                        cudaFuncAttributeMaxDynamicSharedMemorySize,
+                        (int)shared_bytes);
+                }
+                popcount_weighted_keys_literal_fused_bmma_tc_kernel<<<grid_tc, block_tc, shared_bytes, stream>>>(
+                    A,
+                    Aw,
+                    Sa,
+                    W,
+                    B,
+                    Bw,
+                    Sb,
+                    R,
+                    Q,
+                    indices_r,
+                    indices_q,
+                    scale_inv,
+                    R_total,
+                    out_global);
+                return;
+            }
         }
     }
 
