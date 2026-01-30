@@ -824,7 +824,11 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
 
             const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM * (size_t)K_WORDS32;
             const uint32_t a0 = A_i[(size_t)row0 * (size_t)K_WORDS32 + (size_t)threadID];
-            const uint32_t a1 = A_i[(size_t)row1 * (size_t)K_WORDS32 + (size_t)(threadID + 1)];
+            // NOTE: Empirically, SM90 BMMA expects the second 32b A register for the
+            // (row1=groupID+8) row to use the same 0..31 column window as a0, not +32.
+            // This differs from the PTX HTML wording (which suggests +i for i<64) but
+            // matches the m16n8k128 pattern and avoids missing/duplicated K lanes.
+            const uint32_t a1 = A_i[(size_t)row1 * (size_t)K_WORDS32 + (size_t)threadID];
             const uint32_t a2 = A_i[(size_t)row0 * (size_t)K_WORDS32 + (size_t)(threadID + 4)];
             const uint32_t a3 = A_i[(size_t)row1 * (size_t)K_WORDS32 + (size_t)(threadID + 4)];
 
