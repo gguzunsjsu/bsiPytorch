@@ -515,12 +515,13 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w128
     const int warp_id = threadIdx.x >> 5;
     const int num_warps = (blockDim.x + 31) >> 5;
 
-    unsigned long long* A_sh0 = reinterpret_cast<unsigned long long*>(shmem);
-    unsigned long long* A_sh1 = A_sh0 + (size_t)Sa * (size_t)Wc;
-    unsigned long long* B_sh = A_sh1 + (size_t)Sa * (size_t)Wc;
-    float* Aw_sh0 = reinterpret_cast<float*>(B_sh + (size_t)tile_r * (size_t)SB * (size_t)Wc);
-    float* Aw_sh1 = Aw_sh0 + Sa;
-    float* Bw_sh = Aw_sh1 + Sa;
+    // NOTE: Prefer smaller shared memory footprint here. W=128 kernels are often
+    // occupancy-limited due to large B tiles; dropping A double-buffering
+    // increases resident blocks/SM on H100 without changing math.
+    unsigned long long* A_sh = reinterpret_cast<unsigned long long*>(shmem);
+    unsigned long long* B_sh = A_sh + (size_t)Sa * (size_t)Wc;
+    float* Aw_sh = reinterpret_cast<float*>(B_sh + (size_t)tile_r * (size_t)SB * (size_t)Wc);
+    float* Bw_sh = Aw_sh + Sa;
 
     for (int tr = 0; tr < tile_r; ++tr) {
         int r = r_start + tr;
@@ -540,39 +541,14 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w128
     if (q_end > Q) q_end = Q;
     if (q_start >= q_end) return;
 
-    int buf0 = q_start & 1;
-    const unsigned long long* A_base0 = A + ((size_t)q_start * (size_t)Sa * (size_t)Wc);
-    if (buf0 == 0) {
-        cp_async_copy_ull(A_sh0, A_base0, Sa * Wc);
-    } else {
-        cp_async_copy_ull(A_sh1, A_base0, Sa * Wc);
-    }
-    cp_async_commit();
-    cp_async_wait();
-    if (buf0 == 0) {
-        cp_async_tail_ull(A_sh0, A_base0, Sa * Wc);
-    } else {
-        cp_async_tail_ull(A_sh1, A_base0, Sa * Wc);
-    }
-    __syncthreads();
-
     for (int q = q_start; q < q_end; ++q) {
-        int buf = q & 1;
-        unsigned long long* A_sh = buf ? A_sh1 : A_sh0;
-        float* Aw_sh = buf ? Aw_sh1 : Aw_sh0;
-
         long long global_q = __ldg(&query_indices[q]);
+        const unsigned long long* A_base = A + ((size_t)q * (size_t)Sa * (size_t)Wc);
         const float* Aw_base = Aw + ((size_t)q * (size_t)Sa);
-        int q_next = q + 1;
-        unsigned long long* A_sh_next = nullptr;
-        const unsigned long long* A_base_next = nullptr;
-        if (q_next < q_end) {
-            A_base_next = A + ((size_t)q_next * (size_t)Sa * (size_t)Wc);
-            A_sh_next = buf ? A_sh0 : A_sh1;
-            cp_async_copy_ull(A_sh_next, A_base_next, Sa * Wc);
-            cp_async_commit();
-        }
 
+        for (int idx = threadIdx.x; idx < Sa * Wc; idx += blockDim.x) {
+            A_sh[idx] = __ldg(&A_base[idx]);
+        }
         for (int idx = threadIdx.x; idx < Sa; idx += blockDim.x) {
             Aw_sh[idx] = __ldg(&Aw_base[idx]);
         }
@@ -649,23 +625,8 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w128
                     }
                 }
             } else {
-                // For SB > 8, keep register pressure in check by caching two 2K-bit
-                // segments (0..2047, 2048..4095) at a time and doing two passes.
-                float bw_cache[SB];
-#pragma unroll
-                for (int j = 0; j < SB; ++j) bw_cache[j] = bw_row[j];
-
-                unsigned long long b_cache0[SB];
-                unsigned long long b_cache1[SB];
-                const unsigned long long* b_ptr_init = b_row;
-#pragma unroll
-                for (int j = 0; j < SB; ++j) {
-                    b_cache0[j] = b_ptr_init[0];
-                    b_cache1[j] = b_ptr_init[32];
-                    b_ptr_init += Wc;
-                }
-
-                // Pass 0/1: w=[0..31] + w=[32..63]
+                // SB > 8: Avoid large per-thread B caches (register pressure/spills).
+                // Load B directly from shared memory inside the inner loop.
                 if (Sa <= 16) {
                     const unsigned long long* a_ptr = A_sh + (size_t)lane;
 #pragma unroll
@@ -674,11 +635,16 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w128
                             const float aw = Aw_sh[i];
                             const unsigned long long a0 = a_ptr[0];
                             const unsigned long long a1 = a_ptr[32];
+                            const unsigned long long a2 = a_ptr[64];
+                            const unsigned long long a3 = a_ptr[96];
 #pragma unroll
                             for (int j = 0; j < SB; ++j) {
-                                int cnt = __popcll(a0 & b_cache0[j]);
-                                cnt += __popcll(a1 & b_cache1[j]);
-                                local += (float)cnt * aw * bw_cache[j];
+                                const unsigned long long* b_ptr = b_row + (size_t)j * (size_t)Wc;
+                                int cnt = __popcll(a0 & b_ptr[0]);
+                                cnt += __popcll(a1 & b_ptr[32]);
+                                cnt += __popcll(a2 & b_ptr[64]);
+                                cnt += __popcll(a3 & b_ptr[96]);
+                                local += (float)cnt * aw * bw_row[j];
                             }
                         }
                         a_ptr += Wc;
@@ -689,54 +655,17 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w128
                         const float aw = Aw_sh[i];
                         const unsigned long long a0 = a_ptr[0];
                         const unsigned long long a1 = a_ptr[32];
+                        const unsigned long long a2 = a_ptr[64];
+                        const unsigned long long a3 = a_ptr[96];
                         a_ptr += Wc;
 #pragma unroll
                         for (int j = 0; j < SB; ++j) {
-                            int cnt = __popcll(a0 & b_cache0[j]);
-                            cnt += __popcll(a1 & b_cache1[j]);
-                            local += (float)cnt * aw * bw_cache[j];
-                        }
-                    }
-                }
-
-                // Reload B cache for Pass 2/3: w=[64..95] + w=[96..127]
-                b_ptr_init = b_row;
-#pragma unroll
-                for (int j = 0; j < SB; ++j) {
-                    b_cache0[j] = b_ptr_init[64];
-                    b_cache1[j] = b_ptr_init[96];
-                    b_ptr_init += Wc;
-                }
-
-                if (Sa <= 16) {
-                    const unsigned long long* a_ptr = A_sh + (size_t)lane + 64u;
-#pragma unroll
-                    for (int i = 0; i < 16; ++i) {
-                        if (i < Sa) {
-                            const float aw = Aw_sh[i];
-                            const unsigned long long a2 = a_ptr[0];
-                            const unsigned long long a3 = a_ptr[32];
-#pragma unroll
-                            for (int j = 0; j < SB; ++j) {
-                                int cnt = __popcll(a2 & b_cache0[j]);
-                                cnt += __popcll(a3 & b_cache1[j]);
-                                local += (float)cnt * aw * bw_cache[j];
-                            }
-                        }
-                        a_ptr += Wc;
-                    }
-                } else {
-                    const unsigned long long* a_ptr = A_sh + (size_t)lane + 64u;
-                    for (int i = 0; i < Sa; ++i) {
-                        const float aw = Aw_sh[i];
-                        const unsigned long long a2 = a_ptr[0];
-                        const unsigned long long a3 = a_ptr[32];
-                        a_ptr += Wc;
-#pragma unroll
-                        for (int j = 0; j < SB; ++j) {
-                            int cnt = __popcll(a2 & b_cache0[j]);
-                            cnt += __popcll(a3 & b_cache1[j]);
-                            local += (float)cnt * aw * bw_cache[j];
+                            const unsigned long long* b_ptr = b_row + (size_t)j * (size_t)Wc;
+                            int cnt = __popcll(a0 & b_ptr[0]);
+                            cnt += __popcll(a1 & b_ptr[32]);
+                            cnt += __popcll(a2 & b_ptr[64]);
+                            cnt += __popcll(a3 & b_ptr[96]);
+                            local += (float)cnt * aw * bw_row[j];
                         }
                     }
                 }
@@ -747,11 +676,8 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w128
                 out_global[((size_t)global_q * (size_t)R_total) + (size_t)global_r] = local * scale_inv;
             }
         }
-        if (q_next < q_end) {
-            cp_async_wait();
-            cp_async_tail_ull(A_sh_next, A_base_next, Sa * Wc);
-            __syncthreads();
-        }
+        // Make sure all warps are done with shared memory before the next query loads.
+        if (q + 1 < q_end) __syncthreads();
     }
 }
 
@@ -894,8 +820,9 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
         int max_shared = (max_shared_optin > max_shared_default) ? max_shared_optin : max_shared_default;
         bool use_w32 = (W == 32 && Sb >= 1 && Sb <= 32);
         bool use_w128 = (W == 128 && Sb >= 1 && Sb <= 16);
-        size_t a_word_factor = (use_w32 || use_w128) ? 2u : 1u;
-        size_t a_float_factor = (use_w32 || use_w128) ? 2u : 1u;
+        // W==32 kernel double-buffers A (+Aw) to overlap copy/compute; W==128 kernel does not.
+        size_t a_word_factor = use_w32 ? 2u : 1u;
+        size_t a_float_factor = use_w32 ? 2u : 1u;
         int tile_r_eff = tile_r;
         size_t shared_bytes = 0;
         while (tile_r_eff > 0) {
