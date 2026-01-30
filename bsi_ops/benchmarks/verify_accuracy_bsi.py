@@ -14,7 +14,6 @@ import bsi_ops
 import gc
 import numpy as np
 from typing import Dict, Any, List, Union, Tuple
-from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 
 # Legacy executor unused after batch CUDA builder; keep definitions minimal
@@ -102,8 +101,6 @@ class BSIQuantizedLinear(torch.nn.Module):
         self.dot_output_elements_total = 0
         self.build_ns_total = 0  # optional: track Python-side build time if desired
         self.build_calls = 0
-        self._query_cache: OrderedDict = OrderedDict()
-        self.max_query_cache = 512
         # optional stats collection flag toggled by helpers
         self.collect_stats = False
 
@@ -114,32 +111,6 @@ class BSIQuantizedLinear(torch.nn.Module):
         self.max_abs_error = 0.0
         self.samples_tracked = 0
 
-    def clear_query_cache(self):
-        self._query_cache.clear()
-
-    def _query_cache_key(self, tensor: torch.Tensor):
-        storage = tensor.untyped_storage()
-        return (
-            int(storage.data_ptr()),
-            tensor.storage_offset(),
-            tensor.numel(),
-            str(tensor.dtype),
-            tensor.device.type,
-            int(tensor._version)
-        )
-
-    def _query_cache_get(self, key):
-        entry = self._query_cache.get(key)
-        if entry is not None:
-            self._query_cache.move_to_end(key)
-        return entry
-
-    def _query_cache_set(self, key, value):
-        cache = self._query_cache
-        cache[key] = value
-        cache.move_to_end(key)
-        if len(cache) > self.max_query_cache:
-            cache.popitem(last=False)
 
     def forward(self, x):
         original_device = x.device
@@ -224,7 +195,6 @@ def reset_bsi_dot_counters(model: nn.Module):
             m.build_calls = 0
             m.dot_query_vectors_total = 0
             m.dot_output_elements_total = 0
-            m.clear_query_cache()
 
 def sum_bsi_dot_counters(model: nn.Module) -> int:
     total = 0
