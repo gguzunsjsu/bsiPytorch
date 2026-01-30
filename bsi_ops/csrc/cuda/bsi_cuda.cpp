@@ -499,8 +499,8 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
             TORCH_CHECK(Wb == holder->W, "word count mismatch while building CUDA keys");
             holder->device_views.push_back(dev_view);
             holder->dev_words.push_back(dev_view.words);
-            holder->slice_weights.push_back(make_slice_weights_cuda(Sb, bsi_k->offset, bsi_k->twosComplement));
-            KeyMeta meta; meta.S = Sb; meta.offset = bsi_k->offset; meta.twos = bsi_k->twosComplement; meta.decimals = bsi_k->decimals;
+            holder->slice_weights.push_back(make_slice_weights_cuda(Sb, dev_view.offset, dev_view.twos_complement));
+            KeyMeta meta; meta.S = Sb; meta.offset = dev_view.offset; meta.twos = dev_view.twos_complement; meta.decimals = bsi_k->decimals;
             holder->metas.push_back(meta);
             total_mem += bsi_k->getSizeInMemory();
             delete bsi_k;

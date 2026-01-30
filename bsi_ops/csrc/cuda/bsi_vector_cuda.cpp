@@ -102,6 +102,17 @@ static int bsi_cuda_max_slices() {
     return cached;
 }
 
+static int bsi_cuda_skip_lsb() {
+    static int cached = -2;
+    if (cached != -2) return cached;
+    cached = 0;
+    if (const char* s = std::getenv("BSI_SKIP_LSB")) {
+        int v = std::atoi(s);
+        if (v > 0) cached = v;
+    }
+    return cached;
+}
+
 static void maybe_log_scaled(const torch::Tensor& scaled);
 
 void BsiVectorCudaData::log(const char* tag) const {
@@ -182,6 +193,13 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& input,
             stream.stream());
     }
 
+    const int skip_lsb = bsi_cuda_skip_lsb();
+    if (skip_lsb > 0 && stored_slices > skip_lsb) {
+        words = words.narrow(0, skip_lsb, stored_slices - skip_lsb).contiguous();
+        offset += skip_lsb;
+        stored_slices -= skip_lsb;
+    }
+
     BsiVectorCudaData data;
     data.rows = rows;
     data.slices = stored_slices;
@@ -247,6 +265,13 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor_hybrid(const torch::Tensor&
             value_mask,
             reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(words)),
             stream.stream());
+    }
+
+    const int skip_lsb = bsi_cuda_skip_lsb();
+    if (skip_lsb > 0 && stored_slices > skip_lsb) {
+        words = words.narrow(0, skip_lsb, stored_slices - skip_lsb).contiguous();
+        offset += skip_lsb;
+        stored_slices -= skip_lsb;
     }
 
     // Per-slice popcounts and compress flags on device
@@ -336,12 +361,25 @@ BsiVectorCudaData create_bsi_vector_cuda_from_cpu(const BsiVector<uint64_t>& src
         words.swap(trimmed);
         slices = keep;
     }
+    int offset = src.offset;
+    const int skip_lsb = bsi_cuda_skip_lsb();
+    if (skip_lsb > 0 && slices > skip_lsb) {
+        const int keep = slices - skip_lsb;
+        std::vector<uint64_t> trimmed;
+        trimmed.resize(static_cast<size_t>(keep) * static_cast<size_t>(words_per_slice));
+        std::copy(words.begin() + static_cast<size_t>(skip_lsb) * static_cast<size_t>(words_per_slice),
+                  words.begin() + static_cast<size_t>(skip_lsb + keep) * static_cast<size_t>(words_per_slice),
+                  trimmed.begin());
+        words.swap(trimmed);
+        slices = keep;
+        offset += skip_lsb;
+    }
 
     BsiVectorCudaData data;
     data.rows = src.getNumberOfRows();
     data.slices = slices;
     data.words_per_slice = words_per_slice;
-    data.offset = src.offset;
+    data.offset = offset;
     data.decimals = src.decimals;
     data.twos_complement = src.twosComplement;
     data.words = make_words_tensor(words, slices, words_per_slice, device);

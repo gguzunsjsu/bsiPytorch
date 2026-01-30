@@ -149,8 +149,6 @@ class BSIQuantizedLinear(torch.nn.Module):
             x = x.view(-1, x.shape[-1])
         x = x.to(torch.float32)
 
-        output_list = []
-        dense_outputs = None
         dot_ns_this_forward = 0
         
         # Debug printing gated by `self.verbose` to avoid overhead in benchmarks
@@ -200,11 +198,6 @@ class BSIQuantizedLinear(torch.nn.Module):
             s0 = scores_2d[0]
             print(f"  After adding bias (first row): min={s0.min():.4f}, max={s0.max():.4f}, mean={s0.mean():.4f}")
 
-        for i in range(batch_size):
-            output_list.append(scores_2d[i])
-
-            # No CPU accuracy comparisons in GPU-only mode
-        
         # Mark that we've printed debug info
         if debug_first:
             self._debug_printed = True
@@ -213,7 +206,7 @@ class BSIQuantizedLinear(torch.nn.Module):
         self.dot_ns_total += dot_ns_this_forward
         self.dot_calls += 1
 
-        output = torch.stack(output_list)
+        output = scores_2d
 
         # No CPU accuracy summary in GPU-only mode
 

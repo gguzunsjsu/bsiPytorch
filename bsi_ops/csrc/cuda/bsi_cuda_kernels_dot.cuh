@@ -333,7 +333,7 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_
     constexpr int Wc = 32;
     (void)W;
     (void)Sb;
-    static_assert(SB >= 1 && SB <= 16, "SB out of range");
+    static_assert(SB >= 1 && SB <= 32, "SB out of range");
 
     extern __shared__ unsigned char shmem[];
     int r_block = blockIdx.x;
@@ -787,7 +787,7 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
         cudaDeviceGetAttribute(&max_shared_default, cudaDevAttrMaxSharedMemoryPerBlock, dev);
         cudaDeviceGetAttribute(&max_shared_optin, cudaDevAttrMaxSharedMemoryPerBlockOptin, dev);
         int max_shared = (max_shared_optin > max_shared_default) ? max_shared_optin : max_shared_default;
-        bool use_w32 = (W == 32 && Sb >= 1 && Sb <= 16);
+        bool use_w32 = (W == 32 && Sb >= 1 && Sb <= 32);
         bool use_w128 = (W == 128 && Sb >= 1 && Sb <= 8);
         size_t a_word_factor = (use_w32 || use_w128) ? 2u : 1u;
         size_t a_float_factor = (use_w32 || use_w128) ? 2u : 1u;
@@ -810,69 +810,46 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
             dim3 grid_warp((R + tile_r_eff - 1) / tile_r_eff, (Q + tile_q - 1) / tile_q);
             if (use_w32) {
                 switch (Sb) {
-                    case 1:
-                        launch_w32_sb_kernel<1>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                    scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+#define LAUNCH_W32_SB_CASE(N) \
+                    case N: \
+                        launch_w32_sb_kernel<N>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q, \
+                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default); \
                         break;
-                    case 2:
-                        launch_w32_sb_kernel<2>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                    scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
-                        break;
-                    case 3:
-                        launch_w32_sb_kernel<3>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                    scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
-                        break;
-                    case 4:
-                        launch_w32_sb_kernel<4>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                    scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
-                        break;
-                    case 5:
-                        launch_w32_sb_kernel<5>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                    scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
-                        break;
-                    case 6:
-                        launch_w32_sb_kernel<6>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                    scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
-                        break;
-                    case 7:
-                        launch_w32_sb_kernel<7>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                    scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
-                        break;
-                    case 8:
-                        launch_w32_sb_kernel<8>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                    scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
-                        break;
-                    case 9:
-                        launch_w32_sb_kernel<9>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                    scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
-                        break;
-                    case 10:
-                        launch_w32_sb_kernel<10>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
-                        break;
-                    case 11:
-                        launch_w32_sb_kernel<11>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
-                        break;
-                    case 12:
-                        launch_w32_sb_kernel<12>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
-                        break;
-                    case 13:
-                        launch_w32_sb_kernel<13>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
-                        break;
-                    case 14:
-                        launch_w32_sb_kernel<14>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
-                        break;
-                    case 15:
-                        launch_w32_sb_kernel<15>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
-                        break;
-                    case 16:
+                    LAUNCH_W32_SB_CASE(1)
+                    LAUNCH_W32_SB_CASE(2)
+                    LAUNCH_W32_SB_CASE(3)
+                    LAUNCH_W32_SB_CASE(4)
+                    LAUNCH_W32_SB_CASE(5)
+                    LAUNCH_W32_SB_CASE(6)
+                    LAUNCH_W32_SB_CASE(7)
+                    LAUNCH_W32_SB_CASE(8)
+                    LAUNCH_W32_SB_CASE(9)
+                    LAUNCH_W32_SB_CASE(10)
+                    LAUNCH_W32_SB_CASE(11)
+                    LAUNCH_W32_SB_CASE(12)
+                    LAUNCH_W32_SB_CASE(13)
+                    LAUNCH_W32_SB_CASE(14)
+                    LAUNCH_W32_SB_CASE(15)
+                    LAUNCH_W32_SB_CASE(16)
+                    LAUNCH_W32_SB_CASE(17)
+                    LAUNCH_W32_SB_CASE(18)
+                    LAUNCH_W32_SB_CASE(19)
+                    LAUNCH_W32_SB_CASE(20)
+                    LAUNCH_W32_SB_CASE(21)
+                    LAUNCH_W32_SB_CASE(22)
+                    LAUNCH_W32_SB_CASE(23)
+                    LAUNCH_W32_SB_CASE(24)
+                    LAUNCH_W32_SB_CASE(25)
+                    LAUNCH_W32_SB_CASE(26)
+                    LAUNCH_W32_SB_CASE(27)
+                    LAUNCH_W32_SB_CASE(28)
+                    LAUNCH_W32_SB_CASE(29)
+                    LAUNCH_W32_SB_CASE(30)
+                    LAUNCH_W32_SB_CASE(31)
+                    LAUNCH_W32_SB_CASE(32)
+#undef LAUNCH_W32_SB_CASE
                     default:
-                        launch_w32_sb_kernel<16>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                        launch_w32_sb_kernel<32>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
                                                      scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
                         break;
                 }
