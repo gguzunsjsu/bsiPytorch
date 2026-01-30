@@ -154,7 +154,7 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& input,
 
     bool any_non_zero = (rows > 0) && scaled.ne(0).any().item<bool>();
     bool has_negative = (rows > 0) && scaled.lt(0).any().item<bool>();
-    bool all_zero = (rows > 0) && !any_non_zero;
+    // all_zero is unused; keep any_non_zero for early exits only.
 
     long long max_abs = 0;
     if (any_non_zero) {
@@ -380,8 +380,8 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& inp
     }
 
     auto neg_flags = (Q > 0) ? scaled.lt(0).any(1) : torch::zeros({Q}, torch::TensorOptions().dtype(torch::kBool).device(device));
-    auto weights_unsigned = make_slice_weights_cuda(slices, offset, false);
-    auto weights_twos = make_slice_weights_cuda(slices, offset, true);
+    auto weights_unsigned = make_slice_weights_cuda_local(slices, offset, false);
+    auto weights_twos = make_slice_weights_cuda_local(slices, offset, true);
     auto slice_weights = torch::where(neg_flags.unsqueeze(1), weights_twos, weights_unsigned);
 
     BsiQueryBatchCudaData out;
