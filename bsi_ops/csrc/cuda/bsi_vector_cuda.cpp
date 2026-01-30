@@ -380,8 +380,8 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& inp
     }
 
     auto neg_flags = (Q > 0) ? scaled.lt(0).any(1) : torch::zeros({Q}, torch::TensorOptions().dtype(torch::kBool).device(device));
-    auto weights_unsigned = make_slice_weights_cuda_local(slices, offset, false);
-    auto weights_twos = make_slice_weights_cuda_local(slices, offset, true);
+    auto weights_unsigned = make_slice_weights_cuda_local(slices, offset, false, device);
+    auto weights_twos = make_slice_weights_cuda_local(slices, offset, true, device);
     auto slice_weights = torch::where(neg_flags.unsqueeze(1), weights_twos, weights_unsigned);
 
     BsiQueryBatchCudaData out;
