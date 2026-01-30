@@ -310,7 +310,7 @@ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff(
     }
 }
 
-// W==32 fast path for small Sb (<=16).
+// W==32 fast path (template-specialized for Sb <= 32).
 template <int SB>
 __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_sb(
     const unsigned long long* __restrict__ A,    // [Q, Sa, 32]
@@ -421,12 +421,11 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_
                 B_sh + (size_t)out_idx * (size_t)SB * (size_t)Wc + (size_t)lane;
             const float* bw_row = Bw_sh + (size_t)out_idx * (size_t)SB;
 
-            if constexpr (SB <= 16) {
+            // Cache Bw + B words in registers (B does not depend on i). This avoids
+            // rereading shared memory inside the Sa loop, which is a big win on H100.
             float bw_cache[SB];
 #pragma unroll
-            for (int j = 0; j < SB; ++j) {
-                bw_cache[j] = bw_row[j];
-            }
+            for (int j = 0; j < SB; ++j) bw_cache[j] = bw_row[j];
             unsigned long long b_cache[SB];
             const unsigned long long* b_ptr_init = b_row;
 #pragma unroll
@@ -462,39 +461,6 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_
                         unsigned long long b_val = b_cache[j];
                         int cnt = __popcll(a_val & b_val);
                         local += (float)cnt * aw * bw_cache[j];
-                    }
-                }
-            }
-            } else {
-                // Avoid large per-thread register caches for SB>16.
-                if (Sa <= 16) {
-                    const unsigned long long* a_ptr = A_sh + (size_t)lane;
-#pragma unroll
-                    for (int i = 0; i < 16; ++i) {
-                        if (i < Sa) {
-                            const float aw = Aw_sh[i];
-                            const unsigned long long a_val = *a_ptr;
-#pragma unroll
-                            for (int j = 0; j < SB; ++j) {
-                                const unsigned long long b_val = b_row[(size_t)j * (size_t)Wc];
-                                const int cnt = __popcll(a_val & b_val);
-                                local += (float)cnt * aw * bw_row[j];
-                            }
-                        }
-                        a_ptr += Wc;
-                    }
-                } else {
-                    const unsigned long long* a_ptr = A_sh + (size_t)lane;
-                    for (int i = 0; i < Sa; ++i) {
-                        const float aw = Aw_sh[i];
-                        const unsigned long long a_val = *a_ptr;
-                        a_ptr += Wc;
-#pragma unroll
-                        for (int j = 0; j < SB; ++j) {
-                            const unsigned long long b_val = b_row[(size_t)j * (size_t)Wc];
-                            const int cnt = __popcll(a_val & b_val);
-                            local += (float)cnt * aw * bw_row[j];
-                        }
                     }
                 }
             }
@@ -683,25 +649,36 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w128
                     }
                 }
             } else {
-                // For SB > 8, avoid large per-thread B caches (register pressure/spills).
+                // For SB > 8, keep register pressure in check by caching two 2K-bit
+                // segments (0..2047, 2048..4095) at a time and doing two passes.
+                float bw_cache[SB];
+#pragma unroll
+                for (int j = 0; j < SB; ++j) bw_cache[j] = bw_row[j];
+
+                unsigned long long b_cache0[SB];
+                unsigned long long b_cache1[SB];
+                const unsigned long long* b_ptr_init = b_row;
+#pragma unroll
+                for (int j = 0; j < SB; ++j) {
+                    b_cache0[j] = b_ptr_init[0];
+                    b_cache1[j] = b_ptr_init[32];
+                    b_ptr_init += Wc;
+                }
+
+                // Pass 0/1: w=[0..31] + w=[32..63]
                 if (Sa <= 16) {
                     const unsigned long long* a_ptr = A_sh + (size_t)lane;
 #pragma unroll
                     for (int i = 0; i < 16; ++i) {
                         if (i < Sa) {
                             const float aw = Aw_sh[i];
-                            unsigned long long a0 = a_ptr[0];
-                            unsigned long long a1 = a_ptr[32];
-                            unsigned long long a2 = a_ptr[64];
-                            unsigned long long a3 = a_ptr[96];
+                            const unsigned long long a0 = a_ptr[0];
+                            const unsigned long long a1 = a_ptr[32];
 #pragma unroll
                             for (int j = 0; j < SB; ++j) {
-                                const unsigned long long* b_ptr = b_row + (size_t)j * (size_t)Wc;
-                                int cnt = __popcll(a0 & b_ptr[0]);
-                                cnt += __popcll(a1 & b_ptr[32]);
-                                cnt += __popcll(a2 & b_ptr[64]);
-                                cnt += __popcll(a3 & b_ptr[96]);
-                                local += (float)cnt * aw * bw_row[j];
+                                int cnt = __popcll(a0 & b_cache0[j]);
+                                cnt += __popcll(a1 & b_cache1[j]);
+                                local += (float)cnt * aw * bw_cache[j];
                             }
                         }
                         a_ptr += Wc;
@@ -710,19 +687,56 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w128
                     const unsigned long long* a_ptr = A_sh + (size_t)lane;
                     for (int i = 0; i < Sa; ++i) {
                         const float aw = Aw_sh[i];
-                        unsigned long long a0 = a_ptr[0];
-                        unsigned long long a1 = a_ptr[32];
-                        unsigned long long a2 = a_ptr[64];
-                        unsigned long long a3 = a_ptr[96];
+                        const unsigned long long a0 = a_ptr[0];
+                        const unsigned long long a1 = a_ptr[32];
                         a_ptr += Wc;
 #pragma unroll
                         for (int j = 0; j < SB; ++j) {
-                            const unsigned long long* b_ptr = b_row + (size_t)j * (size_t)Wc;
-                            int cnt = __popcll(a0 & b_ptr[0]);
-                            cnt += __popcll(a1 & b_ptr[32]);
-                            cnt += __popcll(a2 & b_ptr[64]);
-                            cnt += __popcll(a3 & b_ptr[96]);
-                            local += (float)cnt * aw * bw_row[j];
+                            int cnt = __popcll(a0 & b_cache0[j]);
+                            cnt += __popcll(a1 & b_cache1[j]);
+                            local += (float)cnt * aw * bw_cache[j];
+                        }
+                    }
+                }
+
+                // Reload B cache for Pass 2/3: w=[64..95] + w=[96..127]
+                b_ptr_init = b_row;
+#pragma unroll
+                for (int j = 0; j < SB; ++j) {
+                    b_cache0[j] = b_ptr_init[64];
+                    b_cache1[j] = b_ptr_init[96];
+                    b_ptr_init += Wc;
+                }
+
+                if (Sa <= 16) {
+                    const unsigned long long* a_ptr = A_sh + (size_t)lane + 64u;
+#pragma unroll
+                    for (int i = 0; i < 16; ++i) {
+                        if (i < Sa) {
+                            const float aw = Aw_sh[i];
+                            const unsigned long long a2 = a_ptr[0];
+                            const unsigned long long a3 = a_ptr[32];
+#pragma unroll
+                            for (int j = 0; j < SB; ++j) {
+                                int cnt = __popcll(a2 & b_cache0[j]);
+                                cnt += __popcll(a3 & b_cache1[j]);
+                                local += (float)cnt * aw * bw_cache[j];
+                            }
+                        }
+                        a_ptr += Wc;
+                    }
+                } else {
+                    const unsigned long long* a_ptr = A_sh + (size_t)lane + 64u;
+                    for (int i = 0; i < Sa; ++i) {
+                        const float aw = Aw_sh[i];
+                        const unsigned long long a2 = a_ptr[0];
+                        const unsigned long long a3 = a_ptr[32];
+                        a_ptr += Wc;
+#pragma unroll
+                        for (int j = 0; j < SB; ++j) {
+                            int cnt = __popcll(a2 & b_cache0[j]);
+                            cnt += __popcll(a3 & b_cache1[j]);
+                            local += (float)cnt * aw * bw_cache[j];
                         }
                     }
                 }
