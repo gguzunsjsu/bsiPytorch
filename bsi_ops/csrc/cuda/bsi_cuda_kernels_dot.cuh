@@ -534,7 +534,7 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w128
     constexpr int Wc = 128;
     (void)W;
     (void)Sb;
-    static_assert(SB >= 1 && SB <= 8, "SB out of range");
+    static_assert(SB >= 1 && SB <= 16, "SB out of range");
 
     extern __shared__ unsigned char shmem[];
     int r_block = blockIdx.x;
@@ -622,35 +622,56 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w128
                 B_sh + (size_t)out_idx * (size_t)SB * (size_t)Wc + (size_t)lane;
             const float* bw_row = Bw_sh + (size_t)out_idx * (size_t)SB;
 
-            float bw_cache[SB];
+            if constexpr (SB <= 8) {
+                float bw_cache[SB];
 #pragma unroll
-            for (int j = 0; j < SB; ++j) {
-                bw_cache[j] = bw_row[j];
-            }
-            unsigned long long b_cache0[SB];
-            unsigned long long b_cache1[SB];
-            unsigned long long b_cache2[SB];
-            unsigned long long b_cache3[SB];
-            const unsigned long long* b_ptr_init = b_row;
+                for (int j = 0; j < SB; ++j) {
+                    bw_cache[j] = bw_row[j];
+                }
+                unsigned long long b_cache0[SB];
+                unsigned long long b_cache1[SB];
+                unsigned long long b_cache2[SB];
+                unsigned long long b_cache3[SB];
+                const unsigned long long* b_ptr_init = b_row;
 #pragma unroll
-            for (int j = 0; j < SB; ++j) {
-                b_cache0[j] = b_ptr_init[0];
-                b_cache1[j] = b_ptr_init[32];
-                b_cache2[j] = b_ptr_init[64];
-                b_cache3[j] = b_ptr_init[96];
-                b_ptr_init += Wc;
-            }
+                for (int j = 0; j < SB; ++j) {
+                    b_cache0[j] = b_ptr_init[0];
+                    b_cache1[j] = b_ptr_init[32];
+                    b_cache2[j] = b_ptr_init[64];
+                    b_cache3[j] = b_ptr_init[96];
+                    b_ptr_init += Wc;
+                }
 
-            if (Sa <= 16) {
-                const unsigned long long* a_ptr = A_sh + (size_t)lane;
+                if (Sa <= 16) {
+                    const unsigned long long* a_ptr = A_sh + (size_t)lane;
 #pragma unroll
-                for (int i = 0; i < 16; ++i) {
-                    if (i < Sa) {
+                    for (int i = 0; i < 16; ++i) {
+                        if (i < Sa) {
+                            const float aw = Aw_sh[i];
+                            unsigned long long a0 = a_ptr[0];
+                            unsigned long long a1 = a_ptr[32];
+                            unsigned long long a2 = a_ptr[64];
+                            unsigned long long a3 = a_ptr[96];
+#pragma unroll
+                            for (int j = 0; j < SB; ++j) {
+                                int cnt = __popcll(a0 & b_cache0[j]);
+                                cnt += __popcll(a1 & b_cache1[j]);
+                                cnt += __popcll(a2 & b_cache2[j]);
+                                cnt += __popcll(a3 & b_cache3[j]);
+                                local += (float)cnt * aw * bw_cache[j];
+                            }
+                        }
+                        a_ptr += Wc;
+                    }
+                } else {
+                    const unsigned long long* a_ptr = A_sh + (size_t)lane;
+                    for (int i = 0; i < Sa; ++i) {
                         const float aw = Aw_sh[i];
                         unsigned long long a0 = a_ptr[0];
                         unsigned long long a1 = a_ptr[32];
                         unsigned long long a2 = a_ptr[64];
                         unsigned long long a3 = a_ptr[96];
+                        a_ptr += Wc;
 #pragma unroll
                         for (int j = 0; j < SB; ++j) {
                             int cnt = __popcll(a0 & b_cache0[j]);
@@ -660,24 +681,49 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w128
                             local += (float)cnt * aw * bw_cache[j];
                         }
                     }
-                    a_ptr += Wc;
                 }
             } else {
-                const unsigned long long* a_ptr = A_sh + (size_t)lane;
-                for (int i = 0; i < Sa; ++i) {
-                    const float aw = Aw_sh[i];
-                    unsigned long long a0 = a_ptr[0];
-                    unsigned long long a1 = a_ptr[32];
-                    unsigned long long a2 = a_ptr[64];
-                    unsigned long long a3 = a_ptr[96];
-                    a_ptr += Wc;
+                // For SB > 8, avoid large per-thread B caches (register pressure/spills).
+                if (Sa <= 16) {
+                    const unsigned long long* a_ptr = A_sh + (size_t)lane;
 #pragma unroll
-                    for (int j = 0; j < SB; ++j) {
-                        int cnt = __popcll(a0 & b_cache0[j]);
-                        cnt += __popcll(a1 & b_cache1[j]);
-                        cnt += __popcll(a2 & b_cache2[j]);
-                        cnt += __popcll(a3 & b_cache3[j]);
-                        local += (float)cnt * aw * bw_cache[j];
+                    for (int i = 0; i < 16; ++i) {
+                        if (i < Sa) {
+                            const float aw = Aw_sh[i];
+                            unsigned long long a0 = a_ptr[0];
+                            unsigned long long a1 = a_ptr[32];
+                            unsigned long long a2 = a_ptr[64];
+                            unsigned long long a3 = a_ptr[96];
+#pragma unroll
+                            for (int j = 0; j < SB; ++j) {
+                                const unsigned long long* b_ptr = b_row + (size_t)j * (size_t)Wc;
+                                int cnt = __popcll(a0 & b_ptr[0]);
+                                cnt += __popcll(a1 & b_ptr[32]);
+                                cnt += __popcll(a2 & b_ptr[64]);
+                                cnt += __popcll(a3 & b_ptr[96]);
+                                local += (float)cnt * aw * bw_row[j];
+                            }
+                        }
+                        a_ptr += Wc;
+                    }
+                } else {
+                    const unsigned long long* a_ptr = A_sh + (size_t)lane;
+                    for (int i = 0; i < Sa; ++i) {
+                        const float aw = Aw_sh[i];
+                        unsigned long long a0 = a_ptr[0];
+                        unsigned long long a1 = a_ptr[32];
+                        unsigned long long a2 = a_ptr[64];
+                        unsigned long long a3 = a_ptr[96];
+                        a_ptr += Wc;
+#pragma unroll
+                        for (int j = 0; j < SB; ++j) {
+                            const unsigned long long* b_ptr = b_row + (size_t)j * (size_t)Wc;
+                            int cnt = __popcll(a0 & b_ptr[0]);
+                            cnt += __popcll(a1 & b_ptr[32]);
+                            cnt += __popcll(a2 & b_ptr[64]);
+                            cnt += __popcll(a3 & b_ptr[96]);
+                            local += (float)cnt * aw * bw_row[j];
+                        }
                     }
                 }
             }
@@ -796,6 +842,28 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     }
     int tile_q = (q_tile > 0) ? q_tile : 1;
     int tile_r = (r_tile > 0) ? r_tile : 1;
+    // Auto-tiling heuristic: scale up tiling to reduce global reloads of A across the R dimension.
+    // Enabled by default only when the caller uses the historical defaults (8x4), but can be
+    // forced on/off via BSI_AUTO_TILES=1/0.
+    bool auto_tiles = (q_tile == 8 && r_tile == 4);
+    if (const char* s = getenv("BSI_AUTO_TILES")) {
+        auto_tiles = (atoi(s) != 0);
+    }
+    if (auto_tiles) {
+        const int num_warps = cached_block >> 5;
+        int target_r = num_warps * 4; // allow each warp to handle multiple outputs
+        if (W == 128) {
+            if (target_r > 8) target_r = 8;
+        } else if (W == 32) {
+            if (target_r > 32) target_r = 32;
+        } else {
+            if (target_r > 16) target_r = 16;
+        }
+        if (target_r > tile_r) tile_r = target_r;
+
+        int target_q = (W == 128) ? 16 : 32;
+        if (target_q > tile_q) tile_q = target_q;
+    }
     dim3 block(cached_block);
     bool use_warp_out = true; // default to warp-out path for better perf/SMEM usage
     if (const char* s = getenv("BSI_WARP_OUT")) {
@@ -812,7 +880,7 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
         cudaDeviceGetAttribute(&max_shared_optin, cudaDevAttrMaxSharedMemoryPerBlockOptin, dev);
         int max_shared = (max_shared_optin > max_shared_default) ? max_shared_optin : max_shared_default;
         bool use_w32 = (W == 32 && Sb >= 1 && Sb <= 32);
-        bool use_w128 = (W == 128 && Sb >= 1 && Sb <= 8);
+        bool use_w128 = (W == 128 && Sb >= 1 && Sb <= 16);
         size_t a_word_factor = (use_w32 || use_w128) ? 2u : 1u;
         size_t a_float_factor = (use_w32 || use_w128) ? 2u : 1u;
         int tile_r_eff = tile_r;
@@ -879,37 +947,30 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                 }
             } else if (use_w128) {
                 switch (Sb) {
-                    case 1:
-                        launch_w128_sb_kernel<1>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
+#define LAUNCH_W128_SB_CASE(N) \
+                    case N: \
+                        launch_w128_sb_kernel<N>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q, \
+                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default); \
                         break;
-                    case 2:
-                        launch_w128_sb_kernel<2>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
-                        break;
-                    case 3:
-                        launch_w128_sb_kernel<3>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
-                        break;
-                    case 4:
-                        launch_w128_sb_kernel<4>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
-                        break;
-                    case 5:
-                        launch_w128_sb_kernel<5>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
-                        break;
-                    case 6:
-                        launch_w128_sb_kernel<6>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
-                        break;
-                    case 7:
-                        launch_w128_sb_kernel<7>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
-                                                     scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
-                        break;
-                    case 8:
+                    LAUNCH_W128_SB_CASE(1)
+                    LAUNCH_W128_SB_CASE(2)
+                    LAUNCH_W128_SB_CASE(3)
+                    LAUNCH_W128_SB_CASE(4)
+                    LAUNCH_W128_SB_CASE(5)
+                    LAUNCH_W128_SB_CASE(6)
+                    LAUNCH_W128_SB_CASE(7)
+                    LAUNCH_W128_SB_CASE(8)
+                    LAUNCH_W128_SB_CASE(9)
+                    LAUNCH_W128_SB_CASE(10)
+                    LAUNCH_W128_SB_CASE(11)
+                    LAUNCH_W128_SB_CASE(12)
+                    LAUNCH_W128_SB_CASE(13)
+                    LAUNCH_W128_SB_CASE(14)
+                    LAUNCH_W128_SB_CASE(15)
+                    LAUNCH_W128_SB_CASE(16)
+#undef LAUNCH_W128_SB_CASE
                     default:
-                        launch_w128_sb_kernel<8>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
+                        launch_w128_sb_kernel<16>(A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q,
                                                      scale_inv, R_total, out_global, shared_bytes, grid_warp, block, stream, max_shared_default);
                         break;
                 }
