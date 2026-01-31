@@ -835,7 +835,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
             const int b_slice_stride = TN * K_STRIDE32;
             const uint32_t* b_col_base = B_bits + (col_base + groupID) * K_STRIDE32;
 
-            for (int j0 = 0; j0 < SB_MAX; j0 += JBLOCK) {
+            for (int j0 = 0; j0 < Sb; j0 += JBLOCK) {
                 uint32_t b0_cache[JBLOCK];
                 uint32_t b1_cache[JBLOCK];
                 float bw0_cache[JBLOCK];
@@ -1115,7 +1115,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tn64(
         __syncthreads();
 
         if (cache_sb) {
-            constexpr int JBLOCK = 8;
+            constexpr int JBLOCK = 4;
             const int b_slice_stride = TN * K_STRIDE32;
             const uint32_t* b_col_base = B_bits + (col_base + groupID) * K_STRIDE32;
 
@@ -1274,7 +1274,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tn64(
 // BMMA TC variant: 8 warps per block (32x32 output tile).
 // This reuses the same B tile across 2x as many query rows (vs TM=16), which
 // cuts B global->shared traffic per output.
-extern "C" __global__
+extern "C" __global__ __launch_bounds__(256, 4)
 void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
     const unsigned long long* __restrict__ A,    // [Q, Sa, W64]
     const float* __restrict__ Aw,                // [Q, Sa]
@@ -1405,11 +1405,11 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
         __syncthreads();
 
         if (cache_sb) {
-            constexpr int JBLOCK = 8;
+            constexpr int JBLOCK = 4;
             const int b_slice_stride = TN * K_STRIDE32;
             const uint32_t* b_col_base = B_bits + (col_base + groupID) * K_STRIDE32;
 
-            for (int j0 = 0; j0 < SB_MAX; j0 += JBLOCK) {
+            for (int j0 = 0; j0 < Sb; j0 += JBLOCK) {
                 uint32_t b0_cache[JBLOCK];
                 uint32_t b1_cache[JBLOCK];
                 float bw0_cache[JBLOCK];
