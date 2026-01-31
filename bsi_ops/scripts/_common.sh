@@ -3,6 +3,7 @@ set -euo pipefail
 
 # Shared defaults for bsi_ops scripts. Callers can override by exporting vars.
 : "${BSI_TC_DOT:=0}"
+: "${BSI_TC_TM:=16}"
 : "${BSI_TC_TN:=32}"
 : "${BSI_WARP_OUT:=1}"
 : "${BSI_CK_BLOCK:=128}"
@@ -11,6 +12,7 @@ set -euo pipefail
 
 bsi_run() {
   BSI_TC_DOT="${BSI_TC_DOT}" \
+  BSI_TC_TM="${BSI_TC_TM}" \
   BSI_TC_TN="${BSI_TC_TN}" \
   BSI_WARP_OUT="${BSI_WARP_OUT}" \
   BSI_CK_BLOCK="${BSI_CK_BLOCK}" \
@@ -18,4 +20,3 @@ bsi_run() {
   BSI_R_TILE="${BSI_R_TILE}" \
   "$@"
 }
-
