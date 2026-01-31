@@ -796,40 +796,49 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
     for (int chunk = 0; chunk < chunks; ++chunk) {
         // Load A bits for all slices and all 16 queries for this chunk into shared.
         // A_bits layout: ((i*TM + m)*8 + w32)
-        for (int idx = threadIdx.x; idx < TM * Sa * K_WORDS32; idx += blockDim.x) {
+        //
+        // Iterate over 64-bit words and store both 32-bit halves. The old w32-based
+        // loop loaded the same 64-bit word twice (w32=0/1, 2/3, ...).
+        for (int idx = threadIdx.x; idx < TM * Sa * K_WORDS64; idx += blockDim.x) {
             int t = idx;
-            const int w32 = t & (K_WORDS32 - 1);
-            t >>= 3; // /8
+            const int w64_i = t & (K_WORDS64 - 1);
+            t >>= 2; // /4
             const int m = t & (TM - 1);
             const int i = t >> 4; // /16
 
-            uint32_t v = 0;
+            uint32_t lo = 0, hi = 0;
             const int q = q0 + m;
             if (q < Q) {
                 const unsigned long long* a_slice = A + ((size_t)q * (size_t)Sa + (size_t)i) * (size_t)W64;
-                const unsigned long long w64 = __ldg(&a_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)(w32 >> 1)]);
-                v = (w32 & 1) ? static_cast<uint32_t>(w64 >> 32) : static_cast<uint32_t>(w64 & 0xffffffffu);
+                const unsigned long long w64 = __ldg(&a_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+                lo = static_cast<uint32_t>(w64);
+                hi = static_cast<uint32_t>(w64 >> 32);
             }
-            A_bits[((i * TM + m) * K_STRIDE32) + w32] = v;
+            const int base = ((i * TM + m) * K_STRIDE32) + (w64_i << 1);
+            A_bits[base] = lo;
+            A_bits[base + 1] = hi;
         }
 
         // Load B bits for all slices and all TN keys for this chunk into shared.
         // B_bits layout: ((j*TN + n)*8 + w32)
-        for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS32; idx += blockDim.x) {
+        for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS64; idx += blockDim.x) {
             int t = idx;
-            const int w32 = t & (K_WORDS32 - 1);
-            t >>= 3;
+            const int w64_i = t & (K_WORDS64 - 1);
+            t >>= 2;
             const int n = t & (TN - 1);      // /TN
             const int j = t >> 5;            // /32
 
-            uint32_t v = 0;
+            uint32_t lo = 0, hi = 0;
             const int r = r0 + n;
             if (r < R) {
                 const unsigned long long* b_slice = B + ((size_t)r * (size_t)Sb + (size_t)j) * (size_t)W64;
-                const unsigned long long w64 = __ldg(&b_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)(w32 >> 1)]);
-                v = (w32 & 1) ? static_cast<uint32_t>(w64 >> 32) : static_cast<uint32_t>(w64 & 0xffffffffu);
+                const unsigned long long w64 = __ldg(&b_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+                lo = static_cast<uint32_t>(w64);
+                hi = static_cast<uint32_t>(w64 >> 32);
             }
-            B_bits[((j * TN + n) * K_STRIDE32) + w32] = v;
+            const int base = ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
+            B_bits[base] = lo;
+            B_bits[base + 1] = hi;
         }
         __syncthreads();
 
@@ -1079,38 +1088,44 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tn64(
 
     const int chunks = W64 / K_WORDS64;
     for (int chunk = 0; chunk < chunks; ++chunk) {
-        for (int idx = threadIdx.x; idx < TM * Sa * K_WORDS32; idx += blockDim.x) {
+        for (int idx = threadIdx.x; idx < TM * Sa * K_WORDS64; idx += blockDim.x) {
             int t = idx;
-            const int w32 = t & (K_WORDS32 - 1);
-            t >>= 3;
+            const int w64_i = t & (K_WORDS64 - 1);
+            t >>= 2;
             const int m = t & (TM - 1);
             const int i = t >> 4;
 
-            uint32_t v = 0;
+            uint32_t lo = 0, hi = 0;
             const int q = q0 + m;
             if (q < Q) {
                 const unsigned long long* a_slice = A + ((size_t)q * (size_t)Sa + (size_t)i) * (size_t)W64;
-                const unsigned long long w64 = __ldg(&a_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)(w32 >> 1)]);
-                v = (w32 & 1) ? static_cast<uint32_t>(w64 >> 32) : static_cast<uint32_t>(w64 & 0xffffffffu);
+                const unsigned long long w64 = __ldg(&a_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+                lo = static_cast<uint32_t>(w64);
+                hi = static_cast<uint32_t>(w64 >> 32);
             }
-            A_bits[((i * TM + m) * K_STRIDE32) + w32] = v;
+            const int base = ((i * TM + m) * K_STRIDE32) + (w64_i << 1);
+            A_bits[base] = lo;
+            A_bits[base + 1] = hi;
         }
 
-        for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS32; idx += blockDim.x) {
+        for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS64; idx += blockDim.x) {
             int t = idx;
-            const int w32 = t & (K_WORDS32 - 1);
-            t >>= 3;
+            const int w64_i = t & (K_WORDS64 - 1);
+            t >>= 2;
             const int n = t & (TN - 1);      // /TN
             const int j = t >> 6;            // /64
 
-            uint32_t v = 0;
+            uint32_t lo = 0, hi = 0;
             const int r = r0 + n;
             if (r < R) {
                 const unsigned long long* b_slice = B + ((size_t)r * (size_t)Sb + (size_t)j) * (size_t)W64;
-                const unsigned long long w64 = __ldg(&b_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)(w32 >> 1)]);
-                v = (w32 & 1) ? static_cast<uint32_t>(w64 >> 32) : static_cast<uint32_t>(w64 & 0xffffffffu);
+                const unsigned long long w64 = __ldg(&b_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+                lo = static_cast<uint32_t>(w64);
+                hi = static_cast<uint32_t>(w64 >> 32);
             }
-            B_bits[((j * TN + n) * K_STRIDE32) + w32] = v;
+            const int base = ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
+            B_bits[base] = lo;
+            B_bits[base + 1] = hi;
         }
         __syncthreads();
 
@@ -1362,39 +1377,45 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
     const int chunks = W64 / K_WORDS64;
     for (int chunk = 0; chunk < chunks; ++chunk) {
         // Load A bits for this chunk.
-        for (int idx = threadIdx.x; idx < TM_TOTAL * Sa * K_WORDS32; idx += blockDim.x) {
+        for (int idx = threadIdx.x; idx < TM_TOTAL * Sa * K_WORDS64; idx += blockDim.x) {
             int t = idx;
-            const int w32 = t & (K_WORDS32 - 1);
-            t >>= 3;
+            const int w64_i = t & (K_WORDS64 - 1);
+            t >>= 2;
             const int m = t & (TM_TOTAL - 1);
             const int i = t >> 5; // /32
 
-            uint32_t v = 0;
+            uint32_t lo = 0, hi = 0;
             const int q = q0 + m;
             if (q < Q) {
                 const unsigned long long* a_slice = A + ((size_t)q * (size_t)Sa + (size_t)i) * (size_t)W64;
-                const unsigned long long w64 = __ldg(&a_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)(w32 >> 1)]);
-                v = (w32 & 1) ? static_cast<uint32_t>(w64 >> 32) : static_cast<uint32_t>(w64 & 0xffffffffu);
+                const unsigned long long w64 = __ldg(&a_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+                lo = static_cast<uint32_t>(w64);
+                hi = static_cast<uint32_t>(w64 >> 32);
             }
-            A_bits[((i * TM_TOTAL + m) * K_STRIDE32) + w32] = v;
+            const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + (w64_i << 1);
+            A_bits[base] = lo;
+            A_bits[base + 1] = hi;
         }
 
         // Load B bits for this chunk.
-        for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS32; idx += blockDim.x) {
+        for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS64; idx += blockDim.x) {
             int t = idx;
-            const int w32 = t & (K_WORDS32 - 1);
-            t >>= 3;
+            const int w64_i = t & (K_WORDS64 - 1);
+            t >>= 2;
             const int n = t & (TN - 1);
             const int j = t >> 5; // /32
 
-            uint32_t v = 0;
+            uint32_t lo = 0, hi = 0;
             const int r = r0 + n;
             if (r < R) {
                 const unsigned long long* b_slice = B + ((size_t)r * (size_t)Sb + (size_t)j) * (size_t)W64;
-                const unsigned long long w64 = __ldg(&b_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)(w32 >> 1)]);
-                v = (w32 & 1) ? static_cast<uint32_t>(w64 >> 32) : static_cast<uint32_t>(w64 & 0xffffffffu);
+                const unsigned long long w64 = __ldg(&b_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+                lo = static_cast<uint32_t>(w64);
+                hi = static_cast<uint32_t>(w64 >> 32);
             }
-            B_bits[((j * TN + n) * K_STRIDE32) + w32] = v;
+            const int base = ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
+            B_bits[base] = lo;
+            B_bits[base + 1] = hi;
         }
         __syncthreads();
 
@@ -1643,38 +1664,44 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_tn64(
 
     const int chunks = W64 / K_WORDS64;
     for (int chunk = 0; chunk < chunks; ++chunk) {
-        for (int idx = threadIdx.x; idx < TM_TOTAL * Sa * K_WORDS32; idx += blockDim.x) {
+        for (int idx = threadIdx.x; idx < TM_TOTAL * Sa * K_WORDS64; idx += blockDim.x) {
             int t = idx;
-            const int w32 = t & (K_WORDS32 - 1);
-            t >>= 3;
+            const int w64_i = t & (K_WORDS64 - 1);
+            t >>= 2;
             const int m = t & (TM_TOTAL - 1);
             const int i = t >> 5; // /32
 
-            uint32_t v = 0;
+            uint32_t lo = 0, hi = 0;
             const int q = q0 + m;
             if (q < Q) {
                 const unsigned long long* a_slice = A + ((size_t)q * (size_t)Sa + (size_t)i) * (size_t)W64;
-                const unsigned long long w64 = __ldg(&a_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)(w32 >> 1)]);
-                v = (w32 & 1) ? static_cast<uint32_t>(w64 >> 32) : static_cast<uint32_t>(w64 & 0xffffffffu);
+                const unsigned long long w64 = __ldg(&a_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+                lo = static_cast<uint32_t>(w64);
+                hi = static_cast<uint32_t>(w64 >> 32);
             }
-            A_bits[((i * TM_TOTAL + m) * K_STRIDE32) + w32] = v;
+            const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + (w64_i << 1);
+            A_bits[base] = lo;
+            A_bits[base + 1] = hi;
         }
 
-        for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS32; idx += blockDim.x) {
+        for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS64; idx += blockDim.x) {
             int t = idx;
-            const int w32 = t & (K_WORDS32 - 1);
-            t >>= 3;
+            const int w64_i = t & (K_WORDS64 - 1);
+            t >>= 2;
             const int n = t & (TN - 1);
             const int j = t >> 6; // /64
 
-            uint32_t v = 0;
+            uint32_t lo = 0, hi = 0;
             const int r = r0 + n;
             if (r < R) {
                 const unsigned long long* b_slice = B + ((size_t)r * (size_t)Sb + (size_t)j) * (size_t)W64;
-                const unsigned long long w64 = __ldg(&b_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)(w32 >> 1)]);
-                v = (w32 & 1) ? static_cast<uint32_t>(w64 >> 32) : static_cast<uint32_t>(w64 & 0xffffffffu);
+                const unsigned long long w64 = __ldg(&b_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+                lo = static_cast<uint32_t>(w64);
+                hi = static_cast<uint32_t>(w64 >> 32);
             }
-            B_bits[((j * TN + n) * K_STRIDE32) + w32] = v;
+            const int base = ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
+            B_bits[base] = lo;
+            B_bits[base + 1] = hi;
         }
         __syncthreads();
 
