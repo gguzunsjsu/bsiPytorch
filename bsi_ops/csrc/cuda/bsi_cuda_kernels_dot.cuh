@@ -707,10 +707,12 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
     // Use 4 warps per block to cover a 16x32 output tile. This increases reuse of
     // the A tile across more output columns and reduces redundant loads of A across blocks.
     constexpr int TN = 32;
-    constexpr int SB_MAX = 16;
+    constexpr int SB_MAX = 12;
     constexpr int K_BITS = 256;
     constexpr int K_WORDS64 = K_BITS / 64;   // 4
     constexpr int K_WORDS32 = K_BITS / 32;   // 8
+    // Pad K to reduce shared-memory bank conflicts (K_WORDS32==8 is especially conflict-prone).
+    constexpr int K_STRIDE32 = K_WORDS32 + 1; // 9
 
     // This kernel is defined as 4 warps per block.
     if (blockDim.x != 128) return;
@@ -726,10 +728,10 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
     // 16B alignment keeps PTX loads/stores happy and avoids bank conflicts on most layouts.
     p = (p + 15u) & ~uintptr_t(15u);
 
-    auto* A_bits = reinterpret_cast<uint32_t*>(p); // [Sa, TM, 8]
-    p += (size_t)Sa * (size_t)TM * (size_t)K_WORDS32 * sizeof(uint32_t);
-    auto* B_bits = reinterpret_cast<uint32_t*>(p); // [Sb, TN, 8] (columns stored contiguously)
-    p += (size_t)Sb * (size_t)TN * (size_t)K_WORDS32 * sizeof(uint32_t);
+    auto* A_bits = reinterpret_cast<uint32_t*>(p); // [Sa, TM, K_STRIDE32]
+    p += (size_t)Sa * (size_t)TM * (size_t)K_STRIDE32 * sizeof(uint32_t);
+    auto* B_bits = reinterpret_cast<uint32_t*>(p); // [Sb, TN, K_STRIDE32]
+    p += (size_t)Sb * (size_t)TN * (size_t)K_STRIDE32 * sizeof(uint32_t);
     auto* Aw_tile = reinterpret_cast<float*>(p);   // [TM, Sa]
     p += (size_t)TM * (size_t)Sa * sizeof(float);
     auto* Bw_tile = reinterpret_cast<float*>(p);   // [TN, Sb]
@@ -793,39 +795,45 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
     // Main loop: iterate over chunks, load all slice bits for the tile into shared, then BMMA.
     for (int chunk = 0; chunk < chunks; ++chunk) {
         // Load A bits for all slices and all 16 queries for this chunk into shared.
-        // A_bits layout: ((i*TM + m)*8 + w32)
-        for (int idx = threadIdx.x; idx < TM * Sa * K_WORDS32; idx += blockDim.x) {
+        // A_bits layout: ((i*TM + m)*K_STRIDE32 + w32)
+        for (int idx = threadIdx.x; idx < TM * Sa * K_STRIDE32; idx += blockDim.x) {
             int t = idx;
-            const int w32 = t & (K_WORDS32 - 1);
-            t >>= 3; // /8
+            const int w32 = t % K_STRIDE32;
+            t /= K_STRIDE32;
             const int m = t & (TM - 1);
             const int i = t >> 4; // /16
 
             uint32_t v = 0;
-            const int q = q0 + m;
-            if (q < Q) {
-                const unsigned long long* a_slice = A + ((size_t)q * (size_t)Sa + (size_t)i) * (size_t)W64;
-                const unsigned long long w64 = __ldg(&a_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)(w32 >> 1)]);
-                v = (w32 & 1) ? static_cast<uint32_t>(w64 >> 32) : static_cast<uint32_t>(w64 & 0xffffffffu);
+            if (w32 < K_WORDS32) {
+                const int q = q0 + m;
+                if (q < Q) {
+                    const unsigned long long* a_slice = A + ((size_t)q * (size_t)Sa + (size_t)i) * (size_t)W64;
+                    const unsigned long long w64 =
+                        __ldg(&a_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)(w32 >> 1)]);
+                    v = (w32 & 1) ? static_cast<uint32_t>(w64 >> 32) : static_cast<uint32_t>(w64 & 0xffffffffu);
+                }
             }
             A_bits[idx] = v;
         }
 
         // Load B bits for all slices and all TN keys for this chunk into shared.
-        // B_bits layout: ((j*TN + n)*8 + w32)
-        for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS32; idx += blockDim.x) {
+        // B_bits layout: ((j*TN + n)*K_STRIDE32 + w32)
+        for (int idx = threadIdx.x; idx < TN * Sb * K_STRIDE32; idx += blockDim.x) {
             int t = idx;
-            const int w32 = t & (K_WORDS32 - 1);
-            t >>= 3;
+            const int w32 = t % K_STRIDE32;
+            t /= K_STRIDE32;
             const int n = t & (TN - 1);      // /TN
             const int j = t >> 5;            // /32
 
             uint32_t v = 0;
-            const int r = r0 + n;
-            if (r < R) {
-                const unsigned long long* b_slice = B + ((size_t)r * (size_t)Sb + (size_t)j) * (size_t)W64;
-                const unsigned long long w64 = __ldg(&b_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)(w32 >> 1)]);
-                v = (w32 & 1) ? static_cast<uint32_t>(w64 >> 32) : static_cast<uint32_t>(w64 & 0xffffffffu);
+            if (w32 < K_WORDS32) {
+                const int r = r0 + n;
+                if (r < R) {
+                    const unsigned long long* b_slice = B + ((size_t)r * (size_t)Sb + (size_t)j) * (size_t)W64;
+                    const unsigned long long w64 =
+                        __ldg(&b_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)(w32 >> 1)]);
+                    v = (w32 & 1) ? static_cast<uint32_t>(w64 >> 32) : static_cast<uint32_t>(w64 & 0xffffffffu);
+                }
             }
             B_bits[idx] = v;
         }
@@ -837,8 +845,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
             // Cache the 2 B fragment regs for each j (reused across all Sa slices).
             uint32_t b0_cache[SB_MAX];
             uint32_t b1_cache[SB_MAX];
-            const size_t b_slice_stride = (size_t)TN * (size_t)K_WORDS32;
-            const uint32_t* b_col_base = B_bits + (size_t)(col_base + groupID) * (size_t)K_WORDS32;
+            const size_t b_slice_stride = (size_t)TN * (size_t)K_STRIDE32;
+            const uint32_t* b_col_base = B_bits + (size_t)(col_base + groupID) * (size_t)K_STRIDE32;
 #pragma unroll
             for (int j = 0; j < SB_MAX; ++j) {
                 if (j < Sb) {
@@ -855,12 +863,12 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
                 const float aw0 = Aw_tile[(size_t)row0 * (size_t)Sa + (size_t)i];
                 const float aw1 = Aw_tile[(size_t)row1 * (size_t)Sa + (size_t)i];
 
-                const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM * (size_t)K_WORDS32;
-                const uint32_t a0 = A_i[(size_t)row0 * (size_t)K_WORDS32 + (size_t)threadID];
+                const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM * (size_t)K_STRIDE32;
+                const uint32_t a0 = A_i[(size_t)row0 * (size_t)K_STRIDE32 + (size_t)threadID];
                 // NOTE: For SM90 BMMA the second 32b A reg for row1 uses the same 0..31 column window as row0.
-                const uint32_t a1 = A_i[(size_t)row1 * (size_t)K_WORDS32 + (size_t)threadID];
-                const uint32_t a2 = A_i[(size_t)row0 * (size_t)K_WORDS32 + (size_t)(threadID + 4)];
-                const uint32_t a3 = A_i[(size_t)row1 * (size_t)K_WORDS32 + (size_t)(threadID + 4)];
+                const uint32_t a1 = A_i[(size_t)row1 * (size_t)K_STRIDE32 + (size_t)threadID];
+                const uint32_t a2 = A_i[(size_t)row0 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+                const uint32_t a3 = A_i[(size_t)row1 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
 
                 float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
                 // IMPORTANT: mma.sync is warp-synchronous. Do not per-lane branch around it.
@@ -899,19 +907,19 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
                 const float aw0 = Aw_tile[(size_t)row0 * (size_t)Sa + (size_t)i];
                 const float aw1 = Aw_tile[(size_t)row1 * (size_t)Sa + (size_t)i];
 
-                const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM * (size_t)K_WORDS32;
-                const uint32_t a0 = A_i[(size_t)row0 * (size_t)K_WORDS32 + (size_t)threadID];
-                const uint32_t a1 = A_i[(size_t)row1 * (size_t)K_WORDS32 + (size_t)threadID];
-                const uint32_t a2 = A_i[(size_t)row0 * (size_t)K_WORDS32 + (size_t)(threadID + 4)];
-                const uint32_t a3 = A_i[(size_t)row1 * (size_t)K_WORDS32 + (size_t)(threadID + 4)];
+                const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM * (size_t)K_STRIDE32;
+                const uint32_t a0 = A_i[(size_t)row0 * (size_t)K_STRIDE32 + (size_t)threadID];
+                const uint32_t a1 = A_i[(size_t)row1 * (size_t)K_STRIDE32 + (size_t)threadID];
+                const uint32_t a2 = A_i[(size_t)row0 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+                const uint32_t a3 = A_i[(size_t)row1 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
 
                 float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
                 for (int j = 0; j < Sb; ++j) {
                     const float bw0 = Bw_tile[(size_t)col0 * (size_t)Sb + (size_t)j];
                     const float bw1 = Bw_tile[(size_t)col1 * (size_t)Sb + (size_t)j];
 
-                    const uint32_t* B_j = B_bits + (size_t)j * (size_t)TN * (size_t)K_WORDS32;
-                    const uint32_t* B_col = B_j + (size_t)(col_base + groupID) * (size_t)K_WORDS32;
+                    const uint32_t* B_j = B_bits + (size_t)j * (size_t)TN * (size_t)K_STRIDE32;
+                    const uint32_t* B_col = B_j + (size_t)(col_base + groupID) * (size_t)K_STRIDE32;
                     const uint32_t b0 = B_col[(size_t)threadID];
                     const uint32_t b1 = B_col[(size_t)(threadID + 4)];
 
@@ -1086,6 +1094,7 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
             constexpr int TM = 16;
             constexpr int TN = 32;
             constexpr int K_WORDS32 = 8; // 256 bits / 32
+            constexpr int K_STRIDE32 = K_WORDS32 + 1;
 
             dim3 block_tc(128, 1, 1);
             dim3 grid_tc((R + TN - 1) / TN, (Q + TM - 1) / TM, 1);
@@ -1093,8 +1102,8 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
             // +16 bytes for internal alignment padding in the kernel.
             size_t shared_bytes =
                 16u +
-                (size_t)Sa * (size_t)TM * (size_t)K_WORDS32 * sizeof(uint32_t) +
-                (size_t)Sb * (size_t)TN * (size_t)K_WORDS32 * sizeof(uint32_t) +
+                (size_t)Sa * (size_t)TM * (size_t)K_STRIDE32 * sizeof(uint32_t) +
+                (size_t)Sb * (size_t)TN * (size_t)K_STRIDE32 * sizeof(uint32_t) +
                 (size_t)TM * (size_t)Sa * sizeof(float) +
                 (size_t)TN * (size_t)Sb * sizeof(float);
 

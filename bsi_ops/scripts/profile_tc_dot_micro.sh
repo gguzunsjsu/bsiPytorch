@@ -19,6 +19,7 @@ BSI_R_TILE="${BSI_R_TILE}" \
 ncu --set full --target-processes all \
   -k popcount_weighted_keys_literal_fused_bmma_tc_kernel \
   --launch-skip-before-match 0 --launch-count 1 \
+  -f \
   -o "${OUT}" \
 python benchmarks/benchmark_dot_kernel_micro.py \
   --Q "${Q}" --R "${R}" --D "${D}" \
@@ -27,4 +28,3 @@ python benchmarks/benchmark_dot_kernel_micro.py \
 
 echo "NCU report: ${OUT}.ncu-rep"
 echo "View: ncu -i ${OUT}.ncu-rep"
-
