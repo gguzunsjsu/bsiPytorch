@@ -2043,6 +2043,956 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_tn64(
 #endif
 }
 
+// BMMA TC variant: 16 warps per block (64x32 output tile).
+// Like TM32, but doubles query rows per block to reuse the same B tile across
+// more output rows (reduces B staging overhead per output).
+extern "C" __global__ __launch_bounds__(512, 2)
+void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm64(
+    const unsigned long long* __restrict__ A,    // [Q, Sa, W64]
+    const float* __restrict__ Aw,                // [Q, Sa]
+    int Sa,
+    int W64,
+    const unsigned long long* __restrict__ B,    // [R, Sb, W64]
+    const float* __restrict__ Bw,                // [R, Sb]
+    int Sb,
+    int R,
+    int Q,
+    const long long* __restrict__ key_indices,   // [R]
+    const long long* __restrict__ query_indices, // [Q]
+    float scale_inv,
+    int R_total,
+    float* __restrict__ out_global)
+{
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900)
+    constexpr int TM_TOTAL = 64;
+    constexpr int TM = 16;
+    constexpr int TN = 32;
+    constexpr int WARPS_PER_QTILE = 4; // 32 cols / 8 cols per warp
+    constexpr int QTILES = TM_TOTAL / TM; // 4
+    constexpr int SB_MAX = 16;
+    constexpr int K_BITS = 256;
+    constexpr int K_WORDS64 = K_BITS / 64;   // 4
+    constexpr int K_WORDS32 = K_BITS / 32;   // 8
+    constexpr int K_STRIDE32 = K_WORDS32 + 4; // 12 (padding)
+
+    if (blockDim.x != (WARPS_PER_QTILE * QTILES * 32)) return; // 512
+    const int lane = threadIdx.x & 31;
+    const int warp_id = threadIdx.x >> 5;          // 0..15
+    const int q_tile_id = warp_id >> 2;            // /4 -> 0..3
+    const int warp_in_tile = warp_id & (WARPS_PER_QTILE - 1); // 0..3
+
+    const int q0 = blockIdx.y * TM_TOTAL;
+    const int r0 = blockIdx.x * TN;
+    const bool full_q_tile = (q0 + TM_TOTAL) <= Q;
+    const bool full_r_tile = (r0 + TN) <= R;
+
+    extern __shared__ unsigned char smem_raw[];
+    uintptr_t p = reinterpret_cast<uintptr_t>(smem_raw);
+    p = (p + 15u) & ~uintptr_t(15u);
+
+    auto* A_bits = reinterpret_cast<uint32_t*>(p); // [Sa, TM_TOTAL, K]
+    p += (size_t)Sa * (size_t)TM_TOTAL * (size_t)K_STRIDE32 * sizeof(uint32_t);
+    auto* B_bits = reinterpret_cast<uint32_t*>(p); // [Sb, TN, K]
+    p += (size_t)Sb * (size_t)TN * (size_t)K_STRIDE32 * sizeof(uint32_t);
+    auto* Aw_tile = reinterpret_cast<float*>(p);   // [TM_TOTAL, Sa]
+    p += (size_t)TM_TOTAL * (size_t)Sa * sizeof(float);
+    auto* Bw_tile = reinterpret_cast<float*>(p);   // [TN, Sb]
+    p += (size_t)TN * (size_t)Sb * sizeof(float);
+    (void)p;
+
+    if (full_q_tile) {
+        for (int idx = threadIdx.x; idx < TM_TOTAL * Sa; idx += blockDim.x) {
+            const int m = idx / Sa;
+            const int i = idx - m * Sa;
+            const int q = q0 + m;
+            Aw_tile[(size_t)m * (size_t)Sa + (size_t)i] = __ldg(&Aw[(size_t)q * (size_t)Sa + (size_t)i]);
+        }
+    } else {
+        for (int idx = threadIdx.x; idx < TM_TOTAL * Sa; idx += blockDim.x) {
+            const int m = idx / Sa;
+            const int i = idx - m * Sa;
+            const int q = q0 + m;
+            Aw_tile[(size_t)m * (size_t)Sa + (size_t)i] =
+                (q < Q) ? __ldg(&Aw[(size_t)q * (size_t)Sa + (size_t)i]) : 0.0f;
+        }
+    }
+    if (full_r_tile) {
+        for (int idx = threadIdx.x; idx < TN * Sb; idx += blockDim.x) {
+            const int n = idx / Sb;
+            const int j = idx - n * Sb;
+            const int r = r0 + n;
+            Bw_tile[(size_t)n * (size_t)Sb + (size_t)j] = __ldg(&Bw[(size_t)r * (size_t)Sb + (size_t)j]);
+        }
+    } else {
+        for (int idx = threadIdx.x; idx < TN * Sb; idx += blockDim.x) {
+            const int n = idx / Sb;
+            const int j = idx - n * Sb;
+            const int r = r0 + n;
+            Bw_tile[(size_t)n * (size_t)Sb + (size_t)j] =
+                (r < R) ? __ldg(&Bw[(size_t)r * (size_t)Sb + (size_t)j]) : 0.0f;
+        }
+    }
+    __syncthreads();
+
+    const int groupID = lane >> 2;            // 0..7
+    const int threadID = lane & 3;            // 0..3
+    const int row0 = groupID;                 // 0..7
+    const int row1 = groupID + 8;             // 8..15
+    const int col_base = warp_in_tile * 8;    // 0..24
+    const int col0 = col_base + threadID * 2; // 0..31 even
+    const int col1 = col0 + 1;                // odd
+    const int m0 = q_tile_id * TM + row0;     // 0..63
+    const int m1 = q_tile_id * TM + row1;     // 0..63
+
+    float acc00 = 0.0f, acc01 = 0.0f, acc10 = 0.0f, acc11 = 0.0f;
+
+    const bool cache_sb = (Sb <= SB_MAX);
+    const float* bw_col0 = Bw_tile + (size_t)col0 * (size_t)Sb;
+    const float* bw_col1 = Bw_tile + (size_t)col1 * (size_t)Sb;
+
+    const int chunks = W64 / K_WORDS64;
+    for (int chunk = 0; chunk < chunks; ++chunk) {
+        // Load A bits for this chunk.
+        if (full_q_tile) {
+            for (int idx = threadIdx.x; idx < TM_TOTAL * Sa * K_WORDS64; idx += blockDim.x) {
+                int t = idx;
+                const int w64_i = t & (K_WORDS64 - 1);
+                t >>= 2;
+                const int m = t & (TM_TOTAL - 1);
+                const int i = t >> 6; // /64
+
+                const int q = q0 + m;
+                const unsigned long long* a_slice = A + ((size_t)q * (size_t)Sa + (size_t)i) * (size_t)W64;
+                const unsigned long long w64 = __ldg(&a_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+                const uint32_t lo = static_cast<uint32_t>(w64);
+                const uint32_t hi = static_cast<uint32_t>(w64 >> 32);
+                const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + (w64_i << 1);
+                A_bits[base] = lo;
+                A_bits[base + 1] = hi;
+            }
+        } else {
+            for (int idx = threadIdx.x; idx < TM_TOTAL * Sa * K_WORDS64; idx += blockDim.x) {
+                int t = idx;
+                const int w64_i = t & (K_WORDS64 - 1);
+                t >>= 2;
+                const int m = t & (TM_TOTAL - 1);
+                const int i = t >> 6; // /64
+
+                uint32_t lo = 0, hi = 0;
+                const int q = q0 + m;
+                if (q < Q) {
+                    const unsigned long long* a_slice = A + ((size_t)q * (size_t)Sa + (size_t)i) * (size_t)W64;
+                    const unsigned long long w64 =
+                        __ldg(&a_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+                    lo = static_cast<uint32_t>(w64);
+                    hi = static_cast<uint32_t>(w64 >> 32);
+                }
+                const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + (w64_i << 1);
+                A_bits[base] = lo;
+                A_bits[base + 1] = hi;
+            }
+        }
+
+        // Load B bits for this chunk.
+        if (full_r_tile) {
+            for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS64; idx += blockDim.x) {
+                int t = idx;
+                const int w64_i = t & (K_WORDS64 - 1);
+                t >>= 2;
+                const int n = t & (TN - 1);
+                const int j = t >> 5; // /32
+
+                const int r = r0 + n;
+                const unsigned long long* b_slice = B + ((size_t)r * (size_t)Sb + (size_t)j) * (size_t)W64;
+                const unsigned long long w64 = __ldg(&b_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+                const uint32_t lo = static_cast<uint32_t>(w64);
+                const uint32_t hi = static_cast<uint32_t>(w64 >> 32);
+                const int base = ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
+                B_bits[base] = lo;
+                B_bits[base + 1] = hi;
+            }
+        } else {
+            for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS64; idx += blockDim.x) {
+                int t = idx;
+                const int w64_i = t & (K_WORDS64 - 1);
+                t >>= 2;
+                const int n = t & (TN - 1);
+                const int j = t >> 5; // /32
+
+                uint32_t lo = 0, hi = 0;
+                const int r = r0 + n;
+                if (r < R) {
+                    const unsigned long long* b_slice = B + ((size_t)r * (size_t)Sb + (size_t)j) * (size_t)W64;
+                    const unsigned long long w64 =
+                        __ldg(&b_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+                    lo = static_cast<uint32_t>(w64);
+                    hi = static_cast<uint32_t>(w64 >> 32);
+                }
+                const int base = ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
+                B_bits[base] = lo;
+                B_bits[base + 1] = hi;
+            }
+        }
+        __syncthreads();
+
+        if (cache_sb) {
+            constexpr int JBLOCK = 4;
+            const int b_slice_stride = TN * K_STRIDE32;
+            const uint32_t* b_col_base = B_bits + (col_base + groupID) * K_STRIDE32;
+            const int Sb_full = Sb & ~(JBLOCK - 1);
+            for (int j0 = 0; j0 < Sb_full; j0 += JBLOCK) {
+                uint32_t b0_cache[JBLOCK];
+                uint32_t b1_cache[JBLOCK];
+                float bw0_cache[JBLOCK];
+                float bw1_cache[JBLOCK];
+
+#pragma unroll
+                for (int jj = 0; jj < JBLOCK; ++jj) {
+                    const uint32_t* b_col = b_col_base + (j0 + jj) * b_slice_stride;
+                    b0_cache[jj] = b_col[threadID];
+                    b1_cache[jj] = b_col[threadID + 4];
+                    bw0_cache[jj] = bw_col0[j0 + jj];
+                    bw1_cache[jj] = bw_col1[j0 + jj];
+                }
+
+                for (int i = 0; i < Sa; ++i) {
+                    const float aw0 = Aw_tile[(size_t)m0 * (size_t)Sa + (size_t)i];
+                    const float aw1 = Aw_tile[(size_t)m1 * (size_t)Sa + (size_t)i];
+
+                    const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
+                    const uint32_t a0 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)threadID];
+                    const uint32_t a1 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)threadID];
+                    const uint32_t a2 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+                    const uint32_t a3 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+
+                    float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
+
+                    // Issue BMMA in pairs to increase ILP.
+                    {
+                        int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
+                        int d0 = 0, d1 = 0, d2 = 0, d3 = 0;
+                        asm volatile(
+                            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
+                            "{%0, %1, %2, %3}, "
+                            "{%4, %5, %6, %7}, "
+                            "{%8, %9}, "
+                            "{%0, %1, %2, %3};\n"
+                            : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
+                            : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
+                              "r"(b0_cache[0]), "r"(b1_cache[0]));
+                        asm volatile(
+                            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
+                            "{%0, %1, %2, %3}, "
+                            "{%4, %5, %6, %7}, "
+                            "{%8, %9}, "
+                            "{%0, %1, %2, %3};\n"
+                            : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
+                            : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
+                              "r"(b0_cache[1]), "r"(b1_cache[1]));
+
+                        sum00 = __fmaf_rn(static_cast<float>(c0), bw0_cache[0], sum00);
+                        sum01 = __fmaf_rn(static_cast<float>(c1), bw1_cache[0], sum01);
+                        sum10 = __fmaf_rn(static_cast<float>(c2), bw0_cache[0], sum10);
+                        sum11 = __fmaf_rn(static_cast<float>(c3), bw1_cache[0], sum11);
+                        sum00 = __fmaf_rn(static_cast<float>(d0), bw0_cache[1], sum00);
+                        sum01 = __fmaf_rn(static_cast<float>(d1), bw1_cache[1], sum01);
+                        sum10 = __fmaf_rn(static_cast<float>(d2), bw0_cache[1], sum10);
+                        sum11 = __fmaf_rn(static_cast<float>(d3), bw1_cache[1], sum11);
+                    }
+                    {
+                        int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
+                        int d0 = 0, d1 = 0, d2 = 0, d3 = 0;
+                        asm volatile(
+                            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
+                            "{%0, %1, %2, %3}, "
+                            "{%4, %5, %6, %7}, "
+                            "{%8, %9}, "
+                            "{%0, %1, %2, %3};\n"
+                            : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
+                            : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
+                              "r"(b0_cache[2]), "r"(b1_cache[2]));
+                        asm volatile(
+                            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
+                            "{%0, %1, %2, %3}, "
+                            "{%4, %5, %6, %7}, "
+                            "{%8, %9}, "
+                            "{%0, %1, %2, %3};\n"
+                            : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
+                            : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
+                              "r"(b0_cache[3]), "r"(b1_cache[3]));
+
+                        sum00 = __fmaf_rn(static_cast<float>(c0), bw0_cache[2], sum00);
+                        sum01 = __fmaf_rn(static_cast<float>(c1), bw1_cache[2], sum01);
+                        sum10 = __fmaf_rn(static_cast<float>(c2), bw0_cache[2], sum10);
+                        sum11 = __fmaf_rn(static_cast<float>(c3), bw1_cache[2], sum11);
+                        sum00 = __fmaf_rn(static_cast<float>(d0), bw0_cache[3], sum00);
+                        sum01 = __fmaf_rn(static_cast<float>(d1), bw1_cache[3], sum01);
+                        sum10 = __fmaf_rn(static_cast<float>(d2), bw0_cache[3], sum10);
+                        sum11 = __fmaf_rn(static_cast<float>(d3), bw1_cache[3], sum11);
+                    }
+
+                    acc00 = __fmaf_rn(aw0, sum00, acc00);
+                    acc01 = __fmaf_rn(aw0, sum01, acc01);
+                    acc10 = __fmaf_rn(aw1, sum10, acc10);
+                    acc11 = __fmaf_rn(aw1, sum11, acc11);
+                }
+            }
+
+            if (Sb_full != Sb) {
+                const int j0 = Sb_full;
+                uint32_t b0_cache[JBLOCK];
+                uint32_t b1_cache[JBLOCK];
+                float bw0_cache[JBLOCK];
+                float bw1_cache[JBLOCK];
+
+#pragma unroll
+                for (int jj = 0; jj < JBLOCK; ++jj) {
+                    const int j = j0 + jj;
+                    if (j < Sb) {
+                        const uint32_t* b_col = b_col_base + j * b_slice_stride;
+                        b0_cache[jj] = b_col[threadID];
+                        b1_cache[jj] = b_col[threadID + 4];
+                        bw0_cache[jj] = bw_col0[j];
+                        bw1_cache[jj] = bw_col1[j];
+                    } else {
+                        b0_cache[jj] = 0;
+                        b1_cache[jj] = 0;
+                        bw0_cache[jj] = 0.0f;
+                        bw1_cache[jj] = 0.0f;
+                    }
+                }
+
+                for (int i = 0; i < Sa; ++i) {
+                    const float aw0 = Aw_tile[(size_t)m0 * (size_t)Sa + (size_t)i];
+                    const float aw1 = Aw_tile[(size_t)m1 * (size_t)Sa + (size_t)i];
+
+                    const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
+                    const uint32_t a0 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)threadID];
+                    const uint32_t a1 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)threadID];
+                    const uint32_t a2 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+                    const uint32_t a3 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+
+                    float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
+                    for (int jj = 0; jj < JBLOCK; ++jj) {
+                        const int j = j0 + jj;
+                        if (j >= Sb) break;
+
+                        int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
+                        asm volatile(
+                            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
+                            "{%0, %1, %2, %3}, "
+                            "{%4, %5, %6, %7}, "
+                            "{%8, %9}, "
+                            "{%0, %1, %2, %3};\n"
+                            : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
+                            : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
+                              "r"(b0_cache[jj]), "r"(b1_cache[jj]));
+
+                        sum00 = __fmaf_rn(static_cast<float>(c0), bw0_cache[jj], sum00);
+                        sum01 = __fmaf_rn(static_cast<float>(c1), bw1_cache[jj], sum01);
+                        sum10 = __fmaf_rn(static_cast<float>(c2), bw0_cache[jj], sum10);
+                        sum11 = __fmaf_rn(static_cast<float>(c3), bw1_cache[jj], sum11);
+                    }
+                    acc00 = __fmaf_rn(aw0, sum00, acc00);
+                    acc01 = __fmaf_rn(aw0, sum01, acc01);
+                    acc10 = __fmaf_rn(aw1, sum10, acc10);
+                    acc11 = __fmaf_rn(aw1, sum11, acc11);
+                }
+            }
+        } else {
+            for (int i = 0; i < Sa; ++i) {
+                const float aw0 = Aw_tile[(size_t)m0 * (size_t)Sa + (size_t)i];
+                const float aw1 = Aw_tile[(size_t)m1 * (size_t)Sa + (size_t)i];
+
+                const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
+                const uint32_t a0 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)threadID];
+                const uint32_t a1 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)threadID];
+                const uint32_t a2 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+                const uint32_t a3 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+
+                float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
+                for (int j = 0; j < Sb; ++j) {
+                    const float bw0 = Bw_tile[(size_t)col0 * (size_t)Sb + (size_t)j];
+                    const float bw1 = Bw_tile[(size_t)col1 * (size_t)Sb + (size_t)j];
+
+                    const uint32_t* B_j = B_bits + (size_t)j * (size_t)TN * (size_t)K_STRIDE32;
+                    const uint32_t* B_col = B_j + (size_t)(col_base + groupID) * (size_t)K_STRIDE32;
+                    const uint32_t b0 = B_col[(size_t)threadID];
+                    const uint32_t b1 = B_col[(size_t)(threadID + 4)];
+
+                    int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
+                    asm volatile(
+                        "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
+                        "{%0, %1, %2, %3}, "
+                        "{%4, %5, %6, %7}, "
+                        "{%8, %9}, "
+                        "{%0, %1, %2, %3};\n"
+                        : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
+                        : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
+                          "r"(b0), "r"(b1));
+
+                    sum00 = __fmaf_rn(static_cast<float>(c0), bw0, sum00);
+                    sum01 = __fmaf_rn(static_cast<float>(c1), bw1, sum01);
+                    sum10 = __fmaf_rn(static_cast<float>(c2), bw0, sum10);
+                    sum11 = __fmaf_rn(static_cast<float>(c3), bw1, sum11);
+                }
+                acc00 = __fmaf_rn(aw0, sum00, acc00);
+                acc01 = __fmaf_rn(aw0, sum01, acc01);
+                acc10 = __fmaf_rn(aw1, sum10, acc10);
+                acc11 = __fmaf_rn(aw1, sum11, acc11);
+            }
+        }
+        __syncthreads();
+    }
+
+    const int q_out0 = q0 + m0;
+    const int q_out1 = q0 + m1;
+    const int r_out0 = r0 + col0;
+    const int r_out1 = r0 + col1;
+
+    if (full_q_tile && full_r_tile) {
+        long long gq0 = 0, gq1 = 0;
+        if (threadID == 0) {
+            gq0 = __ldg(&query_indices[q_out0]);
+            gq1 = __ldg(&query_indices[q_out1]);
+        }
+        gq0 = __shfl_sync(0xffffffff, gq0, lane & ~3);
+        gq1 = __shfl_sync(0xffffffff, gq1, lane & ~3);
+
+        long long gr0 = 0, gr1 = 0;
+        if (groupID == 0) {
+            gr0 = __ldg(&key_indices[r_out0]);
+            gr1 = __ldg(&key_indices[r_out1]);
+        }
+        gr0 = __shfl_sync(0xffffffff, gr0, threadID);
+        gr1 = __shfl_sync(0xffffffff, gr1, threadID);
+
+        out_global[(size_t)gq0 * (size_t)R_total + (size_t)gr0] = acc00 * scale_inv;
+        out_global[(size_t)gq0 * (size_t)R_total + (size_t)gr1] = acc01 * scale_inv;
+        out_global[(size_t)gq1 * (size_t)R_total + (size_t)gr0] = acc10 * scale_inv;
+        out_global[(size_t)gq1 * (size_t)R_total + (size_t)gr1] = acc11 * scale_inv;
+    } else {
+        long long gq0 = 0, gq1 = 0;
+        if (threadID == 0) {
+            if (q_out0 < Q) gq0 = __ldg(&query_indices[q_out0]);
+            if (q_out1 < Q) gq1 = __ldg(&query_indices[q_out1]);
+        }
+        gq0 = __shfl_sync(0xffffffff, gq0, lane & ~3);
+        gq1 = __shfl_sync(0xffffffff, gq1, lane & ~3);
+
+        long long gr0 = 0, gr1 = 0;
+        if (groupID == 0) {
+            if (r_out0 < R) gr0 = __ldg(&key_indices[r_out0]);
+            if (r_out1 < R) gr1 = __ldg(&key_indices[r_out1]);
+        }
+        gr0 = __shfl_sync(0xffffffff, gr0, threadID);
+        gr1 = __shfl_sync(0xffffffff, gr1, threadID);
+
+        if (q_out0 < Q && r_out0 < R) {
+            out_global[(size_t)gq0 * (size_t)R_total + (size_t)gr0] = acc00 * scale_inv;
+        }
+        if (q_out0 < Q && r_out1 < R) {
+            out_global[(size_t)gq0 * (size_t)R_total + (size_t)gr1] = acc01 * scale_inv;
+        }
+        if (q_out1 < Q && r_out0 < R) {
+            out_global[(size_t)gq1 * (size_t)R_total + (size_t)gr0] = acc10 * scale_inv;
+        }
+        if (q_out1 < Q && r_out1 < R) {
+            out_global[(size_t)gq1 * (size_t)R_total + (size_t)gr1] = acc11 * scale_inv;
+        }
+    }
+#else
+    (void)A;
+    (void)Aw;
+    (void)Sa;
+    (void)W64;
+    (void)B;
+    (void)Bw;
+    (void)Sb;
+    (void)R;
+    (void)Q;
+    (void)key_indices;
+    (void)query_indices;
+    (void)scale_inv;
+    (void)R_total;
+    (void)out_global;
+#endif
+}
+
+// BMMA TC variant: 32 warps per block (64x64 output tile).
+// Maximizes per-block output work to reduce staging overhead per output.
+extern "C" __global__ __launch_bounds__(1024, 1)
+void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm64_tn64(
+    const unsigned long long* __restrict__ A,    // [Q, Sa, W64]
+    const float* __restrict__ Aw,                // [Q, Sa]
+    int Sa,
+    int W64,
+    const unsigned long long* __restrict__ B,    // [R, Sb, W64]
+    const float* __restrict__ Bw,                // [R, Sb]
+    int Sb,
+    int R,
+    int Q,
+    const long long* __restrict__ key_indices,   // [R]
+    const long long* __restrict__ query_indices, // [Q]
+    float scale_inv,
+    int R_total,
+    float* __restrict__ out_global)
+{
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900)
+    constexpr int TM_TOTAL = 64;
+    constexpr int TM = 16;
+    constexpr int TN = 64;
+    constexpr int WARPS_PER_QTILE = 8; // 64 cols / 8 cols per warp
+    constexpr int QTILES = TM_TOTAL / TM; // 4
+    constexpr int SB_MAX = 16;
+    constexpr int K_BITS = 256;
+    constexpr int K_WORDS64 = K_BITS / 64;   // 4
+    constexpr int K_WORDS32 = K_BITS / 32;   // 8
+    constexpr int K_STRIDE32 = K_WORDS32 + 4; // 12 (padding)
+
+    if (blockDim.x != (WARPS_PER_QTILE * QTILES * 32)) return; // 1024
+    const int lane = threadIdx.x & 31;
+    const int warp_id = threadIdx.x >> 5;          // 0..31
+    const int q_tile_id = warp_id >> 3;            // /8 -> 0..3
+    const int warp_in_tile = warp_id & (WARPS_PER_QTILE - 1); // 0..7
+
+    const int q0 = blockIdx.y * TM_TOTAL;
+    const int r0 = blockIdx.x * TN;
+    const bool full_q_tile = (q0 + TM_TOTAL) <= Q;
+    const bool full_r_tile = (r0 + TN) <= R;
+
+    extern __shared__ unsigned char smem_raw[];
+    uintptr_t p = reinterpret_cast<uintptr_t>(smem_raw);
+    p = (p + 15u) & ~uintptr_t(15u);
+
+    auto* A_bits = reinterpret_cast<uint32_t*>(p); // [Sa, TM_TOTAL, K]
+    p += (size_t)Sa * (size_t)TM_TOTAL * (size_t)K_STRIDE32 * sizeof(uint32_t);
+    auto* B_bits = reinterpret_cast<uint32_t*>(p); // [Sb, TN, K]
+    p += (size_t)Sb * (size_t)TN * (size_t)K_STRIDE32 * sizeof(uint32_t);
+    auto* Aw_tile = reinterpret_cast<float*>(p);   // [TM_TOTAL, Sa]
+    p += (size_t)TM_TOTAL * (size_t)Sa * sizeof(float);
+    auto* Bw_tile = reinterpret_cast<float*>(p);   // [TN, Sb]
+    p += (size_t)TN * (size_t)Sb * sizeof(float);
+    (void)p;
+
+    if (full_q_tile) {
+        for (int idx = threadIdx.x; idx < TM_TOTAL * Sa; idx += blockDim.x) {
+            const int m = idx / Sa;
+            const int i = idx - m * Sa;
+            const int q = q0 + m;
+            Aw_tile[(size_t)m * (size_t)Sa + (size_t)i] = __ldg(&Aw[(size_t)q * (size_t)Sa + (size_t)i]);
+        }
+    } else {
+        for (int idx = threadIdx.x; idx < TM_TOTAL * Sa; idx += blockDim.x) {
+            const int m = idx / Sa;
+            const int i = idx - m * Sa;
+            const int q = q0 + m;
+            Aw_tile[(size_t)m * (size_t)Sa + (size_t)i] =
+                (q < Q) ? __ldg(&Aw[(size_t)q * (size_t)Sa + (size_t)i]) : 0.0f;
+        }
+    }
+    if (full_r_tile) {
+        for (int idx = threadIdx.x; idx < TN * Sb; idx += blockDim.x) {
+            const int n = idx / Sb;
+            const int j = idx - n * Sb;
+            const int r = r0 + n;
+            Bw_tile[(size_t)n * (size_t)Sb + (size_t)j] = __ldg(&Bw[(size_t)r * (size_t)Sb + (size_t)j]);
+        }
+    } else {
+        for (int idx = threadIdx.x; idx < TN * Sb; idx += blockDim.x) {
+            const int n = idx / Sb;
+            const int j = idx - n * Sb;
+            const int r = r0 + n;
+            Bw_tile[(size_t)n * (size_t)Sb + (size_t)j] =
+                (r < R) ? __ldg(&Bw[(size_t)r * (size_t)Sb + (size_t)j]) : 0.0f;
+        }
+    }
+    __syncthreads();
+
+    const int groupID = lane >> 2;            // 0..7
+    const int threadID = lane & 3;            // 0..3
+    const int row0 = groupID;                 // 0..7
+    const int row1 = groupID + 8;             // 8..15
+    const int col_base = warp_in_tile * 8;    // 0..56
+    const int col0 = col_base + threadID * 2; // 0..63 even
+    const int col1 = col0 + 1;                // odd
+    const int m0 = q_tile_id * TM + row0;     // 0..63
+    const int m1 = q_tile_id * TM + row1;     // 0..63
+
+    float acc00 = 0.0f, acc01 = 0.0f, acc10 = 0.0f, acc11 = 0.0f;
+
+    const bool cache_sb = (Sb <= SB_MAX);
+    const float* bw_col0 = Bw_tile + (size_t)col0 * (size_t)Sb;
+    const float* bw_col1 = Bw_tile + (size_t)col1 * (size_t)Sb;
+
+    const int chunks = W64 / K_WORDS64;
+    for (int chunk = 0; chunk < chunks; ++chunk) {
+        // Load A bits for this chunk.
+        if (full_q_tile) {
+            for (int idx = threadIdx.x; idx < TM_TOTAL * Sa * K_WORDS64; idx += blockDim.x) {
+                int t = idx;
+                const int w64_i = t & (K_WORDS64 - 1);
+                t >>= 2;
+                const int m = t & (TM_TOTAL - 1);
+                const int i = t >> 6; // /64
+
+                const int q = q0 + m;
+                const unsigned long long* a_slice = A + ((size_t)q * (size_t)Sa + (size_t)i) * (size_t)W64;
+                const unsigned long long w64 = __ldg(&a_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+                const uint32_t lo = static_cast<uint32_t>(w64);
+                const uint32_t hi = static_cast<uint32_t>(w64 >> 32);
+                const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + (w64_i << 1);
+                A_bits[base] = lo;
+                A_bits[base + 1] = hi;
+            }
+        } else {
+            for (int idx = threadIdx.x; idx < TM_TOTAL * Sa * K_WORDS64; idx += blockDim.x) {
+                int t = idx;
+                const int w64_i = t & (K_WORDS64 - 1);
+                t >>= 2;
+                const int m = t & (TM_TOTAL - 1);
+                const int i = t >> 6; // /64
+
+                uint32_t lo = 0, hi = 0;
+                const int q = q0 + m;
+                if (q < Q) {
+                    const unsigned long long* a_slice = A + ((size_t)q * (size_t)Sa + (size_t)i) * (size_t)W64;
+                    const unsigned long long w64 =
+                        __ldg(&a_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+                    lo = static_cast<uint32_t>(w64);
+                    hi = static_cast<uint32_t>(w64 >> 32);
+                }
+                const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + (w64_i << 1);
+                A_bits[base] = lo;
+                A_bits[base + 1] = hi;
+            }
+        }
+
+        // Load B bits for this chunk.
+        if (full_r_tile) {
+            for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS64; idx += blockDim.x) {
+                int t = idx;
+                const int w64_i = t & (K_WORDS64 - 1);
+                t >>= 2;
+                const int n = t & (TN - 1);
+                const int j = t >> 6; // /64
+
+                const int r = r0 + n;
+                const unsigned long long* b_slice = B + ((size_t)r * (size_t)Sb + (size_t)j) * (size_t)W64;
+                const unsigned long long w64 = __ldg(&b_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+                const uint32_t lo = static_cast<uint32_t>(w64);
+                const uint32_t hi = static_cast<uint32_t>(w64 >> 32);
+                const int base = ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
+                B_bits[base] = lo;
+                B_bits[base + 1] = hi;
+            }
+        } else {
+            for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS64; idx += blockDim.x) {
+                int t = idx;
+                const int w64_i = t & (K_WORDS64 - 1);
+                t >>= 2;
+                const int n = t & (TN - 1);
+                const int j = t >> 6; // /64
+
+                uint32_t lo = 0, hi = 0;
+                const int r = r0 + n;
+                if (r < R) {
+                    const unsigned long long* b_slice = B + ((size_t)r * (size_t)Sb + (size_t)j) * (size_t)W64;
+                    const unsigned long long w64 =
+                        __ldg(&b_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+                    lo = static_cast<uint32_t>(w64);
+                    hi = static_cast<uint32_t>(w64 >> 32);
+                }
+                const int base = ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
+                B_bits[base] = lo;
+                B_bits[base + 1] = hi;
+            }
+        }
+        __syncthreads();
+
+        if (cache_sb) {
+            constexpr int JBLOCK = 4;
+            const int b_slice_stride = TN * K_STRIDE32;
+            const uint32_t* b_col_base = B_bits + (col_base + groupID) * K_STRIDE32;
+            const int Sb_full = Sb & ~(JBLOCK - 1);
+            for (int j0 = 0; j0 < Sb_full; j0 += JBLOCK) {
+                uint32_t b0_cache[JBLOCK];
+                uint32_t b1_cache[JBLOCK];
+                float bw0_cache[JBLOCK];
+                float bw1_cache[JBLOCK];
+
+#pragma unroll
+                for (int jj = 0; jj < JBLOCK; ++jj) {
+                    const uint32_t* b_col = b_col_base + (j0 + jj) * b_slice_stride;
+                    b0_cache[jj] = b_col[threadID];
+                    b1_cache[jj] = b_col[threadID + 4];
+                    bw0_cache[jj] = bw_col0[j0 + jj];
+                    bw1_cache[jj] = bw_col1[j0 + jj];
+                }
+
+                for (int i = 0; i < Sa; ++i) {
+                    const float aw0 = Aw_tile[(size_t)m0 * (size_t)Sa + (size_t)i];
+                    const float aw1 = Aw_tile[(size_t)m1 * (size_t)Sa + (size_t)i];
+
+                    const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
+                    const uint32_t a0 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)threadID];
+                    const uint32_t a1 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)threadID];
+                    const uint32_t a2 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+                    const uint32_t a3 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+
+                    float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
+
+                    {
+                        int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
+                        int d0 = 0, d1 = 0, d2 = 0, d3 = 0;
+                        asm volatile(
+                            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
+                            "{%0, %1, %2, %3}, "
+                            "{%4, %5, %6, %7}, "
+                            "{%8, %9}, "
+                            "{%0, %1, %2, %3};\n"
+                            : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
+                            : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
+                              "r"(b0_cache[0]), "r"(b1_cache[0]));
+                        asm volatile(
+                            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
+                            "{%0, %1, %2, %3}, "
+                            "{%4, %5, %6, %7}, "
+                            "{%8, %9}, "
+                            "{%0, %1, %2, %3};\n"
+                            : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
+                            : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
+                              "r"(b0_cache[1]), "r"(b1_cache[1]));
+
+                        sum00 = __fmaf_rn(static_cast<float>(c0), bw0_cache[0], sum00);
+                        sum01 = __fmaf_rn(static_cast<float>(c1), bw1_cache[0], sum01);
+                        sum10 = __fmaf_rn(static_cast<float>(c2), bw0_cache[0], sum10);
+                        sum11 = __fmaf_rn(static_cast<float>(c3), bw1_cache[0], sum11);
+                        sum00 = __fmaf_rn(static_cast<float>(d0), bw0_cache[1], sum00);
+                        sum01 = __fmaf_rn(static_cast<float>(d1), bw1_cache[1], sum01);
+                        sum10 = __fmaf_rn(static_cast<float>(d2), bw0_cache[1], sum10);
+                        sum11 = __fmaf_rn(static_cast<float>(d3), bw1_cache[1], sum11);
+                    }
+                    {
+                        int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
+                        int d0 = 0, d1 = 0, d2 = 0, d3 = 0;
+                        asm volatile(
+                            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
+                            "{%0, %1, %2, %3}, "
+                            "{%4, %5, %6, %7}, "
+                            "{%8, %9}, "
+                            "{%0, %1, %2, %3};\n"
+                            : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
+                            : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
+                              "r"(b0_cache[2]), "r"(b1_cache[2]));
+                        asm volatile(
+                            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
+                            "{%0, %1, %2, %3}, "
+                            "{%4, %5, %6, %7}, "
+                            "{%8, %9}, "
+                            "{%0, %1, %2, %3};\n"
+                            : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
+                            : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
+                              "r"(b0_cache[3]), "r"(b1_cache[3]));
+
+                        sum00 = __fmaf_rn(static_cast<float>(c0), bw0_cache[2], sum00);
+                        sum01 = __fmaf_rn(static_cast<float>(c1), bw1_cache[2], sum01);
+                        sum10 = __fmaf_rn(static_cast<float>(c2), bw0_cache[2], sum10);
+                        sum11 = __fmaf_rn(static_cast<float>(c3), bw1_cache[2], sum11);
+                        sum00 = __fmaf_rn(static_cast<float>(d0), bw0_cache[3], sum00);
+                        sum01 = __fmaf_rn(static_cast<float>(d1), bw1_cache[3], sum01);
+                        sum10 = __fmaf_rn(static_cast<float>(d2), bw0_cache[3], sum10);
+                        sum11 = __fmaf_rn(static_cast<float>(d3), bw1_cache[3], sum11);
+                    }
+
+                    acc00 = __fmaf_rn(aw0, sum00, acc00);
+                    acc01 = __fmaf_rn(aw0, sum01, acc01);
+                    acc10 = __fmaf_rn(aw1, sum10, acc10);
+                    acc11 = __fmaf_rn(aw1, sum11, acc11);
+                }
+            }
+
+            if (Sb_full != Sb) {
+                const int j0 = Sb_full;
+                uint32_t b0_cache[JBLOCK];
+                uint32_t b1_cache[JBLOCK];
+                float bw0_cache[JBLOCK];
+                float bw1_cache[JBLOCK];
+
+#pragma unroll
+                for (int jj = 0; jj < JBLOCK; ++jj) {
+                    const int j = j0 + jj;
+                    if (j < Sb) {
+                        const uint32_t* b_col = b_col_base + j * b_slice_stride;
+                        b0_cache[jj] = b_col[threadID];
+                        b1_cache[jj] = b_col[threadID + 4];
+                        bw0_cache[jj] = bw_col0[j];
+                        bw1_cache[jj] = bw_col1[j];
+                    } else {
+                        b0_cache[jj] = 0;
+                        b1_cache[jj] = 0;
+                        bw0_cache[jj] = 0.0f;
+                        bw1_cache[jj] = 0.0f;
+                    }
+                }
+
+                for (int i = 0; i < Sa; ++i) {
+                    const float aw0 = Aw_tile[(size_t)m0 * (size_t)Sa + (size_t)i];
+                    const float aw1 = Aw_tile[(size_t)m1 * (size_t)Sa + (size_t)i];
+
+                    const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
+                    const uint32_t a0 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)threadID];
+                    const uint32_t a1 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)threadID];
+                    const uint32_t a2 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+                    const uint32_t a3 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+
+                    float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
+                    for (int jj = 0; jj < JBLOCK; ++jj) {
+                        const int j = j0 + jj;
+                        if (j >= Sb) break;
+
+                        int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
+                        asm volatile(
+                            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
+                            "{%0, %1, %2, %3}, "
+                            "{%4, %5, %6, %7}, "
+                            "{%8, %9}, "
+                            "{%0, %1, %2, %3};\n"
+                            : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
+                            : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
+                              "r"(b0_cache[jj]), "r"(b1_cache[jj]));
+
+                        sum00 = __fmaf_rn(static_cast<float>(c0), bw0_cache[jj], sum00);
+                        sum01 = __fmaf_rn(static_cast<float>(c1), bw1_cache[jj], sum01);
+                        sum10 = __fmaf_rn(static_cast<float>(c2), bw0_cache[jj], sum10);
+                        sum11 = __fmaf_rn(static_cast<float>(c3), bw1_cache[jj], sum11);
+                    }
+                    acc00 = __fmaf_rn(aw0, sum00, acc00);
+                    acc01 = __fmaf_rn(aw0, sum01, acc01);
+                    acc10 = __fmaf_rn(aw1, sum10, acc10);
+                    acc11 = __fmaf_rn(aw1, sum11, acc11);
+                }
+            }
+        } else {
+            for (int i = 0; i < Sa; ++i) {
+                const float aw0 = Aw_tile[(size_t)m0 * (size_t)Sa + (size_t)i];
+                const float aw1 = Aw_tile[(size_t)m1 * (size_t)Sa + (size_t)i];
+
+                const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
+                const uint32_t a0 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)threadID];
+                const uint32_t a1 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)threadID];
+                const uint32_t a2 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+                const uint32_t a3 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+
+                float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
+                for (int j = 0; j < Sb; ++j) {
+                    const float bw0 = Bw_tile[(size_t)col0 * (size_t)Sb + (size_t)j];
+                    const float bw1 = Bw_tile[(size_t)col1 * (size_t)Sb + (size_t)j];
+
+                    const uint32_t* B_j = B_bits + (size_t)j * (size_t)TN * (size_t)K_STRIDE32;
+                    const uint32_t* B_col = B_j + (size_t)(col_base + groupID) * (size_t)K_STRIDE32;
+                    const uint32_t b0 = B_col[(size_t)threadID];
+                    const uint32_t b1 = B_col[(size_t)(threadID + 4)];
+
+                    int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
+                    asm volatile(
+                        "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
+                        "{%0, %1, %2, %3}, "
+                        "{%4, %5, %6, %7}, "
+                        "{%8, %9}, "
+                        "{%0, %1, %2, %3};\n"
+                        : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
+                        : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
+                          "r"(b0), "r"(b1));
+
+                    sum00 = __fmaf_rn(static_cast<float>(c0), bw0, sum00);
+                    sum01 = __fmaf_rn(static_cast<float>(c1), bw1, sum01);
+                    sum10 = __fmaf_rn(static_cast<float>(c2), bw0, sum10);
+                    sum11 = __fmaf_rn(static_cast<float>(c3), bw1, sum11);
+                }
+                acc00 = __fmaf_rn(aw0, sum00, acc00);
+                acc01 = __fmaf_rn(aw0, sum01, acc01);
+                acc10 = __fmaf_rn(aw1, sum10, acc10);
+                acc11 = __fmaf_rn(aw1, sum11, acc11);
+            }
+        }
+        __syncthreads();
+    }
+
+    const int q_out0 = q0 + m0;
+    const int q_out1 = q0 + m1;
+    const int r_out0 = r0 + col0;
+    const int r_out1 = r0 + col1;
+
+    if (full_q_tile && full_r_tile) {
+        long long gq0 = 0, gq1 = 0;
+        if (threadID == 0) {
+            gq0 = __ldg(&query_indices[q_out0]);
+            gq1 = __ldg(&query_indices[q_out1]);
+        }
+        gq0 = __shfl_sync(0xffffffff, gq0, lane & ~3);
+        gq1 = __shfl_sync(0xffffffff, gq1, lane & ~3);
+
+        long long gr0 = 0, gr1 = 0;
+        if (groupID == 0) {
+            gr0 = __ldg(&key_indices[r_out0]);
+            gr1 = __ldg(&key_indices[r_out1]);
+        }
+        gr0 = __shfl_sync(0xffffffff, gr0, threadID);
+        gr1 = __shfl_sync(0xffffffff, gr1, threadID);
+
+        out_global[(size_t)gq0 * (size_t)R_total + (size_t)gr0] = acc00 * scale_inv;
+        out_global[(size_t)gq0 * (size_t)R_total + (size_t)gr1] = acc01 * scale_inv;
+        out_global[(size_t)gq1 * (size_t)R_total + (size_t)gr0] = acc10 * scale_inv;
+        out_global[(size_t)gq1 * (size_t)R_total + (size_t)gr1] = acc11 * scale_inv;
+    } else {
+        long long gq0 = 0, gq1 = 0;
+        if (threadID == 0) {
+            if (q_out0 < Q) gq0 = __ldg(&query_indices[q_out0]);
+            if (q_out1 < Q) gq1 = __ldg(&query_indices[q_out1]);
+        }
+        gq0 = __shfl_sync(0xffffffff, gq0, lane & ~3);
+        gq1 = __shfl_sync(0xffffffff, gq1, lane & ~3);
+
+        long long gr0 = 0, gr1 = 0;
+        if (groupID == 0) {
+            if (r_out0 < R) gr0 = __ldg(&key_indices[r_out0]);
+            if (r_out1 < R) gr1 = __ldg(&key_indices[r_out1]);
+        }
+        gr0 = __shfl_sync(0xffffffff, gr0, threadID);
+        gr1 = __shfl_sync(0xffffffff, gr1, threadID);
+
+        if (q_out0 < Q && r_out0 < R) {
+            out_global[(size_t)gq0 * (size_t)R_total + (size_t)gr0] = acc00 * scale_inv;
+        }
+        if (q_out0 < Q && r_out1 < R) {
+            out_global[(size_t)gq0 * (size_t)R_total + (size_t)gr1] = acc01 * scale_inv;
+        }
+        if (q_out1 < Q && r_out0 < R) {
+            out_global[(size_t)gq1 * (size_t)R_total + (size_t)gr0] = acc10 * scale_inv;
+        }
+        if (q_out1 < Q && r_out1 < R) {
+            out_global[(size_t)gq1 * (size_t)R_total + (size_t)gr1] = acc11 * scale_inv;
+        }
+    }
+#else
+    (void)A;
+    (void)Aw;
+    (void)Sa;
+    (void)W64;
+    (void)B;
+    (void)Bw;
+    (void)Sb;
+    (void)R;
+    (void)Q;
+    (void)key_indices;
+    (void)query_indices;
+    (void)scale_inv;
+    (void)R_total;
+    (void)out_global;
+#endif
+}
+
 template <int SB>
 static inline void launch_w32_sb_kernel(
     const unsigned long long* A,
@@ -2152,6 +3102,7 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
             if (const char* s = getenv("BSI_TC_TM")) {
                 int t = atoi(s);
                 if (t == 32) tc_tm = 32;
+                if (t == 64) tc_tm = 64;
             }
 
             int tc_tn = 32;
@@ -2169,7 +3120,82 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
             int max_shared = (max_shared_optin > max_shared_default) ? max_shared_optin : max_shared_default;
 
             // Choose TC kernel variant.
-            if (tc_tm == 32) {
+            if (tc_tm == 64) {
+                constexpr int TM_TOTAL = 64;
+                if (tc_tn == 64) {
+                    constexpr int TN = 64;
+                    dim3 block_tc(1024, 1, 1);
+                    dim3 grid_tc((R + TN - 1) / TN, (Q + TM_TOTAL - 1) / TM_TOTAL, 1);
+
+                    size_t shared_bytes =
+                        16u +
+                        (size_t)Sa * (size_t)TM_TOTAL * (size_t)K_STRIDE32 * sizeof(uint32_t) +
+                        (size_t)Sb * (size_t)TN * (size_t)K_STRIDE32 * sizeof(uint32_t) +
+                        (size_t)TM_TOTAL * (size_t)Sa * sizeof(float) +
+                        (size_t)TN * (size_t)Sb * sizeof(float);
+
+                    if (shared_bytes <= (size_t)max_shared) {
+                        if (shared_bytes > (size_t)max_shared_default) {
+                            cudaFuncSetAttribute(
+                                popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm64_tn64,
+                                cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                (int)shared_bytes);
+                        }
+                        popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm64_tn64<<<grid_tc, block_tc, shared_bytes, stream>>>(
+                            A,
+                            Aw,
+                            Sa,
+                            W,
+                            B,
+                            Bw,
+                            Sb,
+                            R,
+                            Q,
+                            indices_r,
+                            indices_q,
+                            scale_inv,
+                            R_total,
+                            out_global);
+                        return;
+                    }
+                } else {
+                    constexpr int TN = 32;
+                    dim3 block_tc(512, 1, 1);
+                    dim3 grid_tc((R + TN - 1) / TN, (Q + TM_TOTAL - 1) / TM_TOTAL, 1);
+
+                    size_t shared_bytes =
+                        16u +
+                        (size_t)Sa * (size_t)TM_TOTAL * (size_t)K_STRIDE32 * sizeof(uint32_t) +
+                        (size_t)Sb * (size_t)TN * (size_t)K_STRIDE32 * sizeof(uint32_t) +
+                        (size_t)TM_TOTAL * (size_t)Sa * sizeof(float) +
+                        (size_t)TN * (size_t)Sb * sizeof(float);
+
+                    if (shared_bytes <= (size_t)max_shared) {
+                        if (shared_bytes > (size_t)max_shared_default) {
+                            cudaFuncSetAttribute(
+                                popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm64,
+                                cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                (int)shared_bytes);
+                        }
+                        popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm64<<<grid_tc, block_tc, shared_bytes, stream>>>(
+                            A,
+                            Aw,
+                            Sa,
+                            W,
+                            B,
+                            Bw,
+                            Sb,
+                            R,
+                            Q,
+                            indices_r,
+                            indices_q,
+                            scale_inv,
+                            R_total,
+                            out_global);
+                        return;
+                    }
+                }
+            } else if (tc_tm == 32) {
                 constexpr int TM_TOTAL = 32;
                 if (tc_tn == 64) {
                     constexpr int TN = 64;
