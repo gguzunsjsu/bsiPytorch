@@ -24,6 +24,15 @@ struct BsiVectorCudaData {
     void log(const char* tag = nullptr) const;
 };
 
+struct BsiQueryBatchCudaData {
+    int64_t rows = 0;
+    int slices = 0;
+    int words_per_slice = 0;
+    int offset = 0;
+    torch::Tensor words;         // [Q, slices, words_per_slice]
+    torch::Tensor slice_weights; // [Q, slices]
+};
+
 bool bsi_cuda_should_log();
 
 BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& values,
@@ -37,6 +46,11 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor_hybrid(const torch::Tensor&
                                                             double compress_threshold,
                                                             const torch::Device& device,
                                                             bool verbose = false);
+
+BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& values,
+                                                        int decimal_places,
+                                                        const torch::Device& device,
+                                                        bool verbose = false);
 
 // Exposed for tests/debug: quantise floats to int64 with CPU parity (half-away-from-zero).
 torch::Tensor bsi_cuda_quantize_to_int64(const torch::Tensor& values,

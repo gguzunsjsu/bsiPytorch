@@ -14,7 +14,6 @@ import bsi_ops
 import gc
 import numpy as np
 from typing import Dict, Any, List, Union, Tuple
-from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 
 # Legacy executor unused after batch CUDA builder; keep definitions minimal
@@ -102,8 +101,6 @@ class BSIQuantizedLinear(torch.nn.Module):
         self.dot_output_elements_total = 0
         self.build_ns_total = 0  # optional: track Python-side build time if desired
         self.build_calls = 0
-        self._query_cache: OrderedDict = OrderedDict()
-        self.max_query_cache = 512
         # optional stats collection flag toggled by helpers
         self.collect_stats = False
 
@@ -114,32 +111,6 @@ class BSIQuantizedLinear(torch.nn.Module):
         self.max_abs_error = 0.0
         self.samples_tracked = 0
 
-    def clear_query_cache(self):
-        self._query_cache.clear()
-
-    def _query_cache_key(self, tensor: torch.Tensor):
-        storage = tensor.untyped_storage()
-        return (
-            int(storage.data_ptr()),
-            tensor.storage_offset(),
-            tensor.numel(),
-            str(tensor.dtype),
-            tensor.device.type,
-            int(tensor._version)
-        )
-
-    def _query_cache_get(self, key):
-        entry = self._query_cache.get(key)
-        if entry is not None:
-            self._query_cache.move_to_end(key)
-        return entry
-
-    def _query_cache_set(self, key, value):
-        cache = self._query_cache
-        cache[key] = value
-        cache.move_to_end(key)
-        if len(cache) > self.max_query_cache:
-            cache.popitem(last=False)
 
     def forward(self, x):
         original_device = x.device
@@ -149,8 +120,6 @@ class BSIQuantizedLinear(torch.nn.Module):
             x = x.view(-1, x.shape[-1])
         x = x.to(torch.float32)
 
-        output_list = []
-        dense_outputs = None
         dot_ns_this_forward = 0
         
         # Debug printing gated by `self.verbose` to avoid overhead in benchmarks
@@ -200,11 +169,6 @@ class BSIQuantizedLinear(torch.nn.Module):
             s0 = scores_2d[0]
             print(f"  After adding bias (first row): min={s0.min():.4f}, max={s0.max():.4f}, mean={s0.mean():.4f}")
 
-        for i in range(batch_size):
-            output_list.append(scores_2d[i])
-
-            # No CPU accuracy comparisons in GPU-only mode
-        
         # Mark that we've printed debug info
         if debug_first:
             self._debug_printed = True
@@ -213,7 +177,7 @@ class BSIQuantizedLinear(torch.nn.Module):
         self.dot_ns_total += dot_ns_this_forward
         self.dot_calls += 1
 
-        output = torch.stack(output_list)
+        output = scores_2d
 
         # No CPU accuracy summary in GPU-only mode
 
@@ -231,7 +195,6 @@ def reset_bsi_dot_counters(model: nn.Module):
             m.build_calls = 0
             m.dot_query_vectors_total = 0
             m.dot_output_elements_total = 0
-            m.clear_query_cache()
 
 def sum_bsi_dot_counters(model: nn.Module) -> int:
     total = 0

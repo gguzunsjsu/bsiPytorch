@@ -91,6 +91,18 @@ static int bsi_cuda_r_tile() {
     return cached;
 }
 
+static bool bsi_cuda_query_batch() {
+    static int cached = -1;
+    if (cached >= 0) return cached != 0;
+    int v = 1; // default on
+    if (const char* s = std::getenv("BSI_QUERY_BATCH")) {
+        int t = std::atoi(s);
+        v = (t != 0) ? 1 : 0;
+    }
+    cached = v;
+    return cached != 0;
+}
+
 // --- GPU prebuilt keys (device-packed words) ---
 struct KeyMeta {
     int S = 0;
@@ -193,6 +205,42 @@ static pybind11::list build_bsi_queries_cuda_batch(torch::Tensor q2d, int decima
     bool verbose = bsi_cuda_should_log();
     const auto Q = q2d.size(0);
     pybind11::list out;
+    if (bsi_cuda_query_batch()) {
+        auto batch = build_bsi_queries_cuda_batch_data(q2d.detach(), decimalPlaces, device, verbose);
+        const int S = batch.slices;
+        const int W = batch.words_per_slice;
+        auto words = batch.words.contiguous();
+        auto weights = batch.slice_weights.contiguous();
+        for (int64_t qi = 0; qi < Q; ++qi) {
+            auto* holder = new PrebuiltBSIQueryCUDA();
+            holder->vec = nullptr;
+            holder->S = S;
+            holder->W = W;
+            holder->dev_words = words[qi];
+            holder->slice_weights = weights[qi];
+            holder->mem_bytes = static_cast<size_t>(holder->dev_words.numel() * holder->dev_words.element_size());
+            holder->device_view.rows = static_cast<int64_t>(q2d.size(1));
+            holder->device_view.slices = S;
+            holder->device_view.words_per_slice = W;
+            holder->device_view.offset = batch.offset;
+            holder->device_view.decimals = decimalPlaces;
+            holder->device_view.twos_complement = false;
+            holder->device_view.words = holder->dev_words;
+
+            pybind11::capsule cap(holder, "PrebuiltBSIQueryCUDA",
+                [](PyObject* capsule) {
+                    auto* p = reinterpret_cast<PrebuiltBSIQueryCUDA*>(PyCapsule_GetPointer(capsule, "PrebuiltBSIQueryCUDA"));
+                    if (p) {
+                        delete p->vec;
+                        delete p;
+                    }
+                }
+            );
+            out.append(cap);
+        }
+        return out;
+    }
+
     for (int64_t qi = 0; qi < Q; ++qi) {
         auto row = q2d[qi].detach();
         auto* holder = new PrebuiltBSIQueryCUDA();
@@ -499,8 +547,8 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
             TORCH_CHECK(Wb == holder->W, "word count mismatch while building CUDA keys");
             holder->device_views.push_back(dev_view);
             holder->dev_words.push_back(dev_view.words);
-            holder->slice_weights.push_back(make_slice_weights_cuda(Sb, bsi_k->offset, bsi_k->twosComplement));
-            KeyMeta meta; meta.S = Sb; meta.offset = bsi_k->offset; meta.twos = bsi_k->twosComplement; meta.decimals = bsi_k->decimals;
+            holder->slice_weights.push_back(make_slice_weights_cuda(Sb, dev_view.offset, dev_view.twos_complement));
+            KeyMeta meta; meta.S = Sb; meta.offset = dev_view.offset; meta.twos = dev_view.twos_complement; meta.decimals = bsi_k->decimals;
             holder->metas.push_back(meta);
             total_mem += bsi_k->getSizeInMemory();
             delete bsi_k;

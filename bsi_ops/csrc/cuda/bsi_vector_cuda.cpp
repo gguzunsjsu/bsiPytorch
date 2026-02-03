@@ -37,10 +37,41 @@ inline torch::Tensor make_words_tensor(const std::vector<uint64_t>& words,
         .clone()
         .to(device, /*non_blocking=*/true);
 }
+
+inline torch::Tensor make_slice_weights_cuda_local(int S,
+                                                   int offset,
+                                                   bool twos,
+                                                   const torch::Device& device) {
+    std::vector<float> host(S);
+    for (int i = 0; i < S; ++i) {
+        int shift = offset + i;
+        long double w = (shift >= 0) ? std::ldexp(1.0L, shift) : 0.0L;
+        if (twos && i == S - 1) {
+            w = -w;
+        }
+        host[i] = static_cast<float>(w);
+    }
+    return torch::from_blob(
+               host.data(),
+               {S},
+               torch::TensorOptions().dtype(torch::kFloat32))
+        .clone()
+        .to(device, /*non_blocking=*/true);
+}
 } // namespace
 
 extern "C" void launch_pack_bits_all_ballot(
     const long long* values,
+    long long n,
+    int slices,
+    int words_per_slice,
+    unsigned long long value_mask,
+    unsigned long long* out,
+    cudaStream_t stream);
+
+extern "C" void launch_pack_bits_all_ballot_batch(
+    const long long* values,
+    int Q,
     long long n,
     int slices,
     int words_per_slice,
@@ -123,7 +154,7 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& input,
 
     bool any_non_zero = (rows > 0) && scaled.ne(0).any().item<bool>();
     bool has_negative = (rows > 0) && scaled.lt(0).any().item<bool>();
-    bool all_zero = (rows > 0) && !any_non_zero;
+    // all_zero is unused; keep any_non_zero for early exits only.
 
     long long max_abs = 0;
     if (any_non_zero) {
@@ -166,6 +197,7 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& input,
             reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(words)),
             stream.stream());
     }
+
 
     BsiVectorCudaData data;
     data.rows = rows;
@@ -229,6 +261,7 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor_hybrid(const torch::Tensor&
             reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(words)),
             stream.stream());
     }
+
 
     // Per-slice popcounts and compress flags on device
     auto slice_counts = torch::empty({stored_slices}, torch::dtype(torch::kInt64).device(device));
@@ -299,6 +332,75 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor_hybrid(const torch::Tensor&
     if (verbose || bsi_cuda_should_log()) data.log("build_bsi_vector_from_float_tensor_hybrid");
     return data;
 }
+
+BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& input,
+                                                        int decimal_places,
+                                                        const torch::Device& device,
+                                                        bool verbose) {
+    TORCH_CHECK(input.dim() == 2, "build_bsi_queries_cuda_batch_data expects 2D tensor [Q, d]");
+    auto scaled = bsi_cuda_quantize_to_int64(input, decimal_places, device);
+    const int64_t Q = scaled.size(0);
+    const int64_t d = scaled.size(1);
+
+    bool any_non_zero = (Q > 0) && scaled.ne(0).any().item<bool>();
+    long long max_abs = 0;
+    if (any_non_zero) {
+        max_abs = scaled.abs().max().item<int64_t>();
+    }
+    int magnitude_bits = any_non_zero
+        ? std::max(1, static_cast<int>(std::bit_width(static_cast<unsigned long long>(max_abs))))
+        : 1;
+    int total_slices = std::min(64, magnitude_bits + 2);
+    if (!any_non_zero) {
+        total_slices = 2;
+    }
+
+    int offset = 0;
+    int slices = std::max(1, total_slices);
+    const int words_per_slice = (d > 0) ? static_cast<int>((d + 63) / 64) : 1;
+
+    auto words = torch::zeros({Q, slices, words_per_slice},
+                              torch::TensorOptions().dtype(torch::kInt64).device(device));
+
+    if (Q > 0 && d > 0) {
+        unsigned long long value_mask = (slices >= 64)
+            ? ~0ULL
+            : ((1ULL << slices) - 1ULL);
+        auto stream = at::cuda::getCurrentCUDAStream();
+        auto* scaled_ptr = tensor_data_ptr<int64_t>(scaled);
+        launch_pack_bits_all_ballot_batch(
+            reinterpret_cast<const long long*>(scaled_ptr),
+            static_cast<int>(Q),
+            static_cast<long long>(d),
+            slices,
+            words_per_slice,
+            value_mask,
+            reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(words)),
+            stream.stream());
+    }
+
+    auto neg_flags = (Q > 0) ? scaled.lt(0).any(1) : torch::zeros({Q}, torch::TensorOptions().dtype(torch::kBool).device(device));
+    auto weights_unsigned = make_slice_weights_cuda_local(slices, offset, false, device);
+    auto weights_twos = make_slice_weights_cuda_local(slices, offset, true, device);
+    auto slice_weights = torch::where(neg_flags.unsqueeze(1), weights_twos, weights_unsigned);
+
+    BsiQueryBatchCudaData out;
+    out.rows = Q;
+    out.slices = slices;
+    out.words_per_slice = words_per_slice;
+    out.offset = offset;
+    out.words = words;
+    out.slice_weights = slice_weights;
+
+    if (verbose || bsi_cuda_should_log()) {
+        std::cout << "[BSI_CUDA] build_bsi_queries_cuda_batch_data: "
+                  << "Q=" << Q
+                  << " slices=" << slices
+                  << " words_per_slice=" << words_per_slice
+                  << std::endl;
+    }
+    return out;
+}
 BsiVectorCudaData create_bsi_vector_cuda_from_cpu(const BsiVector<uint64_t>& src,
                                                   const torch::Device& device,
                                                   bool verbose) {
@@ -306,12 +408,13 @@ BsiVectorCudaData create_bsi_vector_cuda_from_cpu(const BsiVector<uint64_t>& src
     int slices = 0;
     int words_per_slice = 0;
     bsi_flatten_words_gpu_helper<uint64_t>(src, words, slices, words_per_slice);
+    int offset = src.offset;
 
     BsiVectorCudaData data;
     data.rows = src.getNumberOfRows();
     data.slices = slices;
     data.words_per_slice = words_per_slice;
-    data.offset = src.offset;
+    data.offset = offset;
     data.decimals = src.decimals;
     data.twos_complement = src.twosComplement;
     data.words = make_words_tensor(words, slices, words_per_slice, device);
