@@ -22,3 +22,5 @@ reports/
 *.so
 .DS_Store
 .ipynb_checkpoints/
+install.log
+*.ncu-rep
