@@ -8,14 +8,7 @@ R="${2:-8192}"
 D="${3:-2048}"
 OUT="${4:-ncu_tc_full}"
 
-KERNEL_NAME="popcount_weighted_keys_literal_fused_bmma_tc_kernel"
-if [[ "${BSI_TC_TM}" == "32" && "${BSI_TC_TN}" == "64" ]]; then
-  KERNEL_NAME="popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_tn64"
-elif [[ "${BSI_TC_TM}" == "32" ]]; then
-  KERNEL_NAME="popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32"
-elif [[ "${BSI_TC_TN}" == "64" ]]; then
-  KERNEL_NAME="popcount_weighted_keys_literal_fused_bmma_tc_kernel_tn64"
-fi
+KERNEL_NAME="popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32"
 
 BSI_TC_DOT=1 bsi_run ncu --set full --target-processes all \
   -k "${KERNEL_NAME}" \
