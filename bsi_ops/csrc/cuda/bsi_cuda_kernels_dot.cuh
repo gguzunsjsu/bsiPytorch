@@ -1567,8 +1567,6 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     int use_tc = 0;
     if (const char* s = getenv("BSI_TC_DOT")) use_tc = (atoi(s) != 0) ? 1 : 0;
     if (use_tc) {
-        // BMMA (1-bit MMA with AND+POPC) is available on H100+ (SM90+). Keep a runtime
-        // guard so we can still build fatbins / run on older GPUs using the existing kernels.
         static int cached_tc_ok = -1;
         if (cached_tc_ok < 0) {
             int dev = 0;
