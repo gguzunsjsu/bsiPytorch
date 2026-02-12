@@ -1955,11 +1955,11 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                 if (shared_bytes <= (size_t)max_shared) {
                     if (shared_bytes > (size_t)max_shared_default) {
                         cudaFuncSetAttribute(
-                            popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32,
+                            popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_updated,
                             cudaFuncAttributeMaxDynamicSharedMemorySize,
                             (int)shared_bytes);
                     }
-                    popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32<<<grid_tc, block_tc, shared_bytes, stream>>>(
+                    popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_updated<<<grid_tc, block_tc, shared_bytes, stream>>>(
                         A,
                         Aw,
                         Sa,
