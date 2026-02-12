@@ -46,11 +46,13 @@ def get_device():
 class BSIQuantizedLinear(torch.nn.Module):
     """BSI quantized linear layer using prebuilt BSI keys for efficiency and diagnostics."""
 
-    def __init__(self, original_linear, decimalPlaces=2, compress_threshold=0.2, query_threshold=None, prefer_cuda: bool=True):
+    def __init__(self, original_linear, decimalPlaces=2, compress_threshold=0.2, query_threshold=None,
+                 prefer_cuda: bool=True, key_storage_mode: str="verbatim"):
         super().__init__()
         self.decimalPlaces = int(decimalPlaces)
         self.compress_threshold = float(compress_threshold)
         self.query_compress_threshold = float(query_threshold) if query_threshold is not None else float(compress_threshold)
+        self.key_storage_mode = str(key_storage_mode).strip().lower()
 
         self.in_features = original_linear.in_features
         self.out_features = original_linear.out_features
@@ -80,7 +82,10 @@ class BSIQuantizedLinear(torch.nn.Module):
             # Build keys directly on CUDA (verbatim layout)
             # Always pass CPU tensor to the CPU builder; it will prepack to CUDA internally
             self._bsi_keys_cuda, total_mem_bytes, num_keys, d, W = bsi_ops.build_bsi_keys_cuda(
-                self.weight_fp32, self.decimalPlaces, float(self.compress_threshold)
+                self.weight_fp32,
+                self.decimalPlaces,
+                float(self.compress_threshold),
+                self.key_storage_mode,
             )
             assert num_keys == self.out_features and d == self.in_features
             self.weight_bsi_memory_bytes = int(total_mem_bytes)
@@ -279,6 +284,7 @@ def summarize_bsi_model(model: nn.Module) -> Dict[str, Any]:
                 "out_features": module.out_features,
                 "decimalPlaces": module.decimalPlaces,
                 "compress_threshold": module.compress_threshold,
+                "key_storage_mode": getattr(module, "key_storage_mode", "verbatim"),
                 "weight_bsi_bytes": module.weight_bsi_memory_bytes,
                 "weight_dense_bytes": module.weight_dense_memory_bytes,
                 "bias_bytes": module.bias_memory_bytes,
@@ -389,7 +395,9 @@ def _resolve_layer_value(config: Union[float, Dict[str, float]], layer_kind: str
     return float(config)
 
 
-def quantize_model_bsi(model, decimalPlaces=2, skip_lm_head=True, scope='all', compress_threshold=0.2, prefer_cuda: bool=False):
+def quantize_model_bsi(model, decimalPlaces=2, skip_lm_head=True, scope='all',
+                       compress_threshold=0.2, prefer_cuda: bool=False,
+                       key_storage_mode: str="verbatim"):
     """Replace linear layers with BSI quantized versions.
 
     scope options:
@@ -428,9 +436,22 @@ def quantize_model_bsi(model, decimalPlaces=2, skip_lm_head=True, scope='all', c
             layer_kind = 'attention' if is_attention_linear(name) else 'mlp' if is_mlp_linear(name) else 'other'
             decimal_layer = _resolve_layer_value(decimal_config, layer_kind, default_decimal)
             threshold_layer = _resolve_layer_value(threshold_config, layer_kind, default_threshold)
-            setattr(parent, module_name, BSIQuantizedLinear(module, decimalPlaces=decimal_layer, compress_threshold=threshold_layer, prefer_cuda=prefer_cuda))
+            setattr(
+                parent,
+                module_name,
+                BSIQuantizedLinear(
+                    module,
+                    decimalPlaces=decimal_layer,
+                    compress_threshold=threshold_layer,
+                    prefer_cuda=prefer_cuda,
+                    key_storage_mode=key_storage_mode,
+                ),
+            )
             layer_count += 1
-    print(f"Quantized {layer_count} linear layers to BSI with decimalPlaces={decimal_config} (scope={scope})")
+    print(
+        f"Quantized {layer_count} linear layers to BSI with decimalPlaces={decimal_config} "
+        f"(scope={scope}, key_storage_mode={key_storage_mode})"
+    )
     return model
 
 class Evaluator:

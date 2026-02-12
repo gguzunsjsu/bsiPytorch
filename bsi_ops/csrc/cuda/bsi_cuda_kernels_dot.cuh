@@ -1476,6 +1476,179 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
 #endif
 }
 
+__device__ __forceinline__
+int popcount_and_literal_ewah_slice_scalar(
+    const unsigned long long* __restrict__ a_row,
+    int W,
+    const unsigned long long* __restrict__ ewah_words,
+    int ewah_len)
+{
+    const unsigned long long RUNLEN_MASK = (1ULL << 32) - 1ULL;
+    int idx = 0;
+    int out_w = 0;
+    int sum = 0;
+
+    while (idx < ewah_len && out_w < W) {
+        const unsigned long long rlw = ewah_words[idx++];
+        const int run_bit = (rlw & 1ULL) ? 1 : 0;
+        const int run_len = static_cast<int>((rlw >> 1) & RUNLEN_MASK);
+        const int lit_words = static_cast<int>(rlw >> (1 + 32));
+
+        if (run_bit) {
+            int run_stop = out_w + run_len;
+            if (run_stop > W) run_stop = W;
+            for (int w = out_w; w < run_stop; ++w) {
+                sum += __popcll(a_row[w]);
+            }
+        }
+        out_w += run_len;
+        if (out_w >= W) continue;
+
+        int lit_take = lit_words;
+        const int room = W - out_w;
+        if (lit_take > room) lit_take = room;
+
+        for (int k = 0; k < lit_take && idx < ewah_len; ++k) {
+            const unsigned long long bw = ewah_words[idx++];
+            sum += __popcll(a_row[out_w] & bw);
+            ++out_w;
+        }
+
+        int skip = lit_words - lit_take;
+        if (skip > 0) {
+            idx += skip;
+            if (idx > ewah_len) idx = ewah_len;
+        }
+    }
+    return sum;
+}
+
+// Hybrid-keys path: query slices are literal; key slices may be literal or EWAH.
+// For compressed key slices, lane0 decodes RLW stream and computes slice popcount
+// directly against literal query words without full slice materialization.
+extern "C" __global__
+void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_hybrid_keys(
+    const unsigned long long* __restrict__ A,    // [Q, Sa, W]
+    const float* __restrict__ Aw,                // [Q, Sa]
+    int Sa,
+    int W,
+    const unsigned long long* __restrict__ B,    // [R, Sb, W] (literal fallback for uncompressed slices)
+    const float* __restrict__ Bw,                // [R, Sb]
+    int Sb,
+    int R,
+    int Q,
+    int q_tile,
+    int r_tile,
+    const unsigned char* __restrict__ B_comp_flags, // [R, Sb], 1=compressed
+    const unsigned long long* __restrict__ B_comp_words, // flat EWAH words
+    const long long* __restrict__ B_comp_off,    // [R, Sb]
+    const int* __restrict__ B_comp_len,          // [R, Sb]
+    const long long* __restrict__ key_indices,   // [R]
+    const long long* __restrict__ query_indices, // [Q]
+    float scale_inv,
+    int R_total,
+    float* __restrict__ out_global)
+{
+    extern __shared__ unsigned char shmem[];
+    int r_block = blockIdx.x;
+    int q_block = blockIdx.y;
+    const int tile_q = (q_tile > 0) ? q_tile : 1;
+    const int tile_r = (r_tile > 0) ? r_tile : 1;
+    const int q_start = q_block * tile_q;
+    const int r_start = r_block * tile_r;
+    if (q_start >= Q) return;
+
+    const int lane = threadIdx.x & 31;
+    const int warp_id = threadIdx.x >> 5;
+    const int num_warps = (blockDim.x + 31) >> 5;
+
+    unsigned long long* A_sh = reinterpret_cast<unsigned long long*>(shmem);
+    unsigned long long* B_sh = A_sh + (size_t)Sa * (size_t)W;
+    float* Aw_sh = reinterpret_cast<float*>(B_sh + (size_t)tile_r * (size_t)Sb * (size_t)W);
+    float* Bw_sh = Aw_sh + Sa;
+
+    // Stage key tiles once per block (shared across q within q_tile).
+    for (int tr = 0; tr < tile_r; ++tr) {
+        int r = r_start + tr;
+        if (r >= R) continue;
+        const unsigned long long* B_base = B + ((size_t)r * (size_t)Sb * (size_t)W);
+        const float* Bw_base = Bw + ((size_t)r * (size_t)Sb);
+        const unsigned char* flag_row = B_comp_flags + ((size_t)r * (size_t)Sb);
+        for (int idx = threadIdx.x; idx < Sb * W; idx += blockDim.x) {
+            const int j = idx / W;
+            unsigned long long word = 0ULL;
+            if (__ldg(flag_row + j) == 0) {
+                word = __ldg(B_base + idx);
+            }
+            B_sh[(size_t)tr * (size_t)Sb * (size_t)W + (size_t)idx] = word;
+        }
+        for (int idx = threadIdx.x; idx < Sb; idx += blockDim.x) {
+            Bw_sh[(size_t)tr * (size_t)Sb + (size_t)idx] = __ldg(Bw_base + idx);
+        }
+    }
+    __syncthreads();
+
+    int q_end = q_start + tile_q;
+    if (q_end > Q) q_end = Q;
+    for (int q = q_start; q < q_end; ++q) {
+        const long long global_q = __ldg(&query_indices[q]);
+        const unsigned long long* A_base = A + ((size_t)q * (size_t)Sa * (size_t)W);
+        const float* Aw_base = Aw + ((size_t)q * (size_t)Sa);
+
+        for (int idx = threadIdx.x; idx < Sa * W; idx += blockDim.x) {
+            A_sh[idx] = __ldg(&A_base[idx]);
+        }
+        for (int idx = threadIdx.x; idx < Sa; idx += blockDim.x) {
+            Aw_sh[idx] = __ldg(&Aw_base[idx]);
+        }
+        __syncthreads();
+
+        for (int out_idx = warp_id; out_idx < tile_r; out_idx += num_warps) {
+            const int r = r_start + out_idx;
+            if (r >= R) continue;
+            const long long global_r = __ldg(&key_indices[r]);
+
+            const unsigned long long* b_row_lit =
+                B_sh + (size_t)out_idx * (size_t)Sb * (size_t)W;
+            const float* bw_row = Bw_sh + (size_t)out_idx * (size_t)Sb;
+            const unsigned char* flag_row = B_comp_flags + ((size_t)r * (size_t)Sb);
+            const long long* off_row = B_comp_off + ((size_t)r * (size_t)Sb);
+            const int* len_row = B_comp_len + ((size_t)r * (size_t)Sb);
+
+            float local = 0.0f;
+            for (int i = 0; i < Sa; ++i) {
+                const float aw = Aw_sh[i];
+                const unsigned long long* a_row = A_sh + (size_t)i * (size_t)W;
+                for (int j = 0; j < Sb; ++j) {
+                    const float coeff = aw * bw_row[j];
+                    if (__ldg(flag_row + j) == 0) {
+                        const unsigned long long* b_lit = b_row_lit + (size_t)j * (size_t)W;
+                        for (int w = lane; w < W; w += 32) {
+                            local += static_cast<float>(__popcll(a_row[w] & b_lit[w])) * coeff;
+                        }
+                    } else if (lane == 0) {
+                        const int len = __ldg(len_row + j);
+                        if (len > 0) {
+                            const long long off = __ldg(off_row + j);
+                            const unsigned long long* ewah = B_comp_words + (size_t)off;
+                            const int cnt = popcount_and_literal_ewah_slice_scalar(a_row, W, ewah, len);
+                            local += static_cast<float>(cnt) * coeff;
+                        }
+                    }
+                }
+            }
+
+            local = warp_reduce_sum_float(local);
+            if (lane == 0) {
+                out_global[(size_t)global_q * (size_t)R_total + (size_t)global_r] = local * scale_inv;
+            }
+        }
+        if (q + 1 < q_end) {
+            __syncthreads();
+        }
+    }
+}
+
 template <int SB>
 static inline void launch_w32_sb_kernel(
     const unsigned long long* A,
@@ -1836,4 +2009,119 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
         popcount_weighted_keys_literal_fused_multiq_kernel<<<grid, block, shared_bytes, stream>>>(
             A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r, indices_r, indices_q, scale_inv, R_total, out_global);
     }
+}
+
+extern "C" void launch_popcount_weighted_keys_literal_fused_multiq_hybrid_keys(
+    const unsigned long long* A,
+    const float* Aw,
+    int Sa,
+    int W,
+    const unsigned long long* B,
+    const float* Bw,
+    int Sb,
+    int R,
+    int Q,
+    int q_tile,
+    int r_tile,
+    const unsigned char* B_comp_flags,
+    const unsigned long long* B_comp_words,
+    const long long* B_comp_off,
+    const int* B_comp_len,
+    const long long* indices_r,
+    const long long* indices_q,
+    float scale_inv,
+    int R_total,
+    float* out_global,
+    cudaStream_t stream)
+{
+    static int cached_block = 0;
+    if (cached_block == 0) {
+        int v = 256;
+        if (const char* s = getenv("BSI_CK_BLOCK")) {
+            int t = atoi(s);
+            if (t > 0) v = t;
+        }
+        if (v < 64) v = 64;
+        if (v > 1024) v = 1024;
+        cached_block = (v / 32) * 32;
+        if (cached_block == 0) cached_block = 32;
+    }
+
+    int tile_q = (q_tile > 0) ? q_tile : 1;
+    int tile_r = (r_tile > 0) ? r_tile : 1;
+
+    int dev = 0;
+    cudaGetDevice(&dev);
+    int max_shared_default = 0;
+    int max_shared_optin = 0;
+    cudaDeviceGetAttribute(&max_shared_default, cudaDevAttrMaxSharedMemoryPerBlock, dev);
+    cudaDeviceGetAttribute(&max_shared_optin, cudaDevAttrMaxSharedMemoryPerBlockOptin, dev);
+    int max_shared = (max_shared_optin > max_shared_default) ? max_shared_optin : max_shared_default;
+
+    int tile_r_eff = tile_r;
+    size_t shared_bytes = 0;
+    while (tile_r_eff > 0) {
+        shared_bytes =
+            ((size_t)Sa * (size_t)W +
+             (size_t)tile_r_eff * (size_t)Sb * (size_t)W) * sizeof(unsigned long long) +
+            ((size_t)Sa + (size_t)tile_r_eff * (size_t)Sb) * sizeof(float);
+        if (shared_bytes <= (size_t)max_shared) break;
+        tile_r_eff = (tile_r_eff + 1) / 2;
+        if (tile_r_eff == tile_r) {
+            tile_r_eff = tile_r - 1;
+        }
+    }
+
+    if (tile_r_eff <= 0 || shared_bytes > (size_t)max_shared) {
+        // Fallback to literal kernel path (valid because literal B words are retained).
+        launch_popcount_weighted_keys_literal_fused_multiq(
+            A,
+            Aw,
+            Sa,
+            W,
+            B,
+            Bw,
+            Sb,
+            R,
+            Q,
+            q_tile,
+            r_tile,
+            indices_r,
+            indices_q,
+            scale_inv,
+            R_total,
+            out_global,
+            stream);
+        return;
+    }
+
+    dim3 block(cached_block);
+    dim3 grid((R + tile_r_eff - 1) / tile_r_eff, (Q + tile_q - 1) / tile_q);
+    if (shared_bytes > (size_t)max_shared_default) {
+        cudaFuncSetAttribute(
+            popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_hybrid_keys,
+            cudaFuncAttributeMaxDynamicSharedMemorySize,
+            (int)shared_bytes);
+    }
+    popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_hybrid_keys<<<grid, block, shared_bytes, stream>>>(
+        A,
+        Aw,
+        Sa,
+        W,
+        B,
+        Bw,
+        Sb,
+        R,
+        Q,
+        tile_q,
+        tile_r_eff,
+        B_comp_flags,
+        B_comp_words,
+        B_comp_off,
+        B_comp_len,
+        indices_r,
+        indices_q,
+        scale_inv,
+        R_total,
+        out_global);
 }

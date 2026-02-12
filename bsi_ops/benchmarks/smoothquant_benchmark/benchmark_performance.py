@@ -1,94 +1,146 @@
-import torch
-from transformers import AutoTokenizer, OPTForCausalLM
-from smoothquant.opt import Int8OPTForCausalLM
+import argparse
 import gc
-from torch.nn.functional import pad
+import sys
+from pathlib import Path
+
+import torch
 from datasets import load_dataset
+from transformers import AutoTokenizer, OPTForCausalLM
 
-class Evaluator:
-    def __init__(self, dataset, tokenizer, device='cuda'):
-        self.dataset = dataset
-        self.tokenizer = tokenizer
-        self.device = device
-        self.dataset = self.dataset.map(self.tokenize_function, batched=True)
-        self.dataset.set_format(type='torch', columns=['input_ids'])
 
-    def tokenize_function(self, examples):
-        return self.tokenizer(examples['text'])
+THIS_FILE = Path(__file__).resolve()
+BENCH_ROOT = THIS_FILE.parents[1]
+if str(BENCH_ROOT) not in sys.path:
+    sys.path.append(str(BENCH_ROOT))
 
-    @torch.no_grad()
-    def evaluate(self, model):
-        model.eval()
-        total, hit = 0, 0
-        latency = 0
+from benchmark_performance_bsi import Evaluator, get_device, normalize_model_name  # noqa: E402
+try:
+    from smoothquant.opt import Int8OPTForCausalLM
+except Exception:  # pragma: no cover - optional dependency
+    Int8OPTForCausalLM = None
 
-        torch.cuda.reset_peak_memory_stats()
 
-        for batch in self.dataset:
-            input_ids = batch['input_ids'].to(self.device).unsqueeze(0)
-            label = input_ids[:, -1]
-            pad_len = 512 - input_ids.shape[1]
-            input_ids = pad(input_ids, (0, pad_len), value=1)
+def _auto_smoothquant_name(model_name: str) -> str:
+    # facebook/opt-1.3b -> mit-han-lab/opt-1.3b-smoothquant
+    base = model_name.split("/")[-1]
+    return f"mit-han-lab/{base}-smoothquant"
 
-            start = torch.cuda.Event(enable_timing=True)
-            end = torch.cuda.Event(enable_timing=True)
-            torch.cuda.synchronize()
 
-            start.record()
-            outputs = model(input_ids)
-            end.record()
+def _load_baseline(model_name: str, device: str, base_dtype: str):
+    dtype = torch.float16 if (device == "cuda" and base_dtype == "fp16") else torch.float32
+    device_map = "auto" if device == "cuda" else "cpu"
+    return OPTForCausalLM.from_pretrained(model_name, torch_dtype=dtype, device_map=device_map)
 
-            torch.cuda.synchronize()
-            latency += start.elapsed_time(end)
 
-            last_token_logits = outputs.logits[:, -2-pad_len, :]
-            pred = last_token_logits.argmax(dim=-1)
-            total += label.size(0)
-            hit += (pred == label).sum().item()
+def _print_result(tag: str, top1: float, top5: float, fwd_ms: float, dot_ms: float, dot_q_us: float, dot_s_ns: float, peak_mb: float):
+    print(
+        f"-> {tag}: top1={top1:.4f}, top5={top5:.4f}, avg_fwd={fwd_ms:.3f}ms, "
+        f"dot={dot_ms:.3f}ms, dot_q={dot_q_us:.3f}us, dot_s={dot_s_ns:.3f}ns, peak_mem={peak_mb:.2f}MB"
+    )
 
-        accuracy = hit / total
-        avg_latency = latency / len(self.dataset)
-        peak_memory = torch.cuda.max_memory_allocated() / (1024**2)
 
-        return accuracy, avg_latency, peak_memory
+def main() -> None:
+    p = argparse.ArgumentParser(description="Apples-to-apples FP baseline vs SmoothQuant benchmark")
+    p.add_argument("--model_name", type=str, default="facebook/opt-1.3b")
+    p.add_argument("--smoothquant_model_name", type=str, default="",
+                   help="HF model id for SmoothQuant INT8. Default auto-maps from --model_name.")
+    p.add_argument("--dataset", type=str, default="lambada")
+    p.add_argument("--split", type=str, default="validation")
+    p.add_argument("--num_samples", type=int, default=200)
+    p.add_argument("--max_seq_len", type=int, default=512)
+    p.add_argument("--device", type=str, choices=["auto", "cpu", "cuda"], default="auto")
+    p.add_argument("--base_dtype", type=str, choices=["fp16", "fp32"], default="fp16")
+    p.add_argument("--skip_baseline", action="store_true")
+    p.add_argument("--run_bsi", action="store_true", help="Also run BSI with the same evaluator path")
+    p.add_argument("--decimal_places", type=int, default=2)
+    p.add_argument("--compress_threshold", type=float, default=0.5)
+    p.add_argument("--scope", type=str, choices=["all", "attention", "mlp"], default="all")
+    p.add_argument("--bsi_device", type=str, choices=["auto", "cpu", "cuda"], default="auto")
+    p.add_argument("--key_storage_mode", type=str, choices=["verbatim", "hybrid"], default="verbatim")
+    args = p.parse_args()
 
-def print_model_size(model):
-    param_size = 0
-    for param in model.parameters():
-        param_size += param.nelement() * param.element_size()
-    buffer_size = 0
-    for buffer in model.buffers():
-        buffer_size += buffer.nelement() * buffer.element_size()
-    size_all_mb = (param_size + buffer_size) / 1024**2
-    print(f'Model static size: {size_all_mb:.3f}MB')
+    model_name = normalize_model_name(args.model_name)
+    sq_model_name = args.smoothquant_model_name.strip() or _auto_smoothquant_name(model_name)
+    device = get_device() if args.device == "auto" else args.device
 
-def main():
-    # --- Models changed to 30b ---
-    fp16_model_name = 'facebook/opt-30b'
-    int8_model_name = 'mit-han-lab/opt-30b-smoothquant'
+    split_expr = f"{args.split}[:{args.num_samples}]" if args.num_samples > 0 else args.split
+    print(f"Dataset: {args.dataset} | Split: {split_expr} | Device: {device}")
+    print(f"Baseline model: {model_name}")
+    print(f"SmoothQuant model: {sq_model_name}")
 
-    print("Initializing tokenizer and dataset...")
-    tokenizer = AutoTokenizer.from_pretrained(fp16_model_name)
-    dataset = load_dataset('lambada', split='validation[:1000]')
-    evaluator = Evaluator(dataset, tokenizer)
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    dataset = load_dataset(args.dataset, split=split_expr)
+    evaluator = Evaluator(dataset, tokenizer, device=device, max_seq_len=args.max_seq_len)
 
-    # --- FP16 Benchmark ---
-    print(f"\n--- Benchmarking FP16 model: {fp16_model_name} ---")
-    model_fp16 = OPTForCausalLM.from_pretrained(fp16_model_name, torch_dtype=torch.float16, device_map='auto')
-    print_model_size(model_fp16)
-    acc_fp16, latency_fp16, mem_fp16 = evaluator.evaluate(model_fp16)
-    print(f'-> FP16 Accuracy: {acc_fp16:.4f}, Avg Latency: {latency_fp16:.3f}ms, Peak Memory: {mem_fp16:.2f}MB')
+    if not args.skip_baseline:
+        print(f"\n--- Benchmarking FP baseline: {model_name} ---")
+        model_fp = _load_baseline(model_name, device=device, base_dtype=args.base_dtype)
+        (
+            acc_fp,
+            top5_fp,
+            latency_fp,
+            mem_fp,
+            dot_fp_ms,
+            dot_fp_q_us,
+            dot_fp_s_ns,
+        ) = evaluator.evaluate(model_fp, scope="all")
+        _print_result("FP baseline", acc_fp, top5_fp, latency_fp, dot_fp_ms, dot_fp_q_us, dot_fp_s_ns, mem_fp)
+        del model_fp
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
-    del model_fp16
-    gc.collect()
-    torch.cuda.empty_cache()
+    print(f"\n--- Benchmarking SmoothQuant INT8: {sq_model_name} ---")
+    if Int8OPTForCausalLM is None:
+        raise RuntimeError(
+            "smoothquant package is unavailable. Install SmoothQuant dependencies before running this benchmark."
+        )
 
-    # --- SmoothQuant INT8 Benchmark ---
-    print(f"\n--- Benchmarking SmoothQuant INT8 model: {int8_model_name} ---")
-    model_smoothquant = Int8OPTForCausalLM.from_pretrained(int8_model_name, device_map='auto')
-    print_model_size(model_smoothquant)
-    acc_smoothquant, latency_smoothquant, mem_smoothquant = evaluator.evaluate(model_smoothquant)
-    print(f'-> SmoothQuant INT8 Accuracy: {acc_smoothquant:.4f}, Avg Latency: {latency_smoothquant:.3f}ms, Peak Memory: {mem_smoothquant:.2f}MB')
+    model_sq = Int8OPTForCausalLM.from_pretrained(
+        sq_model_name,
+        device_map="auto" if device == "cuda" else "cpu",
+    )
+    (
+        acc_sq,
+        top5_sq,
+        latency_sq,
+        mem_sq,
+        dot_sq_ms,
+        dot_sq_q_us,
+        dot_sq_s_ns,
+    ) = evaluator.evaluate(model_sq, scope="all")
+    _print_result("SmoothQuant INT8", acc_sq, top5_sq, latency_sq, dot_sq_ms, dot_sq_q_us, dot_sq_s_ns, mem_sq)
 
-if __name__ == '__main__':
+    if args.run_bsi:
+        print("\n--- Benchmarking BSI (same evaluator setup) ---")
+        model_bsi = OPTForCausalLM.from_pretrained(
+            model_name,
+            torch_dtype=torch.float16 if args.base_dtype == "fp16" else torch.float32,
+            device_map="cpu",
+        )
+        (
+            acc_bsi,
+            fwd_bsi,
+            build_bsi,
+            dot_bsi,
+            dot_q_bsi,
+            dot_s_bsi,
+            top5_bsi,
+            _summary,
+            _layer_stats,
+        ) = evaluator.evaluate_with_bsi(
+            model_bsi,
+            decimal_cfg=args.decimal_places,
+            scope=args.scope,
+            threshold_cfg=float(args.compress_threshold),
+            bsi_device=args.bsi_device,
+            key_storage_mode=args.key_storage_mode,
+        )
+        print(
+            f"-> BSI: top1={acc_bsi:.4f}, top5={top5_bsi:.4f}, avg_fwd={fwd_bsi:.3f}ms, "
+            f"build={build_bsi:.3f}ms, dot={dot_bsi:.3f}ms, dot_q={dot_q_bsi:.3f}us, dot_s={dot_s_bsi:.3f}ns"
+        )
+
+
+if __name__ == "__main__":
     main()

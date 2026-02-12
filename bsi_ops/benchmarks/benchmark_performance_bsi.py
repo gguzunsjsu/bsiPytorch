@@ -139,15 +139,26 @@ class Evaluator:
         return self.tokenizer(examples['text'])
 
     @torch.no_grad()
-    def evaluate_with_bsi(self, model, decimal_cfg=2, scope='all', threshold_cfg=0.2, bsi_device: str='auto'):
+    def evaluate_with_bsi(self, model, decimal_cfg=2, scope='all', threshold_cfg=0.2,
+                          bsi_device: str='auto', key_storage_mode: str='verbatim'):
         """Evaluate model with actual BSI quantization."""
         model.eval()
         total, hit = 0, 0
         latency = 0
 
-        print(f"Quantizing model with BSI (decimal_places={decimal_cfg}, scope={scope}, device={bsi_device})...")
+        print(
+            f"Quantizing model with BSI (decimal_places={decimal_cfg}, scope={scope}, "
+            f"device={bsi_device}, key_storage_mode={key_storage_mode})..."
+        )
         prefer_cuda = (bsi_device == 'cuda') or (bsi_device == 'auto' and torch.cuda.is_available())
-        model = quantize_model_bsi(model, decimalPlaces=decimal_cfg, scope=scope, compress_threshold=threshold_cfg, prefer_cuda=prefer_cuda)
+        model = quantize_model_bsi(
+            model,
+            decimalPlaces=decimal_cfg,
+            scope=scope,
+            compress_threshold=threshold_cfg,
+            prefer_cuda=prefer_cuda,
+            key_storage_mode=key_storage_mode,
+        )
         summary = summarize_bsi_model(model)
         reset_bsi_dot_counters(model)
         if summary["total_bsi_bytes"] == 0:
@@ -504,7 +515,7 @@ def write_report(report_dir, run_cfg, fp16_static_mb, results):
     with open(os.path.join(report_dir, f"layers_{stamp}.csv"), "w", newline="") as f:
         w = csv.writer(f)
         # Report sizes in MB and include FP16 per-layer weight size
-        w.writerow(["name","in","out","decimalPlaces","compress_threshold",
+        w.writerow(["name","in","out","decimalPlaces","compress_threshold","key_storage_mode",
                     "bsi_weight_mb","bsi_disk_mb","dense_weight_mb","fp16_weight_mb",
                     "bias_mb","total_slices","compressed_slices","verbatim_slices",
                     "compressed_pct","verbatim_pct"])
@@ -522,6 +533,7 @@ def write_report(report_dir, run_cfg, fp16_static_mb, results):
             w.writerow([
                 L["name"], L["in_features"], L["out_features"],
                 L["decimalPlaces"], L["compress_threshold"],
+                L.get("key_storage_mode", "verbatim"),
                 f"{bsi_mb:.4f}", f"{bsi_disk_mb:.4f}", f"{dense_mb:.4f}", f"{fp16_mb:.4f}",
                 f"{bias_mb:.4f}",
                 L.get("weight_total_slices",0),
@@ -581,6 +593,8 @@ def main():
         help='Print per-layer slice compression summary (default: off)')
     parser.add_argument('--bsi_device', type=str, choices=['auto','cpu','cuda'], default='auto',
         help='Preferred device for BSI dot kernels (auto=CUDA if available)')
+    parser.add_argument('--key_storage_mode', type=str, choices=['verbatim', 'hybrid'], default='verbatim',
+        help='Storage/compute mode for CUDA BSI keys (verbatim keeps current BMMA path; hybrid enables compressed-key dot path)')
     
     args = parser.parse_args()
 
@@ -731,7 +745,8 @@ def main():
                         model_bsi,
                         decimalPlaces=decimal_cfg,
                         scope=args.scope,
-                        compress_threshold=threshold_global_cfg
+                        compress_threshold=threshold_global_cfg,
+                        key_storage_mode=args.key_storage_mode,
                     )
                     summary = summarize_bsi_model(model_bsi)
                     # Compute full-model static size (MB): params+buffers+BSI weight bytes
@@ -764,6 +779,7 @@ def main():
                         "name": name,
                         "decimal": dec,
                         "scope": args.scope,
+                        "key_storage_mode": args.key_storage_mode,
                         "accuracy_top1": None,
                         "accuracy_top5": None,
                         "avg_forward_ms": None,
@@ -782,7 +798,8 @@ def main():
                         with open(args.simple_report_txt, 'a') as tf:
                             stamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
                             tf.write(
-                                f"[{stamp}] dataset={dataset_name} model={fp16_model_name} scope={args.scope} dec={dec} thr={args.compress_threshold} base_dtype={args.base_dtype} "
+                                f"[{stamp}] dataset={dataset_name} model={fp16_model_name} scope={args.scope} dec={dec} "
+                                f"thr={args.compress_threshold} key_storage={args.key_storage_mode} base_dtype={args.base_dtype} "
                                 f"base_full_mb={base_full_static_mb:.4f} bsi_full_mb={bsi_full_total_mb:.4f} compression_full={base_full_static_mb / bsi_full_total_mb if bsi_full_total_mb > 0 else 0:.4f}\n"
                             )
                 else:
@@ -793,7 +810,8 @@ def main():
                         decimal_cfg,
                         scope=args.scope,
                         threshold_cfg=threshold_global_cfg,
-                        bsi_device=args.bsi_device
+                        bsi_device=args.bsi_device,
+                        key_storage_mode=args.key_storage_mode,
                     )
                     # Model is quantized in-place; optionally persist keysets
                     if args.save_bsi_dir:
@@ -845,6 +863,7 @@ def main():
                         "name": name,
                         "decimal": dec,
                         "scope": args.scope,
+                        "key_storage_mode": args.key_storage_mode,
                         "accuracy_top1": acc_bsi,
                         "accuracy_top5": top5_acc,
                         "avg_forward_ms": fwd_ms,
@@ -867,7 +886,8 @@ def main():
                         with open(args.simple_report_txt, 'a') as tf:
                             stamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
                             tf.write(
-                                f"[{stamp}] dataset={dataset_name} model={fp16_model_name} scope={args.scope} dec={dec} thr={args.compress_threshold} base_dtype={args.base_dtype} "
+                                f"[{stamp}] dataset={dataset_name} model={fp16_model_name} scope={args.scope} dec={dec} "
+                                f"thr={args.compress_threshold} key_storage={args.key_storage_mode} base_dtype={args.base_dtype} "
                                 f"base_full_mb={base_full_static_mb:.4f} bsi_full_mb={bsi_full_total_mb:.4f} compression_full={base_full_static_mb / bsi_full_total_mb if bsi_full_total_mb > 0 else 0:.4f} "
                                 f"top1={acc_bsi:.4f} top5={top5_acc:.4f} fwd_ms={fwd_ms:.3f} build_ms={build_ms:.3f} dot_ms={dot_ms:.3f} "
                                 f"dot_q_us={dot_q_us:.3f} dot_s_ns={dot_s_ns:.3f}\n"
@@ -895,6 +915,7 @@ def main():
                     "scope": args.scope,
                     "decimal_places": args.decimal_places,
                     "compress_threshold": args.compress_threshold,
+                    "key_storage_mode": args.key_storage_mode,
                     "layer_stats_batches": args.layer_stats_batches,
                     "memory_only": args.memory_only,
                     "base_dtype": args.base_dtype

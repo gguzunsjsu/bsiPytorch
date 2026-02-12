@@ -13,6 +13,9 @@ def main() -> None:
     parser.add_argument("--D", type=int, default=2048, help="input dimension")
     parser.add_argument("--decimal_places", type=int, default=2)
     parser.add_argument("--compress_threshold", type=float, default=0.5)
+    parser.add_argument("--key_storage_mode", type=str, choices=["verbatim", "hybrid"], default="verbatim")
+    parser.add_argument("--hybrid_dot", type=int, choices=[0, 1], default=None,
+                        help="Override BSI_HYBRID_DOT (only meaningful with key_storage_mode=hybrid)")
     parser.add_argument("--warmup", type=int, default=5)
     parser.add_argument("--iters", type=int, default=20)
     parser.add_argument("--seed", type=int, default=123)
@@ -28,8 +31,14 @@ def main() -> None:
 
     # Build random keys on CPU (builder moves to CUDA internally)
     K = torch.randn(args.R, args.D, dtype=torch.float32, device="cpu")
+    if args.hybrid_dot is not None:
+        import os
+        os.environ["BSI_HYBRID_DOT"] = str(int(args.hybrid_dot))
     keys_cap, _, _, _, _ = bsi_ops.build_bsi_keys_cuda(
-        K, args.decimal_places, float(args.compress_threshold)
+        K,
+        args.decimal_places,
+        float(args.compress_threshold),
+        args.key_storage_mode,
     )
 
     # Build random queries on CUDA
