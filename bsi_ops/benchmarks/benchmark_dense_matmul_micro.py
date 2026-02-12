@@ -17,7 +17,7 @@ def _parse_dtype(s: str) -> torch.dtype:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Microbench dense torch matmul (baseline for BSI dot): out = QxD @ (RxD)^T -> QxR"
+        description="Microbench torch dot Q@K.T"
     )
     parser.add_argument("--Q", type=int, default=512, help="number of query vectors (rows)")
     parser.add_argument("--R", type=int, default=8192, help="number of keys / output columns")
@@ -44,7 +44,7 @@ def main() -> None:
 
     # Match the baseline linear path: y = x @ W^T.
     # - queries: [Q, D]
-    # - keys:    [R, D]  (think weight rows)
+    # - keys:    [R, D]  
     queries = torch.randn(args.Q, args.D, device=device, dtype=dtype)
     keys = torch.randn(args.R, args.D, device=device, dtype=dtype)
 
@@ -56,8 +56,9 @@ def main() -> None:
     start = torch.cuda.Event(enable_timing=True)
     end = torch.cuda.Event(enable_timing=True)
 
+    nvtx_handle = None
     if args.nvtx:
-        torch.cuda.nvtx.range_push("dense_matmul_timed")
+        nvtx_handle = torch.cuda.nvtx.range_start("dense_matmul_timed")
     t0 = time.perf_counter()
     start.record()
     out = None
@@ -67,9 +68,8 @@ def main() -> None:
     torch.cuda.synchronize()
     t1 = time.perf_counter()
     if args.nvtx:
-        torch.cuda.nvtx.range_pop()
+        torch.cuda.nvtx.range_end(nvtx_handle)
 
-    # Prevent accidental dead-code elimination in future refactors.
     if out is None:
         raise RuntimeError("matmul did not run")
 
@@ -86,4 +86,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
