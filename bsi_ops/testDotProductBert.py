@@ -10,7 +10,7 @@ print('import works')  # just to verify against import errors
 
 # Load the triplets from the saved pickle file
 # pickle_file_weights_stored_path = './hpcBERTTrainDataDotProduct/output_39882/bertVectors/bertVectors_9.pkl'
-with open('/home/poorna/Desktop/RA BSI/bsi_pytorch/bsiPytorch/bsi_ops/extract_tensors/Weight_Processing/bert_imdb_pickle_store/bert_imdb45.pkl', 'rb') as f:
+with open('extract_tensors/Weight_Processing/bert_imdb_pickle_store/bert_imdb45.pkl', 'rb') as f:
     triplets = pickle.load(f)
 print("BERT triplets loaded from the pickle file")
 # List to store dot products for each layer
@@ -27,6 +27,9 @@ k_flat_histograms = []
 # Number of runs for averaging
 num_runs = 5
 
+# Number of decimal places for BSI dot product
+decimal_places = 1
+
 # Create a text file for saving the results
 output_text_file = './hpcBERTTrainDataDotProduct/results/imdb_initial/torch_32/all/bert_imdb_e0_pf31_6bit.txt'
 os.makedirs('./hpcBERTTrainDataDotProduct/results/imdb_initial/torch_32/all/', exist_ok=True)
@@ -34,6 +37,7 @@ os.makedirs(os.path.dirname(output_text_file), exist_ok=True)
 bsi_values = []
 normal_values = []
 percentage_error_values = []
+layer_compression_summary = []
 with open(output_text_file, 'w') as text_file:
     # Iterate through each layer's triplets
     for i, triplet in enumerate(triplets, 1):
@@ -59,10 +63,39 @@ with open(output_text_file, 'w') as text_file:
 
         # Print the shape and size of  of the flattened tensors
         print(f"Layer {i} - Q shape: {Q_flat.shape}, K shape: {K_flat.shape}, V shape: {V_flat.shape}")
+
+        compress_threshold = 0.2
+        q_stats = bsi_ops.tensor_slice_stats(Q_flat, decimal_places, compress_threshold)
+        k_stats = bsi_ops.tensor_slice_stats(K_flat, decimal_places, compress_threshold)
+        v_stats = bsi_ops.tensor_slice_stats(V_flat, decimal_places, compress_threshold)
+
+        q_summary = (q_stats['compressed_slices'], q_stats['total_slices'])
+        k_summary = (k_stats['compressed_slices'], k_stats['total_slices'])
+        v_summary = (v_stats['compressed_slices'], v_stats['total_slices'])
+        layer_total_compressed = q_summary[0] + k_summary[0] + v_summary[0]
+        layer_total_slices = q_summary[1] + k_summary[1] + v_summary[1]
+        layer_total_pct = (layer_total_compressed * 100.0 / layer_total_slices) if layer_total_slices else 0.0
+
+        print(
+            f"  Q compressed: {q_stats['compressed_pct']:.2f}% "
+            f"({q_summary[0]}/{q_summary[1]})"
+        )
+        print(
+            f"  K compressed: {k_stats['compressed_pct']:.2f}% "
+            f"({k_summary[0]}/{k_summary[1]})"
+        )
+        print(
+            f"  V compressed: {v_stats['compressed_pct']:.2f}% "
+            f"({v_summary[0]}/{v_summary[1]})"
+        )
+        print(
+            f"  Layer total compressed: {layer_total_pct:.2f}% "
+            f"({layer_total_compressed}/{layer_total_slices})"
+        )
         # Calculate the total size of each tensor in bytes using sys.getsizeof
-        Q_size = sys.getsizeof(Q_flat.untyped_storage()) + sys.getsizeof(Q_flat) #storage() is being deprecated. so used untyped_storage()
-        K_size = sys.getsizeof(K_flat.untyped_storage()) + sys.getsizeof(K_flat)
-        V_size = sys.getsizeof(V_flat.untyped_storage()) + sys.getsizeof(V_flat)
+        Q_size = Q_flat.nelement() * Q_flat.element_size() #storage() is being deprecated. so used untyped_storage()
+        K_size = K_flat.nelement() * K_flat.element_size()
+        V_size = V_flat.nelement() * V_flat.element_size()
 
         # Convert sizes to kilobytes (optional)
         Q_size_kb = Q_size / 1024
@@ -70,13 +103,14 @@ with open(output_text_file, 'w') as text_file:
         V_size_kb = V_size / 1024
 
         # precision_factor = 38; #changed name from conversion_factor to precision_factor. Changed value to 10^31 -- Initially it is 31 -> 6bits
-        precision_factor = 15
+        precision_factor = 31
         custom_exec_times = []
         torch_exec_times = []
         vector_exec_times = []
         for _ in range(num_runs):
             #res, time_taken, bsiQ, bsiK = bsi_ops.dot_product(Q_flat, K_flat, precision_factor)
-            res, time_taken, bsiSizeQ, bsiSizeK     = bsi_ops.dot_product(Q_flat, K_flat, precision_factor) #bsi dot product
+            # res, time_taken, bsiSizeQ, bsiSizeK     = bsi_ops.dot_product(Q_flat, K_flat, precision_factor) #bsi dot product
+            res, time_taken, bsiSizeQ, bsiSizeK = bsi_ops.dot_product_decimal(Q_flat, K_flat, decimal_places) #bsi dot product with decimal places
             # res, time_taken, bsiSizeQ, bsiSizeK     = bsi_ops.dot_product_without_compression(Q_flat, K_flat, precision_factor)/ #bsi dot product without compression
             custom_exec_times.append(time_taken/1e9)
             start_time = time.time()
@@ -105,6 +139,22 @@ with open(output_text_file, 'w') as text_file:
         text_file.write(f"K size: {K_size} bytes\n")
         text_file.write(f"Q size in MB: {Q_size/(1024*1024)} MB\n")
         text_file.write(f"K size in MB: {K_size/(1024*1024)} MB\n")
+        text_file.write(
+            f"Q compressed: {q_stats['compressed_slices']}/{q_stats['total_slices']} "
+            f"({q_stats['compressed_pct']:.2f}%)\n"
+        )
+        text_file.write(
+            f"K compressed: {k_stats['compressed_slices']}/{k_stats['total_slices']} "
+            f"({k_stats['compressed_pct']:.2f}%)\n"
+        )
+        text_file.write(
+            f"V compressed: {v_stats['compressed_slices']}/{v_stats['total_slices']} "
+            f"({v_stats['compressed_pct']:.2f}%)\n"
+        )
+        text_file.write(
+            f"Layer total compressed: {layer_total_compressed}/{layer_total_slices}"
+            f" ({layer_total_pct:.2f}%)\n"
+        )
         #bsiSizeQ = sys.getsizeof(bsiQ)
         #bsiSizeK = sys.getsizeof(bsiK)
         #bsiSizeK = 0
@@ -125,7 +175,49 @@ with open(output_text_file, 'w') as text_file:
                         f'percentage error: {percentage_error}%\n')
         text_file.write(f"Time taken for BSI operation: {custom_avg_time}\n Time taken for torch operation: {torch_avg_time}\n")
         text_file.write('\n')
+
+        layer_compression_summary.append({
+            "layer": i,
+            "q": q_summary,
+            "k": k_summary,
+            "v": v_summary,
+            "total": (layer_total_compressed, layer_total_slices)
+        })
 print(f"Results saved to {output_text_file}")
+
+if layer_compression_summary:
+    total_compressed = sum(entry["total"][0] for entry in layer_compression_summary)
+    total_slices = sum(entry["total"][1] for entry in layer_compression_summary)
+    overall_pct = (total_compressed * 100.0 / total_slices) if total_slices else 0.0
+    print("\n=== Compression Summary ===")
+    for entry in layer_compression_summary:
+        layer = entry["layer"]
+        compressed, total = entry["total"]
+        pct = (compressed * 100.0 / total) if total else 0.0
+        print(
+            f"Layer {layer}: {compressed}/{total} ({pct:.2f}%) | "
+            f"Q {entry['q'][0]}/{entry['q'][1]}, "
+            f"K {entry['k'][0]}/{entry['k'][1]}, V {entry['v'][0]}/{entry['v'][1]}"
+        )
+    print(
+        f"Overall compressed slices: {total_compressed}/{total_slices} "
+        f"({overall_pct:.2f}%)"
+    )
+    with open(output_text_file, 'a') as summary_file:
+        summary_file.write("=== Compression Summary ===\n")
+        for entry in layer_compression_summary:
+            layer = entry["layer"]
+            compressed, total = entry["total"]
+            pct = (compressed * 100.0 / total) if total else 0.0
+            summary_file.write(
+                f"Layer {layer}: {compressed}/{total} ({pct:.2f}%) | "
+                f"Q {entry['q'][0]}/{entry['q'][1]}, "
+                f"K {entry['k'][0]}/{entry['k'][1]}, V {entry['v'][0]}/{entry['v'][1]}\n"
+            )
+        summary_file.write(
+            f"Overall compressed slices: {total_compressed}/{total_slices} "
+            f"({overall_pct:.2f}%)\n\n"
+        )
 
 #Create visualization
 # layer_numbers = list(range(1, 7))

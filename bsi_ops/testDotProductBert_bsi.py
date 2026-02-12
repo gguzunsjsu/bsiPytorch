@@ -13,7 +13,7 @@ print('import works')  # just to verify against import errors
 
 # Load the triplets from the saved pickle file
 # pickle_file_weights_stored_path = './hpcBERTTrainDataDotProduct/output_39882/bertVectors/bertVectors_9.pkl'
-with open('/home/poorna/Desktop/RA BSI/bsi_pytorch/bsiPytorch/bsi_ops/extract_tensors/Weight_Processing/bert_imdb_pickle_store/bert_imdb45.pkl', 'rb') as f:
+with open('extract_tensors/Weight_Processing/bert_imdb_pickle_store/bert_imdb45.pkl', 'rb') as f:
     triplets = pickle.load(f)
 # print("BERT triplets loaded from the pickle file")
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -30,6 +30,9 @@ k_flat_histograms = []
 # Number of runs for averaging
 num_runs = 5
 
+# Number of decimal places for BSI dot product
+decimal_places = 2
+
 # Create a text file for saving the results
 output_text_file = ('./hpcBERTTrainDataDotProduct/results/imdb_e30/bsi_runs/bert_imdb_e45_pf31_6bit.txt')
 weight_epoch_using = 45
@@ -39,6 +42,7 @@ bsi_values = []
 with open(output_text_file, 'w') as text_file:
     # Iterate through each layer's triplets
     for i, triplet in enumerate(triplets, 1):
+        print(f"Processing layer {i}")
         Q, K, V = triplet
         # Flatten the tensors to 1D using reshape
         Q_flat = Q.reshape(-1)
@@ -83,14 +87,15 @@ with open(output_text_file, 'w') as text_file:
         32: 2^31-1
         64: 2^64
         """
-        precision_factor = 7
+        precision_factor = 31
         bits_using = math.log2((precision_factor+1))+1
         # print(f"Bits using by the bsi is {bits_using}")
         custom_exec_times = []
 
         for _ in range(num_runs):
             #res, time_taken, bsiQ, bsiK = bsi_ops.dot_product(Q_flat, K_flat, precision_factor)
-            res, time_taken, bsiSizeQ, bsiSizeK = bsi_ops.dot_product(Q_flat, K_flat, precision_factor) #bsi dot product
+            # res, time_taken, bsiSizeQ, bsiSizeK = bsi_ops.dot_product(Q_flat, K_flat, precision_factor) #bsi dot product
+            res, time_taken, bsiSizeQ, bsiSizeK = bsi_ops.dot_product_decimal(Q_flat, K_flat, decimal_places) #bsi dot product with decimal places
             # print(f"Layer {i} bsiSizeQ {bsiSizeQ} bsiSizeK {bsiSizeK}")
             # res, time_taken, bsiSizeQ, bsiSizeK     = bsi_ops.dot_product_without_compression(Q_flat, K_flat, precision_factor)/ #bsi dot product without compression
             custom_exec_times.append(time_taken/1e9)

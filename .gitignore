@@ -16,3 +16,11 @@
 *bert_imdb
 *pickle_files
 *weights
+saved_bsi/
+reports/
+*.png
+*.so
+.DS_Store
+.ipynb_checkpoints/
+install.log
+*.ncu-rep
