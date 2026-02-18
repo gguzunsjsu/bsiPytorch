@@ -8,6 +8,7 @@
 
 #include <c10/cuda/CUDAStream.h>
 #include <ATen/ops/bitwise_right_shift.h>
+#include <ATen/ops/clamp.h>
 #include <ATen/ops/floor.h>
 #include <ATen/ops/where.h>
 
@@ -122,6 +123,30 @@ bool bsi_cuda_should_log() {
     return cached;
 }
 
+int bsi_cuda_fixed_bits() {
+    static int cached = []() {
+        const char* s = std::getenv("BSI_FIXED_BITS");
+        if (s == nullptr) return 0;
+        int v = std::atoi(s);
+        if (v <= 0) return 0;
+        if (v < 2) v = 2;
+        if (v > 63) v = 63;
+        return v;
+    }();
+    return cached;
+}
+
+static inline int choose_total_slices(bool any_non_zero, long long max_abs) {
+    const int fixed_bits = bsi_cuda_fixed_bits();
+    if (fixed_bits > 0) {
+        return fixed_bits;
+    }
+    const int magnitude_bits = any_non_zero
+        ? std::max(1, static_cast<int>(std::bit_width(static_cast<unsigned long long>(max_abs))))
+        : 1;
+    return any_non_zero ? std::min(64, magnitude_bits + 2) : 2;
+}
+
 static void maybe_log_scaled(const torch::Tensor& scaled);
 
 void BsiVectorCudaData::log(const char* tag) const {
@@ -161,14 +186,10 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& input,
         max_abs = scaled.abs().max().item<int64_t>();
     }
 
-    int magnitude_bits = any_non_zero
-        ? std::max(1, static_cast<int>(std::bit_width(static_cast<unsigned long long>(max_abs))))
-        : 1;
-    int total_slices = std::min(64, magnitude_bits + 2);
+    int total_slices = choose_total_slices(any_non_zero, max_abs);
 
     if (!any_non_zero) {
-        // Match CPU decimals builder: slices = bit_width(0) + 2 = 2
-        total_slices = 2;
+        total_slices = choose_total_slices(false, 0);
         has_negative = false;
     }
 
@@ -233,12 +254,9 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor_hybrid(const torch::Tensor&
     if (any_non_zero) {
         max_abs = scaled.abs().max().item<int64_t>();
     }
-    int magnitude_bits = any_non_zero
-        ? std::max(1, static_cast<int>(std::bit_width(static_cast<unsigned long long>(max_abs))))
-        : 1;
-    int total_slices = std::min(64, magnitude_bits + 2);
+    int total_slices = choose_total_slices(any_non_zero, max_abs);
     if (!any_non_zero) {
-        total_slices = 2;
+        total_slices = choose_total_slices(false, 0);
         has_negative = false;
     }
 
@@ -347,12 +365,9 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& inp
     if (any_non_zero) {
         max_abs = scaled.abs().max().item<int64_t>();
     }
-    int magnitude_bits = any_non_zero
-        ? std::max(1, static_cast<int>(std::bit_width(static_cast<unsigned long long>(max_abs))))
-        : 1;
-    int total_slices = std::min(64, magnitude_bits + 2);
+    int total_slices = choose_total_slices(any_non_zero, max_abs);
     if (!any_non_zero) {
-        total_slices = 2;
+        total_slices = choose_total_slices(false, 0);
     }
 
     int offset = 0;
@@ -440,7 +455,14 @@ torch::Tensor bsi_cuda_quantize_to_int64(const torch::Tensor& input,
         torch::floor(x + 0.5),
         -torch::floor(-x + 0.5)
     );
-    return rounded.to(torch::kInt64).contiguous();
+    auto ints = rounded.to(torch::kInt64).contiguous();
+    const int fixed_bits = bsi_cuda_fixed_bits();
+    if (fixed_bits <= 0) {
+        return ints;
+    }
+    const int64_t qmax = (int64_t(1) << (fixed_bits - 1)) - 1;
+    const int64_t qmin = -(int64_t(1) << (fixed_bits - 1));
+    return torch::clamp(ints, qmin, qmax).contiguous();
 }
 
 static void maybe_log_scaled(const torch::Tensor& scaled) {
