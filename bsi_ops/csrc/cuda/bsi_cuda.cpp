@@ -103,6 +103,22 @@ static bool bsi_cuda_query_batch() {
     return cached != 0;
 }
 
+static int bsi_cuda_fixed_bits_env() {
+    static int cached = -1;
+    if (cached >= 0) return cached;
+    const char* s = std::getenv("BSI_FIXED_BITS");
+    if (s == nullptr) {
+        cached = 0;
+        return cached;
+    }
+    int v = std::atoi(s);
+    if (v <= 0) v = 0;
+    if (v > 0 && v < 2) v = 2;
+    if (v > 63) v = 63;
+    cached = v;
+    return cached;
+}
+
 // --- GPU prebuilt keys (device-packed words) ---
 struct KeyMeta {
     int S = 0;
@@ -509,6 +525,49 @@ static pybind11::dict bsi_query_caps_stats(pybind11::list query_caps_list) {
 
 static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, float compress_threshold) {
     TORCH_CHECK(K.dim() == 2, "K must be 2D [num_keys, d]");
+    // Fixed-bit mode: build key bitplanes directly on CUDA to ensure
+    // keys and queries use the same quantization/scaling behavior.
+    if (bsi_cuda_fixed_bits_env() > 0) {
+        const int64_t num_keys = K.size(0);
+        const int64_t d = K.size(1);
+        auto device = torch::Device(torch::kCUDA, c10::cuda::current_device());
+        bool verbose = bsi_cuda_should_log();
+
+        auto batch = build_bsi_queries_cuda_batch_data(K.detach(), decimalPlaces, device, verbose);
+        TORCH_CHECK(batch.rows == num_keys, "CUDA fixed-bit key build row mismatch");
+        TORCH_CHECK(batch.words_per_slice == static_cast<int>((d + 63) / 64),
+                    "CUDA fixed-bit key build word count mismatch");
+
+        auto* holder = new PrebuiltBSIKeysCUDA();
+        holder->num_keys = num_keys;
+        holder->d = d;
+        holder->W = batch.words_per_slice;
+        holder->decimals = decimalPlaces;
+        holder->threshold = compress_threshold;
+
+        const int Sb = batch.slices;
+        holder->grouped_words[Sb] = batch.words.contiguous();
+        holder->grouped_weights[Sb] = batch.slice_weights.contiguous();
+
+        std::vector<int64_t> idxs(static_cast<size_t>(num_keys));
+        for (int64_t i = 0; i < num_keys; ++i) idxs[static_cast<size_t>(i)] = i;
+        holder->grouped_indices[Sb] = idxs;
+        holder->grouped_indices_dev[Sb] = torch::arange(
+            num_keys,
+            torch::TensorOptions().dtype(torch::kInt64).device(torch::kCUDA)).contiguous();
+
+        const uint64_t total_mem_bytes = static_cast<uint64_t>(
+            holder->grouped_words[Sb].numel() * holder->grouped_words[Sb].element_size());
+
+        pybind11::capsule cap(holder, "PrebuiltBSIKeysCUDA",
+            [](PyObject* capsule){
+                auto* p = reinterpret_cast<PrebuiltBSIKeysCUDA*>(PyCapsule_GetPointer(capsule, "PrebuiltBSIKeysCUDA"));
+                if (p) delete p;
+            }
+        );
+        return pybind11::make_tuple(cap, total_mem_bytes, num_keys, d, holder->W);
+    }
+
     auto Kc = K.detach().to(torch::kCPU, /*non_blocking=*/false).contiguous();
     const float* Kd = static_cast<const float*>(Kc.data_ptr());
     int64_t num_keys = Kc.size(0);

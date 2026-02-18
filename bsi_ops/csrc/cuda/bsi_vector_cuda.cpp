@@ -7,9 +7,11 @@
 #include <iostream>
 
 #include <c10/cuda/CUDAStream.h>
+#include <ATen/ops/bitwise_left_shift.h>
 #include <ATen/ops/bitwise_right_shift.h>
 #include <ATen/ops/clamp.h>
 #include <ATen/ops/floor.h>
+#include <ATen/ops/log2.h>
 #include <ATen/ops/where.h>
 
 namespace {
@@ -136,6 +138,84 @@ int bsi_cuda_fixed_bits() {
     return cached;
 }
 
+struct QuantizedIntsAndShift {
+    torch::Tensor ints;   // int64, same shape as input
+    torch::Tensor shift;  // int64, shape [Q] for 2D inputs or scalar for 1D
+};
+
+static inline torch::Tensor round_shift_right_signed(const torch::Tensor& ints, const torch::Tensor& shift) {
+    // Round-to-nearest (half away from zero) for signed int64 division by 2^shift.
+    // shift must be >= 0 and broadcastable to ints.
+    auto abs_ints = ints.abs();
+    auto round_add = torch::where(
+        shift.gt(0),
+        torch::bitwise_left_shift(torch::ones_like(shift), shift - 1),
+        torch::zeros_like(shift));
+    auto abs_rounded = torch::bitwise_right_shift(abs_ints + round_add, shift);
+    return torch::where(ints.lt(0), -abs_rounded, abs_rounded);
+}
+
+static QuantizedIntsAndShift bsi_cuda_quantize_to_int64_and_shift(const torch::Tensor& input,
+                                                                  int decimal_places,
+                                                                  const torch::Device& device,
+                                                                  bool per_row_shift) {
+    auto values = input.to(device, torch::kFloat64, /*non_blocking=*/true).contiguous();
+    const double scale = std::pow(10.0, static_cast<double>(decimal_places));
+    auto x = values * scale;
+    // std::round (half away from zero): floor(x+0.5) if x>=0; -floor(-x+0.5) if x<0
+    auto rounded = torch::where(
+        x.ge(0),
+        torch::floor(x + 0.5),
+        -torch::floor(-x + 0.5)
+    );
+    auto ints = rounded.to(torch::kInt64).contiguous();
+
+    const int fixed_bits = bsi_cuda_fixed_bits();
+    if (fixed_bits <= 0) {
+        QuantizedIntsAndShift out;
+        out.ints = ints;
+        out.shift = per_row_shift
+            ? torch::zeros({ints.size(0)}, torch::TensorOptions().dtype(torch::kInt64).device(device))
+            : torch::zeros({}, torch::TensorOptions().dtype(torch::kInt64).device(device));
+        return out;
+    }
+
+    // Compute a per-vector (or per-row) power-of-two downshift so values fit in fixed_bits without saturation.
+    // We then compensate by scaling slice weights by 2^shift.
+    torch::Tensor max_abs;
+    if (per_row_shift) {
+        // input is [Q, d]; max over d => [Q]
+        max_abs = std::get<0>(ints.abs().max(1));
+    } else {
+        // input is [d]; max => scalar
+        max_abs = ints.abs().max();
+    }
+
+    // bit_width(max_abs) == floor(log2(max_abs)) + 1 for max_abs>0
+    auto max_abs_safe = torch::where(max_abs.gt(0), max_abs, torch::ones_like(max_abs));
+    auto bits_f = torch::floor(torch::log2(max_abs_safe.to(torch::kFloat64))) + 1.0;
+    auto shift_f = bits_f - static_cast<double>(fixed_bits - 1);
+    auto shift = torch::where(shift_f.gt(0.0), shift_f, torch::zeros_like(shift_f))
+                     .to(torch::kInt64)
+                     .contiguous();
+
+    // Apply rounded right shift (signed) and clamp defensively.
+    torch::Tensor shift_b = shift;
+    if (per_row_shift) {
+        shift_b = shift.unsqueeze(1);
+    }
+    auto ints_shifted = round_shift_right_signed(ints, shift_b);
+
+    const int64_t qmax = (int64_t(1) << (fixed_bits - 1)) - 1;
+    const int64_t qmin = -(int64_t(1) << (fixed_bits - 1));
+    ints_shifted = torch::clamp(ints_shifted, qmin, qmax).contiguous();
+
+    QuantizedIntsAndShift out;
+    out.ints = ints_shifted;
+    out.shift = shift;
+    return out;
+}
+
 static inline int choose_total_slices(bool any_non_zero, long long max_abs) {
     const int fixed_bits = bsi_cuda_fixed_bits();
     if (fixed_bits > 0) {
@@ -173,7 +253,8 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& input,
                                                      const torch::Device& device,
                                                      bool verbose) {
     TORCH_CHECK(input.dim() == 1, "build_bsi_vector_from_float_tensor expects 1D tensor");
-    auto scaled = bsi_cuda_quantize_to_int64(input, decimal_places, device);
+    auto q = bsi_cuda_quantize_to_int64_and_shift(input, decimal_places, device, /*per_row_shift=*/false);
+    auto scaled = q.ints;
     maybe_log_scaled(scaled);
     const int64_t rows = scaled.size(0);
 
@@ -194,7 +275,9 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& input,
     }
 
     // For parity with CPU decimal builder, do not trim low zero bitplanes.
-    int offset = 0;
+    // When fixed-bit mode is enabled, we use `offset` to carry the per-vector
+    // power-of-two scaling (so slice weights reconstruct the pre-shift magnitude).
+    int offset = (bsi_cuda_fixed_bits() > 0) ? static_cast<int>(q.shift.item<int64_t>()) : 0;
     int stored_slices = std::max(1, total_slices);
     torch::Tensor shifted = scaled.contiguous();
 
@@ -244,7 +327,8 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor_hybrid(const torch::Tensor&
                                                             const torch::Device& device,
                                                             bool verbose) {
     TORCH_CHECK(input.dim() == 1, "build_bsi_vector_from_float_tensor_hybrid expects 1D tensor");
-    auto scaled = bsi_cuda_quantize_to_int64(input, decimal_places, device);
+    auto q = bsi_cuda_quantize_to_int64_and_shift(input, decimal_places, device, /*per_row_shift=*/false);
+    auto scaled = q.ints;
     const int64_t rows = scaled.size(0);
 
     bool any_non_zero = (rows > 0) && scaled.ne(0).any().item<bool>();
@@ -260,7 +344,7 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor_hybrid(const torch::Tensor&
         has_negative = false;
     }
 
-    int offset = 0;
+    int offset = (bsi_cuda_fixed_bits() > 0) ? static_cast<int>(q.shift.item<int64_t>()) : 0;
     int stored_slices = std::max(1, total_slices);
     const int W = rows > 0 ? static_cast<int>((rows + 63) / 64) : 1;
 
@@ -356,18 +440,25 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& inp
                                                         const torch::Device& device,
                                                         bool verbose) {
     TORCH_CHECK(input.dim() == 2, "build_bsi_queries_cuda_batch_data expects 2D tensor [Q, d]");
-    auto scaled = bsi_cuda_quantize_to_int64(input, decimal_places, device);
+    auto q = bsi_cuda_quantize_to_int64_and_shift(input, decimal_places, device, /*per_row_shift=*/true);
+    auto scaled = q.ints;
     const int64_t Q = scaled.size(0);
     const int64_t d = scaled.size(1);
 
-    bool any_non_zero = (Q > 0) && scaled.ne(0).any().item<bool>();
-    long long max_abs = 0;
-    if (any_non_zero) {
-        max_abs = scaled.abs().max().item<int64_t>();
-    }
-    int total_slices = choose_total_slices(any_non_zero, max_abs);
-    if (!any_non_zero) {
-        total_slices = choose_total_slices(false, 0);
+    int total_slices = 2;
+    if (bsi_cuda_fixed_bits() > 0) {
+        // Fixed-bit mode uses a constant slice count and avoids device->host syncs.
+        total_slices = bsi_cuda_fixed_bits();
+    } else {
+        bool any_non_zero = (Q > 0) && scaled.ne(0).any().item<bool>();
+        long long max_abs = 0;
+        if (any_non_zero) {
+            max_abs = scaled.abs().max().item<int64_t>();
+        }
+        total_slices = choose_total_slices(any_non_zero, max_abs);
+        if (!any_non_zero) {
+            total_slices = choose_total_slices(false, 0);
+        }
     }
 
     int offset = 0;
@@ -398,6 +489,13 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& inp
     auto weights_unsigned = make_slice_weights_cuda_local(slices, offset, false, device);
     auto weights_twos = make_slice_weights_cuda_local(slices, offset, true, device);
     auto slice_weights = torch::where(neg_flags.unsqueeze(1), weights_twos, weights_unsigned);
+    if (bsi_cuda_fixed_bits() > 0) {
+        // Compensate for the per-row power-of-two downshift applied in quantization.
+        // This keeps the effective scale compatible with the original decimal scaling.
+        auto scale_i64 = torch::bitwise_left_shift(torch::ones_like(q.shift), q.shift);
+        auto scale_f = scale_i64.to(torch::kFloat32);
+        slice_weights = slice_weights * scale_f.unsqueeze(1);
+    }
 
     BsiQueryBatchCudaData out;
     out.rows = Q;
@@ -446,23 +544,10 @@ BsiVectorCudaData create_bsi_vector_cuda_from_cpu(const BsiVector<uint64_t>& src
 torch::Tensor bsi_cuda_quantize_to_int64(const torch::Tensor& input,
                                          int decimal_places,
                                          const torch::Device& device) {
-    auto values = input.to(device, torch::kFloat64, /*non_blocking=*/true).contiguous();
-    const double scale = std::pow(10.0, static_cast<double>(decimal_places));
-    auto x = values * scale;
-    // std::round (half away from zero): floor(x+0.5) if x>=0; -floor(-x+0.5) if x<0
-    auto rounded = torch::where(
-        x.ge(0),
-        torch::floor(x + 0.5),
-        -torch::floor(-x + 0.5)
-    );
-    auto ints = rounded.to(torch::kInt64).contiguous();
-    const int fixed_bits = bsi_cuda_fixed_bits();
-    if (fixed_bits <= 0) {
-        return ints;
-    }
-    const int64_t qmax = (int64_t(1) << (fixed_bits - 1)) - 1;
-    const int64_t qmin = -(int64_t(1) << (fixed_bits - 1));
-    return torch::clamp(ints, qmin, qmax).contiguous();
+    // Keep this helper consistent with the actual CUDA builders:
+    // when fixed-bit mode is enabled we return the shifted/clamped ints that are packed into bitplanes.
+    auto q = bsi_cuda_quantize_to_int64_and_shift(input, decimal_places, device, /*per_row_shift=*/(input.dim() == 2));
+    return q.ints;
 }
 
 static void maybe_log_scaled(const torch::Tensor& scaled) {
