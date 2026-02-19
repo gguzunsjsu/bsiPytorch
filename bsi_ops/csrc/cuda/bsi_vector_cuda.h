@@ -14,6 +14,9 @@ struct BsiVectorCudaData {
     int offset = 0;
     int decimals = 0;
     bool twos_complement = false;
+    // Additional per-vector scaling factor used by fixed-bit quantization modes.
+    // Default is 1.0 (no scaling).
+    float scale = 1.0f;
     torch::Tensor words;      // [slices, words_per_slice] (verbatim; optional)
     torch::Tensor metadata;   // placeholder for future hybrid metadata
     // Hybrid (EWAH) compressed representation (always populated in hybrid builder)

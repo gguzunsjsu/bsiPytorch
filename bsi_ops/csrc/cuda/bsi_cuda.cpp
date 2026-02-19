@@ -199,6 +199,9 @@ static pybind11::tuple build_bsi_query_cuda(torch::Tensor q, int decimalPlaces, 
     holder->slice_weights = make_slice_weights_cuda(holder->S,
                                                     holder->device_view.offset,
                                                     holder->device_view.twos_complement);
+    if (holder->device_view.scale != 1.0f) {
+        holder->slice_weights = holder->slice_weights * holder->device_view.scale;
+    }
     holder->mem_bytes = static_cast<size_t>(holder->dev_words.numel() * holder->dev_words.element_size());
 
     pybind11::capsule cap(holder, "PrebuiltBSIQueryCUDA",
@@ -302,6 +305,9 @@ static pybind11::tuple build_bsi_query_cuda_hybrid(torch::Tensor q, int decimalP
     holder->slice_weights = make_slice_weights_cuda(holder->S,
                                                     holder->device_view.offset,
                                                     holder->device_view.twos_complement);
+    if (holder->device_view.scale != 1.0f) {
+        holder->slice_weights = holder->slice_weights * holder->device_view.scale;
+    }
     if (holder->device_view.comp_words.defined() && holder->device_view.comp_words.numel() > 0) {
         auto stream = at::cuda::getCurrentCUDAStream();
         const int64_t* off_ptr = holder->device_view.comp_off.data_ptr<int64_t>();
