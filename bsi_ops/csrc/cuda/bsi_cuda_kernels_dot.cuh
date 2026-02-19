@@ -723,9 +723,9 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
     constexpr int K_BITS = 256;
     constexpr int K_WORDS64 = K_BITS / 64;   // 4
     constexpr int K_WORDS32 = K_BITS / 32;   // 8
-    // Pad K in shared to reduce shared-memory bank conflicts.
-    // NOTE: Use an even stride so the (w64_i<<1) addressing stays 64-bit aligned.
-    constexpr int K_STRIDE32 = K_WORDS32 + 2; // 10
+    // Pad K in shared to avoid shared-memory bank conflicts for the BMMA fragment access pattern.
+    // The (groupID, threadID) lane mapping used by mma.sync is conflict-free with stride=12.
+    constexpr int K_STRIDE32 = K_WORDS32 + 4; // 12
 
     // This kernel is defined as 4 warps per block.
     if (blockDim.x != 128) return;
@@ -741,13 +741,10 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
     // 16B alignment keeps PTX loads/stores happy and avoids bank conflicts on most layouts.
     p = (p + 15u) & ~uintptr_t(15u);
 
-    constexpr int K_STRIDE64 = K_STRIDE32 / 2;
-    auto* A_bits64 = reinterpret_cast<unsigned long long*>(p); // [Sa, TM, 4] (+pad64)
-    auto* A_bits = reinterpret_cast<uint32_t*>(A_bits64);      // [Sa, TM, 8] (+pad32)
-    p += (size_t)Sa * (size_t)TM * (size_t)K_STRIDE64 * sizeof(unsigned long long);
-    auto* B_bits64 = reinterpret_cast<unsigned long long*>(p); // [Sb, TN, 4] (+pad64)
-    auto* B_bits = reinterpret_cast<uint32_t*>(B_bits64);      // [Sb, TN, 8] (+pad32)
-    p += (size_t)Sb * (size_t)TN * (size_t)K_STRIDE64 * sizeof(unsigned long long);
+    auto* A_bits = reinterpret_cast<uint32_t*>(p); // [Sa, TM, K]
+    p += (size_t)Sa * (size_t)TM * (size_t)K_STRIDE32 * sizeof(uint32_t);
+    auto* B_bits = reinterpret_cast<uint32_t*>(p); // [Sb, TN, K]
+    p += (size_t)Sb * (size_t)TN * (size_t)K_STRIDE32 * sizeof(uint32_t);
     auto* Aw_tile = reinterpret_cast<float*>(p);   // [TM, Sa]
     p += (size_t)TM * (size_t)Sa * sizeof(float);
     auto* Bw_tile = reinterpret_cast<float*>(p);   // [TN, Sb]
@@ -813,9 +810,11 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
                 const unsigned long long* a_slice = A + ((size_t)q * (size_t)Sa + (size_t)i) * (size_t)W64;
                 w64 = __ldg(&a_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
             }
-            const size_t base64 =
-                ((size_t)i * (size_t)TM + (size_t)m) * (size_t)K_STRIDE64 + (size_t)w64_i;
-            A_bits64[base64] = w64;
+            const uint32_t lo = static_cast<uint32_t>(w64);
+            const uint32_t hi = static_cast<uint32_t>(w64 >> 32);
+            const int base = ((i * TM + m) * K_STRIDE32) + (w64_i << 1);
+            A_bits[base] = lo;
+            A_bits[base + 1] = hi;
         }
 
         // Load B bits for all slices and all TN keys for this chunk into shared.
@@ -833,9 +832,11 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
                 const unsigned long long* b_slice = B + ((size_t)r * (size_t)Sb + (size_t)j) * (size_t)W64;
                 w64 = __ldg(&b_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
             }
-            const size_t base64 =
-                ((size_t)j * (size_t)TN + (size_t)n) * (size_t)K_STRIDE64 + (size_t)w64_i;
-            B_bits64[base64] = w64;
+            const uint32_t lo = static_cast<uint32_t>(w64);
+            const uint32_t hi = static_cast<uint32_t>(w64 >> 32);
+            const int base = ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
+            B_bits[base] = lo;
+            B_bits[base + 1] = hi;
         }
         __syncthreads();
 
@@ -1048,7 +1049,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
     constexpr int K_BITS = 256;
     constexpr int K_WORDS64 = K_BITS / 64;   // 4
     constexpr int K_WORDS32 = K_BITS / 32;   // 8
-    constexpr int K_STRIDE32 = K_WORDS32 + 2; // 10 (padding)
+    // Stride=12 is conflict-free for the mma.sync lane->fragment mapping used by this kernel.
+    constexpr int K_STRIDE32 = K_WORDS32 + 4; // 12 (padding)
 
     if (blockDim.x != (WARPS_PER_QTILE * QTILES * 32)) return; // 256
     const int lane = threadIdx.x & 31;
@@ -1065,13 +1067,10 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
     uintptr_t p = reinterpret_cast<uintptr_t>(smem_raw);
     p = (p + 15u) & ~uintptr_t(15u);
 
-    constexpr int K_STRIDE64 = K_STRIDE32 / 2;
-    auto* A_bits64 = reinterpret_cast<unsigned long long*>(p); // [Sa, TM_TOTAL, 4] (+pad64)
-    auto* A_bits = reinterpret_cast<uint32_t*>(A_bits64);      // [Sa, TM_TOTAL, 8] (+pad32)
-    p += (size_t)Sa * (size_t)TM_TOTAL * (size_t)K_STRIDE64 * sizeof(unsigned long long);
-    auto* B_bits64 = reinterpret_cast<unsigned long long*>(p); // [Sb, TN, 4] (+pad64)
-    auto* B_bits = reinterpret_cast<uint32_t*>(B_bits64);      // [Sb, TN, 8] (+pad32)
-    p += (size_t)Sb * (size_t)TN * (size_t)K_STRIDE64 * sizeof(unsigned long long);
+    auto* A_bits = reinterpret_cast<uint32_t*>(p); // [Sa, TM_TOTAL, K]
+    p += (size_t)Sa * (size_t)TM_TOTAL * (size_t)K_STRIDE32 * sizeof(uint32_t);
+    auto* B_bits = reinterpret_cast<uint32_t*>(p); // [Sb, TN, K]
+    p += (size_t)Sb * (size_t)TN * (size_t)K_STRIDE32 * sizeof(uint32_t);
     auto* Aw_tile = reinterpret_cast<float*>(p);   // [TM_TOTAL, Sa]
     p += (size_t)TM_TOTAL * (size_t)Sa * sizeof(float);
     auto* Bw_tile = reinterpret_cast<float*>(p);   // [TN, Sb]
@@ -1143,9 +1142,11 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                 const int q = q0 + m;
                 const unsigned long long* a_slice = A + ((size_t)q * (size_t)Sa + (size_t)i) * (size_t)W64;
                 const unsigned long long w64 = __ldg(&a_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
-                const size_t base64 =
-                    ((size_t)i * (size_t)TM_TOTAL + (size_t)m) * (size_t)K_STRIDE64 + (size_t)w64_i;
-                A_bits64[base64] = w64;
+                const uint32_t lo = static_cast<uint32_t>(w64);
+                const uint32_t hi = static_cast<uint32_t>(w64 >> 32);
+                const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + (w64_i << 1);
+                A_bits[base] = lo;
+                A_bits[base + 1] = hi;
             }
         } else {
             for (int idx = threadIdx.x; idx < TM_TOTAL * Sa * K_WORDS64; idx += blockDim.x) {
@@ -1155,15 +1156,17 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                 const int m = t & (TM_TOTAL - 1);
                 const int i = t >> 5; // /32
 
-                unsigned long long w64 = 0ull;
+                uint32_t lo = 0u, hi = 0u;
                 const int q = q0 + m;
                 if (q < Q) {
                     const unsigned long long* a_slice = A + ((size_t)q * (size_t)Sa + (size_t)i) * (size_t)W64;
-                    w64 = __ldg(&a_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+                    const unsigned long long w64 = __ldg(&a_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+                    lo = static_cast<uint32_t>(w64);
+                    hi = static_cast<uint32_t>(w64 >> 32);
                 }
-                const size_t base64 =
-                    ((size_t)i * (size_t)TM_TOTAL + (size_t)m) * (size_t)K_STRIDE64 + (size_t)w64_i;
-                A_bits64[base64] = w64;
+                const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + (w64_i << 1);
+                A_bits[base] = lo;
+                A_bits[base + 1] = hi;
             }
         }
 
@@ -1179,9 +1182,11 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                 const int r = r0 + n;
                 const unsigned long long* b_slice = B + ((size_t)r * (size_t)Sb + (size_t)j) * (size_t)W64;
                 const unsigned long long w64 = __ldg(&b_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
-                const size_t base64 =
-                    ((size_t)j * (size_t)TN + (size_t)n) * (size_t)K_STRIDE64 + (size_t)w64_i;
-                B_bits64[base64] = w64;
+                const uint32_t lo = static_cast<uint32_t>(w64);
+                const uint32_t hi = static_cast<uint32_t>(w64 >> 32);
+                const int base = ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
+                B_bits[base] = lo;
+                B_bits[base + 1] = hi;
             }
         } else {
             for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS64; idx += blockDim.x) {
@@ -1191,15 +1196,17 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                 const int n = t & (TN - 1);
                 const int j = t >> 5; // /32
 
-                unsigned long long w64 = 0ull;
+                uint32_t lo = 0u, hi = 0u;
                 const int r = r0 + n;
                 if (r < R) {
                     const unsigned long long* b_slice = B + ((size_t)r * (size_t)Sb + (size_t)j) * (size_t)W64;
-                    w64 = __ldg(&b_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+                    const unsigned long long w64 = __ldg(&b_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+                    lo = static_cast<uint32_t>(w64);
+                    hi = static_cast<uint32_t>(w64 >> 32);
                 }
-                const size_t base64 =
-                    ((size_t)j * (size_t)TN + (size_t)n) * (size_t)K_STRIDE64 + (size_t)w64_i;
-                B_bits64[base64] = w64;
+                const int base = ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
+                B_bits[base] = lo;
+                B_bits[base + 1] = hi;
             }
         }
         __syncthreads();
@@ -1711,7 +1718,7 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
         }
         if (cached_tc_ok && Sa > 0 && Sb > 0 && (W % 4 == 0) && W >= 4) {
             constexpr int K_WORDS32 = 8;           // 256 bits / 32
-            constexpr int K_STRIDE32 = K_WORDS32 + 2; // padding to reduce bank conflicts
+            constexpr int K_STRIDE32 = K_WORDS32 + 4; // padding to reduce bank conflicts
 
             int dev = 0;
             cudaGetDevice(&dev);
