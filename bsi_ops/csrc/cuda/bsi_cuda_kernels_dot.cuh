@@ -3,6 +3,16 @@
 // Multi-query fused version: process Q queries and multiple keys per block; tiles both axes to shrink grid
 #include <stdint.h>
 
+// Indirection arrays are optional in the "packed batch" fast path.
+// When the pointer is null, treat indices as identity (i -> i).
+__device__ __forceinline__ long long bsi_load_index_or_identity(const long long* idx, int i) {
+#if defined(__CUDA_ARCH__)
+    return idx ? __ldg(idx + i) : static_cast<long long>(i);
+#else
+    return idx ? idx[i] : static_cast<long long>(i);
+#endif
+}
+
 extern "C" __global__
 void popcount_weighted_keys_literal_fused_multiq_kernel(
     const unsigned long long* __restrict__ A,    // [Q, Sa, W]
@@ -62,7 +72,7 @@ void popcount_weighted_keys_literal_fused_multiq_kernel(
     if (q_end > Q) q_end = Q;
     for (int q = q_start; q < q_end; ++q) {
 
-        long long global_q = __ldg(&query_indices[q]);
+        long long global_q = bsi_load_index_or_identity(query_indices, q);
         const unsigned long long* A_base = A + ((size_t)q * Sa * W);
         const float* Aw_base = Aw + ((size_t)q * Sa);
 
@@ -78,7 +88,7 @@ void popcount_weighted_keys_literal_fused_multiq_kernel(
             int r = r_start + tr;
             if (r >= R) break;
 
-            long long global_r = __ldg(&key_indices[r]);
+            long long global_r = bsi_load_index_or_identity(key_indices, r);
             const unsigned long long* B_base = B + ((size_t)r * Sb * W);
             const float* Bw_base = Bw + ((size_t)r * Sb);
 
@@ -191,7 +201,7 @@ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff(
     if (q_end > Q) q_end = Q;
     for (int q = q_start; q < q_end; ++q) {
 
-        long long global_q = __ldg(&query_indices[q]);
+        long long global_q = bsi_load_index_or_identity(query_indices, q);
         const unsigned long long* A_base = A + ((size_t)q * Sa * W);
         const float* Aw_base = Aw + ((size_t)q * Sa);
 
@@ -206,7 +216,7 @@ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff(
         for (int out_idx = warp_id; out_idx < tile_r; out_idx += num_warps) {
             int r = r_start + out_idx;
             if (r >= R) continue;
-            long long global_r = __ldg(&key_indices[r]);
+            long long global_r = bsi_load_index_or_identity(key_indices, r);
 
             float local = 0.0f;
             if (W <= 32) {
@@ -396,7 +406,7 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_
         unsigned long long* A_sh = buf ? A_sh1 : A_sh0;
         float* Aw_sh = buf ? Aw_sh1 : Aw_sh0;
 
-        long long global_q = __ldg(&query_indices[q]);
+        long long global_q = bsi_load_index_or_identity(query_indices, q);
         const float* Aw_base = Aw + ((size_t)q * (size_t)Sa);
         int q_next = q + 1;
         unsigned long long* A_sh_next = nullptr;
@@ -416,7 +426,7 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_
         for (int out_idx = warp_id; out_idx < tile_r; out_idx += num_warps) {
             int r = r_start + out_idx;
             if (r >= R) continue;
-            long long global_r = __ldg(&key_indices[r]);
+            long long global_r = bsi_load_index_or_identity(key_indices, r);
 
             float local = 0.0f;
             const unsigned long long* b_row =
@@ -544,7 +554,7 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w128
     if (q_start >= q_end) return;
 
     for (int q = q_start; q < q_end; ++q) {
-        long long global_q = __ldg(&query_indices[q]);
+        long long global_q = bsi_load_index_or_identity(query_indices, q);
         const unsigned long long* A_base = A + ((size_t)q * (size_t)Sa * (size_t)Wc);
         const float* Aw_base = Aw + ((size_t)q * (size_t)Sa);
 
@@ -559,7 +569,7 @@ __global__ void popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w128
         for (int out_idx = warp_id; out_idx < tile_r; out_idx += num_warps) {
             int r = r_start + out_idx;
             if (r >= R) continue;
-            long long global_r = __ldg(&key_indices[r]);
+            long long global_r = bsi_load_index_or_identity(key_indices, r);
 
             float local = 0.0f;
             const unsigned long long* b_row =
@@ -973,10 +983,10 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
     const int r_out0 = r0 + col0;
     const int r_out1 = r0 + col1;
 
-    const long long gq0 = (q_out0 < Q) ? __ldg(&query_indices[q_out0]) : 0;
-    const long long gq1 = (q_out1 < Q) ? __ldg(&query_indices[q_out1]) : 0;
-    const long long gr0 = (r_out0 < R) ? __ldg(&key_indices[r_out0]) : 0;
-    const long long gr1 = (r_out1 < R) ? __ldg(&key_indices[r_out1]) : 0;
+    const long long gq0 = (q_out0 < Q) ? bsi_load_index_or_identity(query_indices, q_out0) : 0;
+    const long long gq1 = (q_out1 < Q) ? bsi_load_index_or_identity(query_indices, q_out1) : 0;
+    const long long gr0 = (r_out0 < R) ? bsi_load_index_or_identity(key_indices, r_out0) : 0;
+    const long long gr1 = (r_out1 < R) ? bsi_load_index_or_identity(key_indices, r_out1) : 0;
 
     if (q_out0 < Q && r_out0 < R) {
         out_global[(size_t)gq0 * (size_t)R_total + (size_t)gr0] = acc00 * scale_inv;
@@ -1333,15 +1343,15 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_updated(
 
     // Coalesced index loading using shuffle
     if (threadID == 0) {
-        if (q_out0 < Q) gq0 = __ldg(&query_indices[q_out0]);
-        if (q_out1 < Q) gq1 = __ldg(&query_indices[q_out1]);
+        if (q_out0 < Q) gq0 = bsi_load_index_or_identity(query_indices, q_out0);
+        if (q_out1 < Q) gq1 = bsi_load_index_or_identity(query_indices, q_out1);
     }
     gq0 = __shfl_sync(0xffffffff, gq0, lane & ~3);
     gq1 = __shfl_sync(0xffffffff, gq1, lane & ~3);
 
     if (groupID == 0) {
-        if (r_out0 < R) gr0 = __ldg(&key_indices[r_out0]);
-        if (r_out1 < R) gr1 = __ldg(&key_indices[r_out1]);
+        if (r_out0 < R) gr0 = bsi_load_index_or_identity(key_indices, r_out0);
+        if (r_out1 < R) gr1 = bsi_load_index_or_identity(key_indices, r_out1);
     }
     gr0 = __shfl_sync(0xffffffff, gr0, threadID);
     gr1 = __shfl_sync(0xffffffff, gr1, threadID);
@@ -1797,16 +1807,16 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
     if (full_q_tile && full_r_tile) {
         long long gq0 = 0, gq1 = 0;
         if (threadID == 0) {
-            gq0 = __ldg(&query_indices[q_out0]);
-            gq1 = __ldg(&query_indices[q_out1]);
+            gq0 = bsi_load_index_or_identity(query_indices, q_out0);
+            gq1 = bsi_load_index_or_identity(query_indices, q_out1);
         }
         gq0 = __shfl_sync(0xffffffff, gq0, lane & ~3);
         gq1 = __shfl_sync(0xffffffff, gq1, lane & ~3);
 
         long long gr0 = 0, gr1 = 0;
         if (groupID == 0) {
-            gr0 = __ldg(&key_indices[r_out0]);
-            gr1 = __ldg(&key_indices[r_out1]);
+            gr0 = bsi_load_index_or_identity(key_indices, r_out0);
+            gr1 = bsi_load_index_or_identity(key_indices, r_out1);
         }
         gr0 = __shfl_sync(0xffffffff, gr0, threadID);
         gr1 = __shfl_sync(0xffffffff, gr1, threadID);
@@ -1818,16 +1828,16 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
     } else {
         long long gq0 = 0, gq1 = 0;
         if (threadID == 0) {
-            if (q_out0 < Q) gq0 = __ldg(&query_indices[q_out0]);
-            if (q_out1 < Q) gq1 = __ldg(&query_indices[q_out1]);
+            if (q_out0 < Q) gq0 = bsi_load_index_or_identity(query_indices, q_out0);
+            if (q_out1 < Q) gq1 = bsi_load_index_or_identity(query_indices, q_out1);
         }
         gq0 = __shfl_sync(0xffffffff, gq0, lane & ~3);
         gq1 = __shfl_sync(0xffffffff, gq1, lane & ~3);
 
         long long gr0 = 0, gr1 = 0;
         if (groupID == 0) {
-            if (r_out0 < R) gr0 = __ldg(&key_indices[r_out0]);
-            if (r_out1 < R) gr1 = __ldg(&key_indices[r_out1]);
+            if (r_out0 < R) gr0 = bsi_load_index_or_identity(key_indices, r_out0);
+            if (r_out1 < R) gr1 = bsi_load_index_or_identity(key_indices, r_out1);
         }
         gr0 = __shfl_sync(0xffffffff, gr0, threadID);
         gr1 = __shfl_sync(0xffffffff, gr1, threadID);

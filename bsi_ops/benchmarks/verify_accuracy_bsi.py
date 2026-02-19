@@ -138,20 +138,37 @@ class BSIQuantizedLinear(torch.nn.Module):
             print(f"  Decimal Places used: {self.decimalPlaces}")
 
         t_build0 = time.perf_counter_ns()
-        query_capsules = bsi_ops.build_bsi_queries_cuda_batch(
-            batch_inputs,
-            self.decimalPlaces,
-            float(self.query_compress_threshold),
+        use_packed = (
+            os.getenv("BSI_QUERY_PACKED", "1") != "0"
+            and hasattr(bsi_ops, "build_bsi_queries_cuda_batch_packed")
+            and hasattr(bsi_ops, "batch_dot_product_multiquery_cuda_batch_caps")
         )
+        if use_packed:
+            query_capsules = bsi_ops.build_bsi_queries_cuda_batch_packed(
+                batch_inputs,
+                self.decimalPlaces,
+                float(self.query_compress_threshold),
+            )
+        else:
+            query_capsules = bsi_ops.build_bsi_queries_cuda_batch(
+                batch_inputs,
+                self.decimalPlaces,
+                float(self.query_compress_threshold),
+            )
         self.build_ns_total += (time.perf_counter_ns() - t_build0)
         self.build_calls += 1
 
         # Single multi-query call on CUDA to compute all outputs at once
         # Dot-only timing comes from CUDA events inside the extension. The "total" is for the full
         # output matrix [Q, R]; the per-query/per-scalar are averages derived from that total.
-        scores_2d, dot_kernel_ns_total, dot_kernel_ns_per_query, dot_kernel_ns_per_scalar = (
-            bsi_ops.batch_dot_product_multiquery_cuda_caps(query_capsules, self._bsi_keys_cuda)
-        )
+        if use_packed:
+            scores_2d, dot_kernel_ns_total, dot_kernel_ns_per_query, dot_kernel_ns_per_scalar = (
+                bsi_ops.batch_dot_product_multiquery_cuda_batch_caps(query_capsules, self._bsi_keys_cuda)
+            )
+        else:
+            scores_2d, dot_kernel_ns_total, dot_kernel_ns_per_query, dot_kernel_ns_per_scalar = (
+                bsi_ops.batch_dot_product_multiquery_cuda_caps(query_capsules, self._bsi_keys_cuda)
+            )
         dot_ns_this_forward += int(dot_kernel_ns_total)
         # Expose last-call averages for debugging/analysis (in nanoseconds).
         self.dot_kernel_ns_per_query_last = float(dot_kernel_ns_per_query)
