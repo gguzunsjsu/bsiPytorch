@@ -53,7 +53,8 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor_hybrid(const torch::Tensor&
 BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& values,
                                                         int decimal_places,
                                                         const torch::Device& device,
-                                                        bool verbose = false);
+                                                        bool verbose = false,
+                                                        bool for_keys = false);
 
 // Exposed for tests/debug: quantise floats to int64 with CPU parity (half-away-from-zero).
 torch::Tensor bsi_cuda_quantize_to_int64(const torch::Tensor& values,

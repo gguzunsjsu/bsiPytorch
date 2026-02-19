@@ -125,7 +125,7 @@ bool bsi_cuda_should_log() {
     return cached;
 }
 
-int bsi_cuda_fixed_bits() {
+static int bsi_cuda_fixed_bits() {
     static int cached = []() {
         const char* s = std::getenv("BSI_FIXED_BITS");
         if (s == nullptr) return 0;
@@ -134,6 +134,34 @@ int bsi_cuda_fixed_bits() {
         if (v < 2) v = 2;
         if (v > 63) v = 63;
         return v;
+    }();
+    return cached;
+}
+
+static int bsi_cuda_fixed_bits_override(const char* name) {
+    const char* s = std::getenv(name);
+    if (s == nullptr) return -1;
+    int v = std::atoi(s);
+    if (v <= 0) return 0;
+    if (v < 2) v = 2;
+    if (v > 63) v = 63;
+    return v;
+}
+
+static int bsi_cuda_fixed_bits_queries() {
+    static int cached = []() {
+        int v = bsi_cuda_fixed_bits_override("BSI_FIXED_BITS_QUERIES");
+        if (v >= 0) return v;
+        return bsi_cuda_fixed_bits();
+    }();
+    return cached;
+}
+
+static int bsi_cuda_fixed_bits_keys() {
+    static int cached = []() {
+        int v = bsi_cuda_fixed_bits_override("BSI_FIXED_BITS_KEYS");
+        if (v >= 0) return v;
+        return bsi_cuda_fixed_bits();
     }();
     return cached;
 }
@@ -180,8 +208,8 @@ static inline torch::Tensor round_shift_right_signed(const torch::Tensor& ints, 
 static QuantizedIntsAndScale bsi_cuda_quantize_to_int64_and_scale(const torch::Tensor& input,
                                                                   int decimal_places,
                                                                   const torch::Device& device,
-                                                                  bool per_row_scale) {
-    const int fixed_bits = bsi_cuda_fixed_bits();
+                                                                  bool per_row_scale,
+                                                                  int fixed_bits) {
     if (fixed_bits <= 0) {
         // CPU-parity path (used when keys come from CPU builder).
         auto values = input.to(device, torch::kFloat64, /*non_blocking=*/true).contiguous();
@@ -252,8 +280,7 @@ static QuantizedIntsAndScale bsi_cuda_quantize_to_int64_and_scale(const torch::T
     return out;
 }
 
-static inline int choose_total_slices(bool any_non_zero, long long max_abs) {
-    const int fixed_bits = bsi_cuda_fixed_bits();
+static inline int choose_total_slices(bool any_non_zero, long long max_abs, int fixed_bits) {
     if (fixed_bits > 0) {
         return fixed_bits;
     }
@@ -290,7 +317,8 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& input,
                                                      const torch::Device& device,
                                                      bool verbose) {
     TORCH_CHECK(input.dim() == 1, "build_bsi_vector_from_float_tensor expects 1D tensor");
-    auto q = bsi_cuda_quantize_to_int64_and_scale(input, decimal_places, device, /*per_row_scale=*/false);
+    const int fixed_bits = bsi_cuda_fixed_bits_queries();
+    auto q = bsi_cuda_quantize_to_int64_and_scale(input, decimal_places, device, /*per_row_scale=*/false, fixed_bits);
     auto scaled = q.ints;
     maybe_log_scaled(scaled);
     const int64_t rows = scaled.size(0);
@@ -304,10 +332,10 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& input,
         max_abs = scaled.abs().max().item<int64_t>();
     }
 
-    int total_slices = choose_total_slices(any_non_zero, max_abs);
+    int total_slices = choose_total_slices(any_non_zero, max_abs, fixed_bits);
 
     if (!any_non_zero) {
-        total_slices = choose_total_slices(false, 0);
+        total_slices = choose_total_slices(false, 0, fixed_bits);
         has_negative = false;
     }
 
@@ -348,7 +376,7 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& input,
     data.decimals = decimal_places;
     // Match CPU decimals builder: two's complement only when negatives present
     data.twos_complement = has_negative;
-    data.scale = (bsi_cuda_fixed_bits() > 0) ? q.scale.item<float>() : 1.0f;
+    data.scale = (fixed_bits > 0) ? q.scale.item<float>() : 1.0f;
     data.words = words;
     data.metadata = torch::empty({stored_slices, 0},
                                  torch::TensorOptions().dtype(torch::kInt32).device(device));
@@ -365,7 +393,8 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor_hybrid(const torch::Tensor&
                                                             const torch::Device& device,
                                                             bool verbose) {
     TORCH_CHECK(input.dim() == 1, "build_bsi_vector_from_float_tensor_hybrid expects 1D tensor");
-    auto q = bsi_cuda_quantize_to_int64_and_scale(input, decimal_places, device, /*per_row_scale=*/false);
+    const int fixed_bits = bsi_cuda_fixed_bits_queries();
+    auto q = bsi_cuda_quantize_to_int64_and_scale(input, decimal_places, device, /*per_row_scale=*/false, fixed_bits);
     auto scaled = q.ints;
     const int64_t rows = scaled.size(0);
 
@@ -376,9 +405,9 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor_hybrid(const torch::Tensor&
     if (any_non_zero) {
         max_abs = scaled.abs().max().item<int64_t>();
     }
-    int total_slices = choose_total_slices(any_non_zero, max_abs);
+    int total_slices = choose_total_slices(any_non_zero, max_abs, fixed_bits);
     if (!any_non_zero) {
-        total_slices = choose_total_slices(false, 0);
+        total_slices = choose_total_slices(false, 0, fixed_bits);
         has_negative = false;
     }
 
@@ -464,7 +493,7 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor_hybrid(const torch::Tensor&
     data.offset = offset;
     data.decimals = decimal_places;
     data.twos_complement = has_negative;
-    data.scale = (bsi_cuda_fixed_bits() > 0) ? q.scale.item<float>() : 1.0f;
+    data.scale = (fixed_bits > 0) ? q.scale.item<float>() : 1.0f;
     data.words = torch::empty({0}, torch::dtype(torch::kInt64).device(device)); // not stored
     data.metadata = torch::empty({stored_slices, 0}, torch::dtype(torch::kInt32).device(device));
     data.comp_words = comp_words;
@@ -477,26 +506,28 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor_hybrid(const torch::Tensor&
 BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& input,
                                                         int decimal_places,
                                                         const torch::Device& device,
-                                                        bool verbose) {
+                                                        bool verbose,
+                                                        bool for_keys) {
     TORCH_CHECK(input.dim() == 2, "build_bsi_queries_cuda_batch_data expects 2D tensor [Q, d]");
-    auto q = bsi_cuda_quantize_to_int64_and_scale(input, decimal_places, device, /*per_row_scale=*/true);
+    const int fixed_bits = for_keys ? bsi_cuda_fixed_bits_keys() : bsi_cuda_fixed_bits_queries();
+    auto q = bsi_cuda_quantize_to_int64_and_scale(input, decimal_places, device, /*per_row_scale=*/true, fixed_bits);
     auto scaled = q.ints;
     const int64_t Q = scaled.size(0);
     const int64_t d = scaled.size(1);
 
     int total_slices = 2;
-    if (bsi_cuda_fixed_bits() > 0) {
+    if (fixed_bits > 0) {
         // Fixed-bit mode uses a constant slice count and avoids device->host syncs.
-        total_slices = bsi_cuda_fixed_bits();
+        total_slices = fixed_bits;
     } else {
         bool any_non_zero = (Q > 0) && scaled.ne(0).any().item<bool>();
         long long max_abs = 0;
         if (any_non_zero) {
             max_abs = scaled.abs().max().item<int64_t>();
         }
-        total_slices = choose_total_slices(any_non_zero, max_abs);
+        total_slices = choose_total_slices(any_non_zero, max_abs, fixed_bits);
         if (!any_non_zero) {
-            total_slices = choose_total_slices(false, 0);
+            total_slices = choose_total_slices(false, 0, fixed_bits);
         }
     }
 
@@ -528,7 +559,7 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& inp
     auto weights_unsigned = make_slice_weights_cuda_local(slices, offset, false, device);
     auto weights_twos = make_slice_weights_cuda_local(slices, offset, true, device);
     auto slice_weights = torch::where(neg_flags.unsqueeze(1), weights_twos, weights_unsigned);
-    if (bsi_cuda_fixed_bits() > 0) {
+    if (fixed_bits > 0) {
         // Fixed-bit path: per-row power-of-two scale (2^shift) computed during quantization.
         slice_weights = slice_weights * q.scale.unsqueeze(1);
     }
@@ -582,7 +613,12 @@ torch::Tensor bsi_cuda_quantize_to_int64(const torch::Tensor& input,
                                          const torch::Device& device) {
     // Keep this helper consistent with the actual CUDA builders:
     // when fixed-bit mode is enabled we return the quantized/clamped ints that are packed into bitplanes.
-    auto q = bsi_cuda_quantize_to_int64_and_scale(input, decimal_places, device, /*per_row_scale=*/(input.dim() == 2));
+    auto q = bsi_cuda_quantize_to_int64_and_scale(
+        input,
+        decimal_places,
+        device,
+        /*per_row_scale=*/(input.dim() == 2),
+        /*fixed_bits=*/bsi_cuda_fixed_bits_queries());
     return q.ints;
 }
 

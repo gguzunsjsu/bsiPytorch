@@ -103,15 +103,14 @@ static bool bsi_cuda_query_batch() {
     return cached != 0;
 }
 
-static int bsi_cuda_fixed_bits_env() {
+static int bsi_cuda_fixed_bits_keys_env() {
     static int cached = -1;
     if (cached >= 0) return cached;
-    const char* s = std::getenv("BSI_FIXED_BITS");
+    const char* s = std::getenv("BSI_FIXED_BITS_KEYS");
     if (s == nullptr) {
-        cached = 0;
-        return cached;
+        s = std::getenv("BSI_FIXED_BITS");
     }
-    int v = std::atoi(s);
+    int v = (s != nullptr) ? std::atoi(s) : 0;
     if (v <= 0) v = 0;
     if (v > 0 && v < 2) v = 2;
     if (v > 63) v = 63;
@@ -225,7 +224,7 @@ static pybind11::list build_bsi_queries_cuda_batch(torch::Tensor q2d, int decima
     const auto Q = q2d.size(0);
     pybind11::list out;
     if (bsi_cuda_query_batch()) {
-        auto batch = build_bsi_queries_cuda_batch_data(q2d.detach(), decimalPlaces, device, verbose);
+        auto batch = build_bsi_queries_cuda_batch_data(q2d.detach(), decimalPlaces, device, verbose, /*for_keys=*/false);
         const int S = batch.slices;
         const int W = batch.words_per_slice;
         auto words = batch.words.contiguous();
@@ -533,13 +532,13 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
     TORCH_CHECK(K.dim() == 2, "K must be 2D [num_keys, d]");
     // Fixed-bit mode: build key bitplanes directly on CUDA to ensure
     // keys and queries use the same quantization/scaling behavior.
-    if (bsi_cuda_fixed_bits_env() > 0) {
+    if (bsi_cuda_fixed_bits_keys_env() > 0) {
         const int64_t num_keys = K.size(0);
         const int64_t d = K.size(1);
         auto device = torch::Device(torch::kCUDA, c10::cuda::current_device());
         bool verbose = bsi_cuda_should_log();
 
-        auto batch = build_bsi_queries_cuda_batch_data(K.detach(), decimalPlaces, device, verbose);
+        auto batch = build_bsi_queries_cuda_batch_data(K.detach(), decimalPlaces, device, verbose, /*for_keys=*/true);
         TORCH_CHECK(batch.rows == num_keys, "CUDA fixed-bit key build row mismatch");
         TORCH_CHECK(batch.words_per_slice == static_cast<int>((d + 63) / 64),
                     "CUDA fixed-bit key build word count mismatch");
