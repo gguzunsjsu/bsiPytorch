@@ -34,6 +34,11 @@ struct BsiQueryBatchCudaData {
     int offset = 0;
     torch::Tensor words;         // [Q, slices, words_per_slice]
     torch::Tensor slice_weights; // [Q, slices]
+    // Optional per-query, per-256-element-chunk power-of-two scales used by
+    // fixed-bit "block floating" modes. Shape: [Q, chunks] where
+    // chunks = words_per_slice / 4 (i.e., 256 bits per chunk).
+    // When undefined, slice_weights already include any fixed-bit scaling.
+    torch::Tensor chunk_scales;  // [Q, chunks] or undefined
 };
 
 bool bsi_cuda_should_log();

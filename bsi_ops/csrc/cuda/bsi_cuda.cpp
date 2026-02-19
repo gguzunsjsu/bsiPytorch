@@ -38,6 +38,8 @@ extern "C" void launch_ewah_decompress(
 extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     const unsigned long long* A,
     const float* Aw,
+    const float* A_chunk_scales,
+    int A_scale_stride,
     int Sa,
     int W,
     const unsigned long long* B,
@@ -152,6 +154,7 @@ struct PrebuiltBSIQueryCUDA {
     BsiVectorCudaData device_view;
     at::Tensor dev_words;      // alias of device_view.words
     at::Tensor slice_weights;  // [S]
+    at::Tensor chunk_scales;   // [chunks] or undefined
     int S = 0;
     int W = 0;
     size_t mem_bytes = 0;
@@ -229,6 +232,7 @@ static pybind11::list build_bsi_queries_cuda_batch(torch::Tensor q2d, int decima
         const int W = batch.words_per_slice;
         auto words = batch.words.contiguous();
         auto weights = batch.slice_weights.contiguous();
+        auto chunk_scales = batch.chunk_scales;
         for (int64_t qi = 0; qi < Q; ++qi) {
             auto* holder = new PrebuiltBSIQueryCUDA();
             holder->vec = nullptr;
@@ -236,6 +240,9 @@ static pybind11::list build_bsi_queries_cuda_batch(torch::Tensor q2d, int decima
             holder->W = W;
             holder->dev_words = words[qi];
             holder->slice_weights = weights[qi];
+            if (chunk_scales.defined() && chunk_scales.numel() > 0) {
+                holder->chunk_scales = chunk_scales[qi].contiguous();
+            }
             holder->mem_bytes = static_cast<size_t>(holder->dev_words.numel() * holder->dev_words.element_size());
             holder->device_view.rows = static_cast<int64_t>(q2d.size(1));
             holder->device_view.slices = S;
@@ -381,6 +388,7 @@ struct TempGroup {
         int64_t Qcount = 0;
         torch::Tensor words;      // [Q, S, W]
         torch::Tensor weights;    // [Q, S]
+        torch::Tensor chunk_scales; // [Q, chunks] or undefined
         torch::Tensor q_indices;  // [Q]
     };
     std::vector<PreparedGroup> prepared;
@@ -393,14 +401,29 @@ struct TempGroup {
 
         std::vector<torch::Tensor> word_stack;
         std::vector<torch::Tensor> weight_stack;
+        std::vector<torch::Tensor> scale_stack;
         word_stack.reserve(g.queries.size());
         weight_stack.reserve(g.queries.size());
+        scale_stack.reserve(g.queries.size());
+        const bool have_scales =
+            (!g.queries.empty() && g.queries[0]->chunk_scales.defined() && g.queries[0]->chunk_scales.numel() > 0);
         for (auto* qptr : g.queries) {
             word_stack.push_back(qptr->dev_words);
             weight_stack.push_back(qptr->slice_weights);
+            if (have_scales) {
+                TORCH_CHECK(qptr->chunk_scales.defined() && qptr->chunk_scales.numel() > 0,
+                            "Mixed chunk-scale and non-chunk-scale queries in the same group");
+                scale_stack.push_back(qptr->chunk_scales);
+            } else {
+                TORCH_CHECK(!(qptr->chunk_scales.defined() && qptr->chunk_scales.numel() > 0),
+                            "Mixed chunk-scale and non-chunk-scale queries in the same group");
+            }
         }
         pg.words = torch::stack(word_stack).contiguous();
         pg.weights = torch::stack(weight_stack).contiguous();
+        if (have_scales) {
+            pg.chunk_scales = torch::stack(scale_stack).contiguous();
+        }
         pg.q_indices = torch::from_blob(
             g.indices.data(),
             {static_cast<int64_t>(g.indices.size())},
@@ -425,6 +448,25 @@ struct TempGroup {
     for (const auto& pg : prepared) {
         const auto* A = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(pg.words));
         const auto* Aw = tensor_data_ptr<float>(pg.weights);
+        const float* A_chunk_scales = nullptr;
+        int A_scale_stride = 0;
+        if (pg.chunk_scales.defined() && pg.chunk_scales.numel() > 0) {
+            // Chunk-scale mode requires the SM90+ BMMA path for correctness.
+            {
+                int dev = 0;
+                cudaGetDevice(&dev);
+                int major = 0;
+                cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, dev);
+                TORCH_CHECK(major >= 9, "Chunk scales require SM90+ (Hopper) tensor-core path");
+            }
+            TORCH_CHECK(keys->W % 4 == 0, "Chunk scales require W64 multiple of 4");
+            TORCH_CHECK(pg.chunk_scales.dim() == 2, "Expected [Q, chunks] chunk scales");
+            TORCH_CHECK(pg.chunk_scales.size(1) == (keys->W / 4),
+                        "Chunk scale stride mismatch: got ", pg.chunk_scales.size(1),
+                        " expected ", (keys->W / 4));
+            A_chunk_scales = tensor_data_ptr<float>(pg.chunk_scales);
+            A_scale_stride = static_cast<int>(pg.chunk_scales.size(1));
+        }
         const auto* q_idx = reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(pg.q_indices));
 
         for (const auto& kv2 : keys->grouped_indices) {
@@ -436,10 +478,12 @@ struct TempGroup {
             const auto& Bw_stacked = keys->grouped_weights.at(Sb);
         const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words));
             const auto* Bw_ptr = tensor_data_ptr<float>(Bw_stacked);
-        const auto& idx_dev = keys->grouped_indices_dev.at(Sb);
+            const auto& idx_dev = keys->grouped_indices_dev.at(Sb);
             launch_popcount_weighted_keys_literal_fused_multiq(
                 A,
                 Aw,
+                A_chunk_scales,
+                A_scale_stride,
                 pg.S,
                 keys->W,
                 B_words,

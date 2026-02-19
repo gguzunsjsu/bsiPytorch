@@ -689,6 +689,8 @@ extern "C" __global__
 void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
     const unsigned long long* __restrict__ A,    // [Q, Sa, W64]
     const float* __restrict__ Aw,                // [Q, Sa]
+    const float* __restrict__ A_chunk_scales,    // [Q, chunks] or nullptr
+    int A_scale_stride,                          // chunks (W64/4) or 0
     int Sa,
     int W64,
     const unsigned long long* __restrict__ B,    // [R, Sb, W64]
@@ -829,6 +831,20 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
         }
         __syncthreads();
 
+        const bool use_chunk_scale = (A_chunk_scales != nullptr) && (A_scale_stride > 0);
+        float qscale_row0 = 1.0f;
+        float qscale_row1 = 1.0f;
+        if (use_chunk_scale) {
+            const int q_row0 = q0 + row0;
+            const int q_row1 = q0 + row1;
+            qscale_row0 = (q_row0 < Q)
+                ? __ldg(&A_chunk_scales[(size_t)q_row0 * (size_t)A_scale_stride + (size_t)chunk])
+                : 0.0f;
+            qscale_row1 = (q_row1 < Q)
+                ? __ldg(&A_chunk_scales[(size_t)q_row1 * (size_t)A_scale_stride + (size_t)chunk])
+                : 0.0f;
+        }
+
         // For each slice pair (i,j), compute 16x8 popcounts for this 256-bit chunk and
         // accumulate into the final float output tile with per-row/per-col weights.
         if (cache_sb) {
@@ -861,8 +877,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
                 }
 
                 for (int i = 0; i < Sa; ++i) {
-                    const float aw0 = Aw_tile[(size_t)row0 * (size_t)Sa + (size_t)i];
-                    const float aw1 = Aw_tile[(size_t)row1 * (size_t)Sa + (size_t)i];
+                    const float aw0 = Aw_tile[(size_t)row0 * (size_t)Sa + (size_t)i] * qscale_row0;
+                    const float aw1 = Aw_tile[(size_t)row1 * (size_t)Sa + (size_t)i] * qscale_row1;
 
                     const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM * (size_t)K_STRIDE32;
                     const uint32_t a0 = A_i[(size_t)row0 * (size_t)K_STRIDE32 + (size_t)threadID];
@@ -907,8 +923,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
             }
         } else {
             for (int i = 0; i < Sa; ++i) {
-                const float aw0 = Aw_tile[(size_t)row0 * (size_t)Sa + (size_t)i];
-                const float aw1 = Aw_tile[(size_t)row1 * (size_t)Sa + (size_t)i];
+                const float aw0 = Aw_tile[(size_t)row0 * (size_t)Sa + (size_t)i] * qscale_row0;
+                const float aw1 = Aw_tile[(size_t)row1 * (size_t)Sa + (size_t)i] * qscale_row1;
 
                 const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM * (size_t)K_STRIDE32;
                 const uint32_t a0 = A_i[(size_t)row0 * (size_t)K_STRIDE32 + (size_t)threadID];
@@ -1349,6 +1365,8 @@ extern "C" __global__ __launch_bounds__(256, 4)
 void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
     const unsigned long long* __restrict__ A,    // [Q, Sa, W64]
     const float* __restrict__ Aw,                // [Q, Sa]
+    const float* __restrict__ A_chunk_scales,    // [Q, chunks] or nullptr
+    int A_scale_stride,                          // chunks (W64/4) or 0
     int Sa,
     int W64,
     const unsigned long long* __restrict__ B,    // [R, Sb, W64]
@@ -1535,6 +1553,25 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
         }
         __syncthreads();
 
+        const bool use_chunk_scale = (A_chunk_scales != nullptr) && (A_scale_stride > 0);
+        float qscale_m0 = 1.0f;
+        float qscale_m1 = 1.0f;
+        if (use_chunk_scale) {
+            const int q_m0 = q0 + m0;
+            const int q_m1 = q0 + m1;
+            if (full_q_tile) {
+                qscale_m0 = __ldg(&A_chunk_scales[(size_t)q_m0 * (size_t)A_scale_stride + (size_t)chunk]);
+                qscale_m1 = __ldg(&A_chunk_scales[(size_t)q_m1 * (size_t)A_scale_stride + (size_t)chunk]);
+            } else {
+                qscale_m0 = (q_m0 < Q)
+                    ? __ldg(&A_chunk_scales[(size_t)q_m0 * (size_t)A_scale_stride + (size_t)chunk])
+                    : 0.0f;
+                qscale_m1 = (q_m1 < Q)
+                    ? __ldg(&A_chunk_scales[(size_t)q_m1 * (size_t)A_scale_stride + (size_t)chunk])
+                    : 0.0f;
+            }
+        }
+
         if (cache_sb) {
             constexpr int JBLOCK = 4;
             const int b_slice_stride = TN * K_STRIDE32;
@@ -1556,8 +1593,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                 }
 
                 for (int i = 0; i < Sa; ++i) {
-                    const float aw0 = Aw_tile[(size_t)m0 * (size_t)Sa + (size_t)i];
-                    const float aw1 = Aw_tile[(size_t)m1 * (size_t)Sa + (size_t)i];
+                    const float aw0 = Aw_tile[(size_t)m0 * (size_t)Sa + (size_t)i] * qscale_m0;
+                    const float aw1 = Aw_tile[(size_t)m1 * (size_t)Sa + (size_t)i] * qscale_m1;
 
                     const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
                     const uint32_t a0 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)threadID];
@@ -1664,8 +1701,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                 }
 
                 for (int i = 0; i < Sa; ++i) {
-                    const float aw0 = Aw_tile[(size_t)m0 * (size_t)Sa + (size_t)i];
-                    const float aw1 = Aw_tile[(size_t)m1 * (size_t)Sa + (size_t)i];
+                    const float aw0 = Aw_tile[(size_t)m0 * (size_t)Sa + (size_t)i] * qscale_m0;
+                    const float aw1 = Aw_tile[(size_t)m1 * (size_t)Sa + (size_t)i] * qscale_m1;
 
                     const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
                     const uint32_t a0 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)threadID];
@@ -1704,8 +1741,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
             }
         } else {
             for (int i = 0; i < Sa; ++i) {
-                const float aw0 = Aw_tile[(size_t)m0 * (size_t)Sa + (size_t)i];
-                const float aw1 = Aw_tile[(size_t)m1 * (size_t)Sa + (size_t)i];
+                const float aw0 = Aw_tile[(size_t)m0 * (size_t)Sa + (size_t)i] * qscale_m0;
+                const float aw1 = Aw_tile[(size_t)m1 * (size_t)Sa + (size_t)i] * qscale_m1;
 
                 const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
                 const uint32_t a0 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)threadID];
@@ -1897,6 +1934,8 @@ static inline void launch_w128_sb_kernel(
 extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     const unsigned long long* A,
     const float* Aw,
+    const float* A_chunk_scales,
+    int A_scale_stride,
     int Sa,
     int W,
     const unsigned long long* B,
@@ -1915,7 +1954,12 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
 {
     // Optional SM90+ tensor-core (BMMA) path (guarded by BSI_TC_DOT).
     int use_tc = 0;
-    if (const char* s = getenv("BSI_TC_DOT")) use_tc = (atoi(s) != 0) ? 1 : 0;
+    // Chunk-scale mode requires BMMA for correctness; force the TC path when scales are provided.
+    if (A_chunk_scales != nullptr && A_scale_stride > 0) {
+        use_tc = 1;
+    } else if (const char* s = getenv("BSI_TC_DOT")) {
+        use_tc = (atoi(s) != 0) ? 1 : 0;
+    }
     if (use_tc) {
         static int cached_tc_ok = -1;
         if (cached_tc_ok < 0) {
@@ -1962,6 +2006,8 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                     popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32<<<grid_tc, block_tc, shared_bytes, stream>>>(
                         A,
                         Aw,
+                        A_chunk_scales,
+                        A_scale_stride,
                         Sa,
                         W,
                         B,
@@ -2001,6 +2047,8 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                     popcount_weighted_keys_literal_fused_bmma_tc_kernel<<<grid_tc, block_tc, shared_bytes, stream>>>(
                         A,
                         Aw,
+                        A_chunk_scales,
+                        A_scale_stride,
                         Sa,
                         W,
                         B,
