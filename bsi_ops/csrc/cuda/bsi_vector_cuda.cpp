@@ -7,8 +7,11 @@
 #include <iostream>
 
 #include <c10/cuda/CUDAStream.h>
+#include <ATen/ops/bitwise_left_shift.h>
+#include <ATen/ops/bitwise_right_shift.h>
 #include <ATen/ops/clamp.h>
 #include <ATen/ops/floor.h>
+#include <ATen/ops/log2.h>
 #include <ATen/ops/where.h>
 
 namespace {
@@ -137,9 +140,9 @@ int bsi_cuda_fixed_bits() {
 
 float bsi_cuda_fixed_clip_k() {
     static float cached = []() {
-        // Clip extreme values when computing the per-row scale for fixed-bit quantization.
-        // 0 disables clipping and uses true absmax.
-        float v = 8.0f; // default: mild clipping to reduce outlier sensitivity
+        // Clip extreme values when computing the per-row shift in fixed-bit mode.
+        // 0 disables clipping and uses true absmax (no saturation).
+        float v = 0.0f;
         if (const char* s = std::getenv("BSI_FIXED_CLIP_K")) {
             v = std::strtof(s, nullptr);
         }
@@ -162,6 +165,18 @@ struct QuantizedIntsAndScale {
     torch::Tensor scale;  // float32, shape [Q] for 2D inputs or scalar for 1D
 };
 
+static inline torch::Tensor round_shift_right_signed(const torch::Tensor& ints, const torch::Tensor& shift) {
+    // Round-to-nearest (half away from zero) for signed int64 division by 2^shift.
+    // shift must be >= 0 and broadcastable to ints.
+    auto abs_ints = ints.abs();
+    auto round_add = torch::where(
+        shift.gt(0),
+        torch::bitwise_left_shift(torch::ones_like(shift), shift - 1),
+        torch::zeros_like(shift));
+    auto abs_rounded = torch::bitwise_right_shift(abs_ints + round_add, shift);
+    return torch::where(ints.lt(0), -abs_rounded, abs_rounded);
+}
+
 static QuantizedIntsAndScale bsi_cuda_quantize_to_int64_and_scale(const torch::Tensor& input,
                                                                   int decimal_places,
                                                                   const torch::Device& device,
@@ -181,47 +196,59 @@ static QuantizedIntsAndScale bsi_cuda_quantize_to_int64_and_scale(const torch::T
         return out;
     }
 
-    // Fixed-bit path: symmetric intN quantization with per-row floating scale.
-    // We keep the downstream bit-sliced + popcount dot unchanged; only the float->int mapping changes.
-    auto values = input.to(device, torch::kFloat32, /*non_blocking=*/true).contiguous();
-    const float dec_scale = static_cast<float>(std::pow(10.0, static_cast<double>(decimal_places)));
-    auto scaled = (dec_scale == 1.0f) ? values : (values * dec_scale);
+    // Fixed-bit path: "block floating" downshift to fit fixed_bits, then compensate via a power-of-two scale.
+    // This keeps slice weights exact (powers of two) and matches the original fixed-bit implementation behavior.
+    auto values = input.to(device, torch::kFloat64, /*non_blocking=*/true).contiguous();
+    const double dec_scale = std::pow(10.0, static_cast<double>(decimal_places));
+    auto x = values * dec_scale;
+    auto rounded = round_half_away_from_zero(x);
+    auto ints = rounded.to(torch::kInt64).contiguous();
 
-    auto abs_scaled = scaled.abs();
     torch::Tensor max_abs;
     torch::Tensor mean_abs;
     if (per_row_scale) {
-        max_abs = std::get<0>(abs_scaled.max(1)); // [Q]
-        mean_abs = abs_scaled.mean(1);           // [Q]
+        max_abs = std::get<0>(ints.abs().max(1));                 // [Q] int64
+        mean_abs = ints.abs().to(torch::kFloat64).mean(1);        // [Q] float64
     } else {
-        max_abs = abs_scaled.max();  // scalar
-        mean_abs = abs_scaled.mean();
+        max_abs = ints.abs().max();                               // scalar int64
+        mean_abs = ints.abs().to(torch::kFloat64).mean();         // scalar float64
     }
 
-    auto effective_max = max_abs;
+    auto effective_max_f = max_abs.to(torch::kFloat64);
     const float clip_k = bsi_cuda_fixed_clip_k();
     if (clip_k > 0.0f) {
-        // Outlier handling: cap absmax by (clip_k * mean_abs).
-        auto clip_max = mean_abs * clip_k;
-        effective_max = torch::where(clip_max.lt(max_abs), clip_max, max_abs);
+        // Outlier handling: cap absmax by (clip_k * mean_abs) when selecting shift.
+        // This can reduce over-shifting due to a few extreme values, at the cost of saturating those outliers.
+        auto clip_max = mean_abs * static_cast<double>(clip_k);
+        effective_max_f = torch::where(clip_max.lt(effective_max_f), clip_max, effective_max_f);
     }
+
+    // Compute shift so that bit_width(effective_max) <= fixed_bits-1 (excluding sign bit).
+    auto eff_safe = torch::where(effective_max_f.gt(0.0), effective_max_f, torch::ones_like(effective_max_f));
+    auto bits_f = torch::floor(torch::log2(eff_safe)) + 1.0;
+    auto shift_f = bits_f - static_cast<double>(fixed_bits - 1);
+    auto shift = torch::where(shift_f.gt(0.0), shift_f, torch::zeros_like(shift_f))
+                     .to(torch::kInt64)
+                     .contiguous();
+
+    // Apply rounded right shift (signed) and clamp to intN.
+    torch::Tensor shift_b = shift;
+    if (per_row_scale) {
+        shift_b = shift.unsqueeze(1);
+    }
+    auto ints_shifted = round_shift_right_signed(ints, shift_b);
 
     const int64_t qmax_i = (int64_t(1) << (fixed_bits - 1)) - 1;
     const int64_t qmin_i = -(int64_t(1) << (fixed_bits - 1));
-    const float qmax_f = static_cast<float>(qmax_i);
+    ints_shifted = torch::clamp(ints_shifted, qmin_i, qmax_i).contiguous();
 
-    // Avoid div-by-zero for all-zero vectors.
-    auto scale = torch::where(effective_max.gt(0), effective_max / qmax_f, torch::ones_like(effective_max));
-    torch::Tensor scale_b = per_row_scale ? scale.unsqueeze(1) : scale;
-
-    auto x = scaled / scale_b;
-    auto rounded = round_half_away_from_zero(x);
-    auto q = rounded.to(torch::kInt64);
-    q = torch::clamp(q, qmin_i, qmax_i).contiguous();
+    // Compensate the shift by scaling slice weights by 2^shift (exact in fp32 for shift <= 62).
+    auto scale_i64 = torch::bitwise_left_shift(torch::ones_like(shift), shift);
+    auto scale = scale_i64.to(torch::kFloat32).contiguous();
 
     QuantizedIntsAndScale out;
-    out.ints = q;
-    out.scale = scale.to(torch::kFloat32).contiguous();
+    out.ints = ints_shifted;
+    out.scale = scale;
     return out;
 }
 
@@ -502,7 +529,7 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& inp
     auto weights_twos = make_slice_weights_cuda_local(slices, offset, true, device);
     auto slice_weights = torch::where(neg_flags.unsqueeze(1), weights_twos, weights_unsigned);
     if (bsi_cuda_fixed_bits() > 0) {
-        // Fixed-bit path: per-row floating scale (already computed during quantization).
+        // Fixed-bit path: per-row power-of-two scale (2^shift) computed during quantization.
         slice_weights = slice_weights * q.scale.unsqueeze(1);
     }
 
