@@ -1142,7 +1142,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                 const int w64_i = t & (K_WORDS64 - 1);
                 t >>= 2;
                 const int m = t & (TM_TOTAL - 1);
-                const int i = t >> 5; // /32
+                const int i = t / TM_TOTAL;
 
                 const int q = q0 + m;
                 const unsigned long long* a_slice = A + ((size_t)q * (size_t)Sa + (size_t)i) * (size_t)W64;
@@ -1159,7 +1159,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                 const int w64_i = t & (K_WORDS64 - 1);
                 t >>= 2;
                 const int m = t & (TM_TOTAL - 1);
-                const int i = t >> 5; // /32
+                const int i = t / TM_TOTAL;
 
                 uint32_t lo = 0u, hi = 0u;
                 const int q = q0 + m;
@@ -1943,6 +1943,9 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
 #endif
 }
 
+// BMMA TC variant: 16 warps per block (64x32 output tile).
+// This reuses the same B tile across 2x as many query rows (vs TM_TOTAL=32).
+extern "C" __global__ __launch_bounds__(512, 2)
 void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm64(
     const unsigned long long* __restrict__ A,    // [Q, Sa, W64]
     const float* __restrict__ Aw,                // [Q, Sa]
@@ -2059,7 +2062,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm64(
                 const int w64_i = t & (K_WORDS64 - 1);
                 t >>= 2;
                 const int m = t & (TM_TOTAL - 1);
-                const int i = t >> 5; // /32
+                const int i = t / TM_TOTAL;
 
                 const int q = q0 + m;
                 const unsigned long long* a_slice = A + ((size_t)q * (size_t)Sa + (size_t)i) * (size_t)W64;
@@ -2076,7 +2079,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm64(
                 const int w64_i = t & (K_WORDS64 - 1);
                 t >>= 2;
                 const int m = t & (TM_TOTAL - 1);
-                const int i = t >> 5; // /32
+                const int i = t / TM_TOTAL;
 
                 uint32_t lo = 0u, hi = 0u;
                 const int q = q0 + m;
