@@ -17,13 +17,16 @@ __device__ __forceinline__ long long bsi_load_index_or_identity(const long long*
 //
 // We only use these in the SM90 BMMA TC kernels, and we keep a safe fallback for
 // non-async architectures / host compilation.
-__device__ __forceinline__ void bsi_cp_async_cg_8B(void* dst_shared, const void* src_global) {
+__device__ __forceinline__ void bsi_cp_async_cg_16B(void* dst_shared, const void* src_global) {
 #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
     const unsigned int dst = __cvta_generic_to_shared(dst_shared);
-    asm volatile("cp.async.cg.shared.global [%0], [%1], 8;\n" :: "r"(dst), "l"(src_global));
+    // SM90 ptxas (NVHPC 24.11) only accepts 16B for cp.async.
+    asm volatile("cp.async.cg.shared.global [%0], [%1], 16;\n" :: "r"(dst), "l"(src_global));
 #else
-    *reinterpret_cast<unsigned long long*>(dst_shared) =
-        *reinterpret_cast<const unsigned long long*>(src_global);
+    auto* dst64 = reinterpret_cast<unsigned long long*>(dst_shared);
+    const auto* src64 = reinterpret_cast<const unsigned long long*>(src_global);
+    dst64[0] = src64[0];
+    dst64[1] = src64[1];
 #endif
 }
 
@@ -1172,29 +1175,33 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
     if (can_cpasync) {
         uint32_t* A_bits = A_bits0;
         uint32_t* B_bits = B_bits0;
-        for (int idx = threadIdx.x; idx < TM_TOTAL * Sa * K_WORDS64; idx += blockDim.x) {
+        // Copy 16B at a time: 2x uint64 per op (w64_i = 0,2).
+        constexpr int K_WORDS64_16B = K_WORDS64 / 2; // 2
+        for (int idx = threadIdx.x; idx < TM_TOTAL * Sa * K_WORDS64_16B; idx += blockDim.x) {
             int t = idx;
-            const int w64_i = t & (K_WORDS64 - 1);
-            t >>= 2;
+            const int w64_pair = t & (K_WORDS64_16B - 1); // 0..1
+            t >>= 1;
             const int m = t & (TM_TOTAL - 1);
             const int i = t >> 5; // /32
 
             const int q = q0 + m;
             const unsigned long long* a_slice = A + ((size_t)q * (size_t)Sa + (size_t)i) * (size_t)W64;
+            const int w64_i = w64_pair << 1; // 0 or 2
             const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + (w64_i << 1);
-            bsi_cp_async_cg_8B(A_bits + base, &a_slice[(size_t)0 * (size_t)K_WORDS64 + (size_t)w64_i]);
+            bsi_cp_async_cg_16B(A_bits + base, &a_slice[(size_t)0 * (size_t)K_WORDS64 + (size_t)w64_i]);
         }
-        for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS64; idx += blockDim.x) {
+        for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS64_16B; idx += blockDim.x) {
             int t = idx;
-            const int w64_i = t & (K_WORDS64 - 1);
-            t >>= 2;
+            const int w64_pair = t & (K_WORDS64_16B - 1); // 0..1
+            t >>= 1;
             const int n = t & (TN - 1);
             const int j = t >> 5; // /32
 
             const int r = r0 + n;
             const unsigned long long* b_slice = B + ((size_t)r * (size_t)Sb + (size_t)j) * (size_t)W64;
+            const int w64_i = w64_pair << 1; // 0 or 2
             const int base = ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
-            bsi_cp_async_cg_8B(B_bits + base, &b_slice[(size_t)0 * (size_t)K_WORDS64 + (size_t)w64_i]);
+            bsi_cp_async_cg_16B(B_bits + base, &b_slice[(size_t)0 * (size_t)K_WORDS64 + (size_t)w64_i]);
         }
         bsi_cp_async_commit_group();
         bsi_cp_async_wait_all();
@@ -1298,31 +1305,34 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                 uint32_t* B_bits_next = (next_stage == 0) ? B_bits0 : (B_bits0 + B_words);
 
                 const int next_chunk = chunk + 1;
-                for (int idx = threadIdx.x; idx < TM_TOTAL * Sa * K_WORDS64; idx += blockDim.x) {
+                constexpr int K_WORDS64_16B = K_WORDS64 / 2; // 2
+                for (int idx = threadIdx.x; idx < TM_TOTAL * Sa * K_WORDS64_16B; idx += blockDim.x) {
                     int t = idx;
-                    const int w64_i = t & (K_WORDS64 - 1);
-                    t >>= 2;
+                    const int w64_pair = t & (K_WORDS64_16B - 1); // 0..1
+                    t >>= 1;
                     const int m = t & (TM_TOTAL - 1);
                     const int i = t >> 5; // /32
 
                     const int q = q0 + m;
                     const unsigned long long* a_slice = A + ((size_t)q * (size_t)Sa + (size_t)i) * (size_t)W64;
+                    const int w64_i = w64_pair << 1; // 0 or 2
                     const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + (w64_i << 1);
-                    bsi_cp_async_cg_8B(
+                    bsi_cp_async_cg_16B(
                         A_bits_next + base,
                         &a_slice[(size_t)next_chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
                 }
-                for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS64; idx += blockDim.x) {
+                for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS64_16B; idx += blockDim.x) {
                     int t = idx;
-                    const int w64_i = t & (K_WORDS64 - 1);
-                    t >>= 2;
+                    const int w64_pair = t & (K_WORDS64_16B - 1); // 0..1
+                    t >>= 1;
                     const int n = t & (TN - 1);
                     const int j = t >> 5; // /32
 
                     const int r = r0 + n;
                     const unsigned long long* b_slice = B + ((size_t)r * (size_t)Sb + (size_t)j) * (size_t)W64;
+                    const int w64_i = w64_pair << 1; // 0 or 2
                     const int base = ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
-                    bsi_cp_async_cg_8B(
+                    bsi_cp_async_cg_16B(
                         B_bits_next + base,
                         &b_slice[(size_t)next_chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
                 }
