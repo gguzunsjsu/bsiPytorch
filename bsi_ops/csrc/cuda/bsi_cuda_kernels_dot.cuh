@@ -13,6 +13,35 @@ __device__ __forceinline__ long long bsi_load_index_or_identity(const long long*
 #endif
 }
 
+// Hopper/Ampere async global->shared copies.
+//
+// We only use these in the SM90 BMMA TC kernels, and we keep a safe fallback for
+// non-async architectures / host compilation.
+__device__ __forceinline__ void bsi_cp_async_cg_16B(void* dst_shared, const void* src_global) {
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
+    const unsigned int dst = __cvta_generic_to_shared(dst_shared);
+    // SM90 ptxas (NVHPC 24.11) only accepts 16B for cp.async.
+    asm volatile("cp.async.cg.shared.global [%0], [%1], 16;\n" :: "r"(dst), "l"(src_global));
+#else
+    auto* dst64 = reinterpret_cast<unsigned long long*>(dst_shared);
+    const auto* src64 = reinterpret_cast<const unsigned long long*>(src_global);
+    dst64[0] = src64[0];
+    dst64[1] = src64[1];
+#endif
+}
+
+__device__ __forceinline__ void bsi_cp_async_commit_group() {
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
+    asm volatile("cp.async.commit_group;\n" ::);
+#endif
+}
+
+__device__ __forceinline__ void bsi_cp_async_wait_all() {
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
+    asm volatile("cp.async.wait_group 0;\n" ::);
+#endif
+}
+
 extern "C" __global__
 void popcount_weighted_keys_literal_fused_multiq_kernel(
     const unsigned long long* __restrict__ A,    // [Q, Sa, W]
@@ -1042,7 +1071,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
     const long long* __restrict__ query_indices, // [Q]
     float scale_inv,
     int R_total,
-    float* __restrict__ out_global)
+    float* __restrict__ out_global,
+    int use_cpasync)
 {
 #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900)
     constexpr int TM_TOTAL = 32;
@@ -1072,10 +1102,15 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
     uintptr_t p = reinterpret_cast<uintptr_t>(smem_raw);
     p = (p + 15u) & ~uintptr_t(15u);
 
-    auto* A_bits = reinterpret_cast<uint32_t*>(p); // [Sa, TM_TOTAL, K]
-    p += (size_t)Sa * (size_t)TM_TOTAL * (size_t)K_STRIDE32 * sizeof(uint32_t);
-    auto* B_bits = reinterpret_cast<uint32_t*>(p); // [Sb, TN, K]
-    p += (size_t)Sb * (size_t)TN * (size_t)K_STRIDE32 * sizeof(uint32_t);
+    // Optional double-buffering for pipelined per-chunk loads.
+    const int stages = (use_cpasync != 0) ? 2 : 1;
+    const size_t A_words = (size_t)Sa * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
+    const size_t B_words = (size_t)Sb * (size_t)TN * (size_t)K_STRIDE32;
+
+    auto* A_bits0 = reinterpret_cast<uint32_t*>(p); // [stages, Sa, TM_TOTAL, K]
+    p += (size_t)stages * A_words * sizeof(uint32_t);
+    auto* B_bits0 = reinterpret_cast<uint32_t*>(p); // [stages, Sb, TN, K]
+    p += (size_t)stages * B_words * sizeof(uint32_t);
     auto* Aw_tile = reinterpret_cast<float*>(p);   // [TM_TOTAL, Sa]
     p += (size_t)TM_TOTAL * (size_t)Sa * sizeof(float);
     auto* Bw_tile = reinterpret_cast<float*>(p);   // [TN, Sb]
@@ -1134,87 +1169,176 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
     const float* bw_col1 = Bw_tile + (size_t)col1 * (size_t)Sb;
 
     const int chunks = W64 / K_WORDS64;
-    for (int chunk = 0; chunk < chunks; ++chunk) {
-        // Load A bits for this chunk.
-        if (full_q_tile) {
-            for (int idx = threadIdx.x; idx < TM_TOTAL * Sa * K_WORDS64; idx += blockDim.x) {
-                int t = idx;
-                const int w64_i = t & (K_WORDS64 - 1);
-                t >>= 2;
-                const int m = t & (TM_TOTAL - 1);
-                const int i = t >> 5; // /32
+    const bool can_cpasync = (use_cpasync != 0) && full_q_tile && full_r_tile && (chunks > 1);
 
-                const int q = q0 + m;
-                const unsigned long long* a_slice = A + ((size_t)q * (size_t)Sa + (size_t)i) * (size_t)W64;
-                const unsigned long long w64 = __ldg(&a_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
-                const uint32_t lo = static_cast<uint32_t>(w64);
-                const uint32_t hi = static_cast<uint32_t>(w64 >> 32);
-                const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + (w64_i << 1);
-                A_bits[base] = lo;
-                A_bits[base + 1] = hi;
-            }
-        } else {
-            for (int idx = threadIdx.x; idx < TM_TOTAL * Sa * K_WORDS64; idx += blockDim.x) {
-                int t = idx;
-                const int w64_i = t & (K_WORDS64 - 1);
-                t >>= 2;
-                const int m = t & (TM_TOTAL - 1);
-                const int i = t >> 5; // /32
+    // Prime the pipeline: load chunk 0 into stage 0.
+    if (can_cpasync) {
+        uint32_t* A_bits = A_bits0;
+        uint32_t* B_bits = B_bits0;
+        // Copy 16B at a time: 2x uint64 per op (w64_i = 0,2).
+        constexpr int K_WORDS64_16B = K_WORDS64 / 2; // 2
+        for (int idx = threadIdx.x; idx < TM_TOTAL * Sa * K_WORDS64_16B; idx += blockDim.x) {
+            int t = idx;
+            const int w64_pair = t & (K_WORDS64_16B - 1); // 0..1
+            t >>= 1;
+            const int m = t & (TM_TOTAL - 1);
+            const int i = t >> 5; // /32
 
-                uint32_t lo = 0u, hi = 0u;
-                const int q = q0 + m;
-                if (q < Q) {
-                    const unsigned long long* a_slice = A + ((size_t)q * (size_t)Sa + (size_t)i) * (size_t)W64;
-                    const unsigned long long w64 = __ldg(&a_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
-                    lo = static_cast<uint32_t>(w64);
-                    hi = static_cast<uint32_t>(w64 >> 32);
-                }
-                const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + (w64_i << 1);
-                A_bits[base] = lo;
-                A_bits[base + 1] = hi;
-            }
+            const int q = q0 + m;
+            const unsigned long long* a_slice = A + ((size_t)q * (size_t)Sa + (size_t)i) * (size_t)W64;
+            const int w64_i = w64_pair << 1; // 0 or 2
+            const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + (w64_i << 1);
+            bsi_cp_async_cg_16B(A_bits + base, &a_slice[(size_t)0 * (size_t)K_WORDS64 + (size_t)w64_i]);
         }
+        for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS64_16B; idx += blockDim.x) {
+            int t = idx;
+            const int w64_pair = t & (K_WORDS64_16B - 1); // 0..1
+            t >>= 1;
+            const int n = t & (TN - 1);
+            const int j = t >> 5; // /32
 
-        // Load B bits for this chunk.
-        if (full_r_tile) {
-            for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS64; idx += blockDim.x) {
-                int t = idx;
-                const int w64_i = t & (K_WORDS64 - 1);
-                t >>= 2;
-                const int n = t & (TN - 1);
-                const int j = t >> 5; // /32
-
-                const int r = r0 + n;
-                const unsigned long long* b_slice = B + ((size_t)r * (size_t)Sb + (size_t)j) * (size_t)W64;
-                const unsigned long long w64 = __ldg(&b_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
-                const uint32_t lo = static_cast<uint32_t>(w64);
-                const uint32_t hi = static_cast<uint32_t>(w64 >> 32);
-                const int base = ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
-                B_bits[base] = lo;
-                B_bits[base + 1] = hi;
-            }
-        } else {
-            for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS64; idx += blockDim.x) {
-                int t = idx;
-                const int w64_i = t & (K_WORDS64 - 1);
-                t >>= 2;
-                const int n = t & (TN - 1);
-                const int j = t >> 5; // /32
-
-                uint32_t lo = 0u, hi = 0u;
-                const int r = r0 + n;
-                if (r < R) {
-                    const unsigned long long* b_slice = B + ((size_t)r * (size_t)Sb + (size_t)j) * (size_t)W64;
-                    const unsigned long long w64 = __ldg(&b_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
-                    lo = static_cast<uint32_t>(w64);
-                    hi = static_cast<uint32_t>(w64 >> 32);
-                }
-                const int base = ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
-                B_bits[base] = lo;
-                B_bits[base + 1] = hi;
-            }
+            const int r = r0 + n;
+            const unsigned long long* b_slice = B + ((size_t)r * (size_t)Sb + (size_t)j) * (size_t)W64;
+            const int w64_i = w64_pair << 1; // 0 or 2
+            const int base = ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
+            bsi_cp_async_cg_16B(B_bits + base, &b_slice[(size_t)0 * (size_t)K_WORDS64 + (size_t)w64_i]);
         }
+        bsi_cp_async_commit_group();
+        bsi_cp_async_wait_all();
         __syncthreads();
+    }
+
+    int stage = 0;
+    for (int chunk = 0; chunk < chunks; ++chunk) {
+        uint32_t* A_bits = (stage == 0) ? A_bits0 : (A_bits0 + A_words);
+        uint32_t* B_bits = (stage == 0) ? B_bits0 : (B_bits0 + B_words);
+
+        if (!can_cpasync) {
+            // Synchronous global->shared path (handles boundary tiles).
+            if (full_q_tile) {
+                for (int idx = threadIdx.x; idx < TM_TOTAL * Sa * K_WORDS64; idx += blockDim.x) {
+                    int t = idx;
+                    const int w64_i = t & (K_WORDS64 - 1);
+                    t >>= 2;
+                    const int m = t & (TM_TOTAL - 1);
+                    const int i = t >> 5; // /32
+
+                    const int q = q0 + m;
+                    const unsigned long long* a_slice = A + ((size_t)q * (size_t)Sa + (size_t)i) * (size_t)W64;
+                    const unsigned long long w64 =
+                        __ldg(&a_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+                    const uint32_t lo = static_cast<uint32_t>(w64);
+                    const uint32_t hi = static_cast<uint32_t>(w64 >> 32);
+                    const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + (w64_i << 1);
+                    A_bits[base] = lo;
+                    A_bits[base + 1] = hi;
+                }
+            } else {
+                for (int idx = threadIdx.x; idx < TM_TOTAL * Sa * K_WORDS64; idx += blockDim.x) {
+                    int t = idx;
+                    const int w64_i = t & (K_WORDS64 - 1);
+                    t >>= 2;
+                    const int m = t & (TM_TOTAL - 1);
+                    const int i = t >> 5; // /32
+
+                    uint32_t lo = 0u, hi = 0u;
+                    const int q = q0 + m;
+                    if (q < Q) {
+                        const unsigned long long* a_slice = A + ((size_t)q * (size_t)Sa + (size_t)i) * (size_t)W64;
+                        const unsigned long long w64 =
+                            __ldg(&a_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+                        lo = static_cast<uint32_t>(w64);
+                        hi = static_cast<uint32_t>(w64 >> 32);
+                    }
+                    const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + (w64_i << 1);
+                    A_bits[base] = lo;
+                    A_bits[base + 1] = hi;
+                }
+            }
+
+            if (full_r_tile) {
+                for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS64; idx += blockDim.x) {
+                    int t = idx;
+                    const int w64_i = t & (K_WORDS64 - 1);
+                    t >>= 2;
+                    const int n = t & (TN - 1);
+                    const int j = t >> 5; // /32
+
+                    const int r = r0 + n;
+                    const unsigned long long* b_slice = B + ((size_t)r * (size_t)Sb + (size_t)j) * (size_t)W64;
+                    const unsigned long long w64 =
+                        __ldg(&b_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+                    const uint32_t lo = static_cast<uint32_t>(w64);
+                    const uint32_t hi = static_cast<uint32_t>(w64 >> 32);
+                    const int base = ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
+                    B_bits[base] = lo;
+                    B_bits[base + 1] = hi;
+                }
+            } else {
+                for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS64; idx += blockDim.x) {
+                    int t = idx;
+                    const int w64_i = t & (K_WORDS64 - 1);
+                    t >>= 2;
+                    const int n = t & (TN - 1);
+                    const int j = t >> 5; // /32
+
+                    uint32_t lo = 0u, hi = 0u;
+                    const int r = r0 + n;
+                    if (r < R) {
+                        const unsigned long long* b_slice = B + ((size_t)r * (size_t)Sb + (size_t)j) * (size_t)W64;
+                        const unsigned long long w64 =
+                            __ldg(&b_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+                        lo = static_cast<uint32_t>(w64);
+                        hi = static_cast<uint32_t>(w64 >> 32);
+                    }
+                    const int base = ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
+                    B_bits[base] = lo;
+                    B_bits[base + 1] = hi;
+                }
+            }
+            __syncthreads();
+        } else {
+            // Prefetch next chunk into the other stage while we compute this one.
+            if (chunk + 1 < chunks) {
+                const int next_stage = stage ^ 1;
+                uint32_t* A_bits_next = (next_stage == 0) ? A_bits0 : (A_bits0 + A_words);
+                uint32_t* B_bits_next = (next_stage == 0) ? B_bits0 : (B_bits0 + B_words);
+
+                const int next_chunk = chunk + 1;
+                constexpr int K_WORDS64_16B = K_WORDS64 / 2; // 2
+                for (int idx = threadIdx.x; idx < TM_TOTAL * Sa * K_WORDS64_16B; idx += blockDim.x) {
+                    int t = idx;
+                    const int w64_pair = t & (K_WORDS64_16B - 1); // 0..1
+                    t >>= 1;
+                    const int m = t & (TM_TOTAL - 1);
+                    const int i = t >> 5; // /32
+
+                    const int q = q0 + m;
+                    const unsigned long long* a_slice = A + ((size_t)q * (size_t)Sa + (size_t)i) * (size_t)W64;
+                    const int w64_i = w64_pair << 1; // 0 or 2
+                    const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + (w64_i << 1);
+                    bsi_cp_async_cg_16B(
+                        A_bits_next + base,
+                        &a_slice[(size_t)next_chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+                }
+                for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS64_16B; idx += blockDim.x) {
+                    int t = idx;
+                    const int w64_pair = t & (K_WORDS64_16B - 1); // 0..1
+                    t >>= 1;
+                    const int n = t & (TN - 1);
+                    const int j = t >> 5; // /32
+
+                    const int r = r0 + n;
+                    const unsigned long long* b_slice = B + ((size_t)r * (size_t)Sb + (size_t)j) * (size_t)W64;
+                    const int w64_i = w64_pair << 1; // 0 or 2
+                    const int base = ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
+                    bsi_cp_async_cg_16B(
+                        B_bits_next + base,
+                        &b_slice[(size_t)next_chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+                }
+                bsi_cp_async_commit_group();
+            }
+        }
 
         const bool use_chunk_scale = (A_chunk_scales != nullptr) && (A_scale_stride > 0);
         float qscale_m0 = 1.0f;
@@ -1862,7 +1986,12 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                 acc11 = __fmaf_rn(aw1, sum11, acc11);
             }
         }
+
+        if (can_cpasync && (chunk + 1 < chunks)) {
+            bsi_cp_async_wait_all();
+        }
         __syncthreads();
+        if (can_cpasync) stage ^= 1;
     }
 
     const int q_out0 = q0 + m0;
@@ -2061,6 +2190,13 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
             cudaDeviceGetAttribute(&max_shared_optin, cudaDevAttrMaxSharedMemoryPerBlockOptin, dev);
             int max_shared = (max_shared_optin > max_shared_default) ? max_shared_optin : max_shared_default;
 
+            // Enable pipelined per-chunk global->shared loads by default on SM90.
+            // You can disable for A/B testing via: BSI_TC_CPASYNC=0
+            int use_cpasync = 1;
+            if (const char* s = getenv("BSI_TC_CPASYNC")) {
+                use_cpasync = (atoi(s) != 0) ? 1 : 0;
+            }
+
             // Keep only the stable BMMA TC tile used for the ~92-93ms runs (TM=32, TN=32).
             // Fall back to the original TM=16, TN=32 kernel if we cannot fit shared memory.
             {
@@ -2069,12 +2205,24 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                 dim3 block_tc(256, 1, 1);
                 dim3 grid_tc((R + TN - 1) / TN, (Q + TM_TOTAL - 1) / TM_TOTAL, 1);
 
+                const int stages = use_cpasync ? 2 : 1;
                 size_t shared_bytes =
                     16u +
-                    (size_t)Sa * (size_t)TM_TOTAL * (size_t)K_STRIDE32 * sizeof(uint32_t) +
-                    (size_t)Sb * (size_t)TN * (size_t)K_STRIDE32 * sizeof(uint32_t) +
+                    (size_t)stages * (size_t)Sa * (size_t)TM_TOTAL * (size_t)K_STRIDE32 * sizeof(uint32_t) +
+                    (size_t)stages * (size_t)Sb * (size_t)TN * (size_t)K_STRIDE32 * sizeof(uint32_t) +
                     (size_t)TM_TOTAL * (size_t)Sa * sizeof(float) +
                     (size_t)TN * (size_t)Sb * sizeof(float);
+
+                // If the pipelined (double-buffered) version doesn't fit, retry with stages=1.
+                if (shared_bytes > (size_t)max_shared && use_cpasync) {
+                    use_cpasync = 0;
+                    shared_bytes =
+                        16u +
+                        (size_t)Sa * (size_t)TM_TOTAL * (size_t)K_STRIDE32 * sizeof(uint32_t) +
+                        (size_t)Sb * (size_t)TN * (size_t)K_STRIDE32 * sizeof(uint32_t) +
+                        (size_t)TM_TOTAL * (size_t)Sa * sizeof(float) +
+                        (size_t)TN * (size_t)Sb * sizeof(float);
+                }
 
                 if (shared_bytes <= (size_t)max_shared) {
                     if (shared_bytes > (size_t)max_shared_default) {
@@ -2099,7 +2247,8 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                         indices_q,
                         scale_inv,
                         R_total,
-                        out_global);
+                        out_global,
+                        use_cpasync);
                     return;
                 }
             }
