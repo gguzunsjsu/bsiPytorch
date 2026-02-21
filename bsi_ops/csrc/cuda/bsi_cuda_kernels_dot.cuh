@@ -1577,118 +1577,132 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                     bw1_cache1[jj] = bw_col1[4 + jj];
                 }
 
-                for (int i = 0; i < Sa; ++i) {
-                    const float aw0 = Aw_tile[(size_t)m0 * (size_t)Sa + (size_t)i] * qscale_m0;
-                    const float aw1 = Aw_tile[(size_t)m1 * (size_t)Sa + (size_t)i] * qscale_m1;
+                const float* Aw_m0 = Aw_tile + (size_t)m0 * (size_t)Sa;
+                const float* Aw_m1 = Aw_tile + (size_t)m1 * (size_t)Sa;
 
-                    const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
-                    const uint32_t a0 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)threadID];
-                    const uint32_t a1 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)threadID];
-                    const uint32_t a2 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
-                    const uint32_t a3 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+#define BSI_TC_BMMA_TM32_SB6_DO_I()                                                      \
+    const float aw0 = Aw_m0[i] * qscale_m0;                                               \
+    const float aw1 = Aw_m1[i] * qscale_m1;                                               \
+                                                                                          \
+    const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32;     \
+    const uint32_t a0 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)threadID];          \
+    const uint32_t a1 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)threadID];          \
+    const uint32_t a2 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];    \
+    const uint32_t a3 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];    \
+                                                                                          \
+    float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;                         \
+                                                                                          \
+    /* Issue BMMA in pairs to increase ILP. */                                            \
+    {                                                                                     \
+        int c0 = 0, c1 = 0, c2 = 0, c3 = 0;                                               \
+        int d0 = 0, d1 = 0, d2 = 0, d3 = 0;                                               \
+        asm volatile(                                                                     \
+            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "                   \
+            "{%0, %1, %2, %3}, "                                                          \
+            "{%4, %5, %6, %7}, "                                                          \
+            "{%8, %9}, "                                                                  \
+            "{%0, %1, %2, %3};\n"                                                         \
+            : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)                                      \
+            : "r"(a0), "r"(a1), "r"(a2), "r"(a3),                                         \
+              "r"(b0_cache0[0]), "r"(b1_cache0[0]));                                      \
+        asm volatile(                                                                     \
+            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "                   \
+            "{%0, %1, %2, %3}, "                                                          \
+            "{%4, %5, %6, %7}, "                                                          \
+            "{%8, %9}, "                                                                  \
+            "{%0, %1, %2, %3};\n"                                                         \
+            : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)                                      \
+            : "r"(a0), "r"(a1), "r"(a2), "r"(a3),                                         \
+              "r"(b0_cache0[1]), "r"(b1_cache0[1]));                                      \
+                                                                                          \
+        sum00 = __fmaf_rn(static_cast<float>(c0), bw0_cache0[0], sum00);                   \
+        sum01 = __fmaf_rn(static_cast<float>(c1), bw1_cache0[0], sum01);                   \
+        sum10 = __fmaf_rn(static_cast<float>(c2), bw0_cache0[0], sum10);                   \
+        sum11 = __fmaf_rn(static_cast<float>(c3), bw1_cache0[0], sum11);                   \
+        sum00 = __fmaf_rn(static_cast<float>(d0), bw0_cache0[1], sum00);                   \
+        sum01 = __fmaf_rn(static_cast<float>(d1), bw1_cache0[1], sum01);                   \
+        sum10 = __fmaf_rn(static_cast<float>(d2), bw0_cache0[1], sum10);                   \
+        sum11 = __fmaf_rn(static_cast<float>(d3), bw1_cache0[1], sum11);                   \
+    }                                                                                     \
+    {                                                                                     \
+        int c0 = 0, c1 = 0, c2 = 0, c3 = 0;                                               \
+        int d0 = 0, d1 = 0, d2 = 0, d3 = 0;                                               \
+        asm volatile(                                                                     \
+            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "                   \
+            "{%0, %1, %2, %3}, "                                                          \
+            "{%4, %5, %6, %7}, "                                                          \
+            "{%8, %9}, "                                                                  \
+            "{%0, %1, %2, %3};\n"                                                         \
+            : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)                                      \
+            : "r"(a0), "r"(a1), "r"(a2), "r"(a3),                                         \
+              "r"(b0_cache0[2]), "r"(b1_cache0[2]));                                      \
+        asm volatile(                                                                     \
+            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "                   \
+            "{%0, %1, %2, %3}, "                                                          \
+            "{%4, %5, %6, %7}, "                                                          \
+            "{%8, %9}, "                                                                  \
+            "{%0, %1, %2, %3};\n"                                                         \
+            : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)                                      \
+            : "r"(a0), "r"(a1), "r"(a2), "r"(a3),                                         \
+              "r"(b0_cache0[3]), "r"(b1_cache0[3]));                                      \
+                                                                                          \
+        sum00 = __fmaf_rn(static_cast<float>(c0), bw0_cache0[2], sum00);                   \
+        sum01 = __fmaf_rn(static_cast<float>(c1), bw1_cache0[2], sum01);                   \
+        sum10 = __fmaf_rn(static_cast<float>(c2), bw0_cache0[2], sum10);                   \
+        sum11 = __fmaf_rn(static_cast<float>(c3), bw1_cache0[2], sum11);                   \
+        sum00 = __fmaf_rn(static_cast<float>(d0), bw0_cache0[3], sum00);                   \
+        sum01 = __fmaf_rn(static_cast<float>(d1), bw1_cache0[3], sum01);                   \
+        sum10 = __fmaf_rn(static_cast<float>(d2), bw0_cache0[3], sum10);                   \
+        sum11 = __fmaf_rn(static_cast<float>(d3), bw1_cache0[3], sum11);                   \
+    }                                                                                     \
+    {                                                                                     \
+        int c0 = 0, c1 = 0, c2 = 0, c3 = 0;                                               \
+        int d0 = 0, d1 = 0, d2 = 0, d3 = 0;                                               \
+        asm volatile(                                                                     \
+            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "                   \
+            "{%0, %1, %2, %3}, "                                                          \
+            "{%4, %5, %6, %7}, "                                                          \
+            "{%8, %9}, "                                                                  \
+            "{%0, %1, %2, %3};\n"                                                         \
+            : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)                                      \
+            : "r"(a0), "r"(a1), "r"(a2), "r"(a3),                                         \
+              "r"(b0_cache1[0]), "r"(b1_cache1[0]));                                      \
+        asm volatile(                                                                     \
+            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "                   \
+            "{%0, %1, %2, %3}, "                                                          \
+            "{%4, %5, %6, %7}, "                                                          \
+            "{%8, %9}, "                                                                  \
+            "{%0, %1, %2, %3};\n"                                                         \
+            : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)                                      \
+            : "r"(a0), "r"(a1), "r"(a2), "r"(a3),                                         \
+              "r"(b0_cache1[1]), "r"(b1_cache1[1]));                                      \
+                                                                                          \
+        sum00 = __fmaf_rn(static_cast<float>(c0), bw0_cache1[0], sum00);                   \
+        sum01 = __fmaf_rn(static_cast<float>(c1), bw1_cache1[0], sum01);                   \
+        sum10 = __fmaf_rn(static_cast<float>(c2), bw0_cache1[0], sum10);                   \
+        sum11 = __fmaf_rn(static_cast<float>(c3), bw1_cache1[0], sum11);                   \
+        sum00 = __fmaf_rn(static_cast<float>(d0), bw0_cache1[1], sum00);                   \
+        sum01 = __fmaf_rn(static_cast<float>(d1), bw1_cache1[1], sum01);                   \
+        sum10 = __fmaf_rn(static_cast<float>(d2), bw0_cache1[1], sum10);                   \
+        sum11 = __fmaf_rn(static_cast<float>(d3), bw1_cache1[1], sum11);                   \
+    }                                                                                     \
+                                                                                          \
+    acc00 = __fmaf_rn(aw0, sum00, acc00);                                                 \
+    acc01 = __fmaf_rn(aw0, sum01, acc01);                                                 \
+    acc10 = __fmaf_rn(aw1, sum10, acc10);                                                 \
+    acc11 = __fmaf_rn(aw1, sum11, acc11);
 
-                    float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
-
-                    // Issue BMMA in pairs to increase ILP.
-                    {
-                        int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
-                        int d0 = 0, d1 = 0, d2 = 0, d3 = 0;
-                        asm volatile(
-                            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
-                            "{%0, %1, %2, %3}, "
-                            "{%4, %5, %6, %7}, "
-                            "{%8, %9}, "
-                            "{%0, %1, %2, %3};\n"
-                            : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
-                            : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
-                              "r"(b0_cache0[0]), "r"(b1_cache0[0]));
-                        asm volatile(
-                            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
-                            "{%0, %1, %2, %3}, "
-                            "{%4, %5, %6, %7}, "
-                            "{%8, %9}, "
-                            "{%0, %1, %2, %3};\n"
-                            : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
-                            : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
-                              "r"(b0_cache0[1]), "r"(b1_cache0[1]));
-
-                        sum00 = __fmaf_rn(static_cast<float>(c0), bw0_cache0[0], sum00);
-                        sum01 = __fmaf_rn(static_cast<float>(c1), bw1_cache0[0], sum01);
-                        sum10 = __fmaf_rn(static_cast<float>(c2), bw0_cache0[0], sum10);
-                        sum11 = __fmaf_rn(static_cast<float>(c3), bw1_cache0[0], sum11);
-                        sum00 = __fmaf_rn(static_cast<float>(d0), bw0_cache0[1], sum00);
-                        sum01 = __fmaf_rn(static_cast<float>(d1), bw1_cache0[1], sum01);
-                        sum10 = __fmaf_rn(static_cast<float>(d2), bw0_cache0[1], sum10);
-                        sum11 = __fmaf_rn(static_cast<float>(d3), bw1_cache0[1], sum11);
+                if (Sa == 7) {
+#pragma unroll
+                    for (int i = 0; i < 7; ++i) {
+                        BSI_TC_BMMA_TM32_SB6_DO_I();
                     }
-                    {
-                        int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
-                        int d0 = 0, d1 = 0, d2 = 0, d3 = 0;
-                        asm volatile(
-                            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
-                            "{%0, %1, %2, %3}, "
-                            "{%4, %5, %6, %7}, "
-                            "{%8, %9}, "
-                            "{%0, %1, %2, %3};\n"
-                            : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
-                            : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
-                              "r"(b0_cache0[2]), "r"(b1_cache0[2]));
-                        asm volatile(
-                            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
-                            "{%0, %1, %2, %3}, "
-                            "{%4, %5, %6, %7}, "
-                            "{%8, %9}, "
-                            "{%0, %1, %2, %3};\n"
-                            : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
-                            : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
-                              "r"(b0_cache0[3]), "r"(b1_cache0[3]));
-
-                        sum00 = __fmaf_rn(static_cast<float>(c0), bw0_cache0[2], sum00);
-                        sum01 = __fmaf_rn(static_cast<float>(c1), bw1_cache0[2], sum01);
-                        sum10 = __fmaf_rn(static_cast<float>(c2), bw0_cache0[2], sum10);
-                        sum11 = __fmaf_rn(static_cast<float>(c3), bw1_cache0[2], sum11);
-                        sum00 = __fmaf_rn(static_cast<float>(d0), bw0_cache0[3], sum00);
-                        sum01 = __fmaf_rn(static_cast<float>(d1), bw1_cache0[3], sum01);
-                        sum10 = __fmaf_rn(static_cast<float>(d2), bw0_cache0[3], sum10);
-                        sum11 = __fmaf_rn(static_cast<float>(d3), bw1_cache0[3], sum11);
+                } else {
+                    for (int i = 0; i < Sa; ++i) {
+                        BSI_TC_BMMA_TM32_SB6_DO_I();
                     }
-                    {
-                        int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
-                        int d0 = 0, d1 = 0, d2 = 0, d3 = 0;
-                        asm volatile(
-                            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
-                            "{%0, %1, %2, %3}, "
-                            "{%4, %5, %6, %7}, "
-                            "{%8, %9}, "
-                            "{%0, %1, %2, %3};\n"
-                            : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
-                            : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
-                              "r"(b0_cache1[0]), "r"(b1_cache1[0]));
-                        asm volatile(
-                            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
-                            "{%0, %1, %2, %3}, "
-                            "{%4, %5, %6, %7}, "
-                            "{%8, %9}, "
-                            "{%0, %1, %2, %3};\n"
-                            : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
-                            : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
-                              "r"(b0_cache1[1]), "r"(b1_cache1[1]));
-
-                        sum00 = __fmaf_rn(static_cast<float>(c0), bw0_cache1[0], sum00);
-                        sum01 = __fmaf_rn(static_cast<float>(c1), bw1_cache1[0], sum01);
-                        sum10 = __fmaf_rn(static_cast<float>(c2), bw0_cache1[0], sum10);
-                        sum11 = __fmaf_rn(static_cast<float>(c3), bw1_cache1[0], sum11);
-                        sum00 = __fmaf_rn(static_cast<float>(d0), bw0_cache1[1], sum00);
-                        sum01 = __fmaf_rn(static_cast<float>(d1), bw1_cache1[1], sum01);
-                        sum10 = __fmaf_rn(static_cast<float>(d2), bw0_cache1[1], sum10);
-                        sum11 = __fmaf_rn(static_cast<float>(d3), bw1_cache1[1], sum11);
-                    }
-
-                    acc00 = __fmaf_rn(aw0, sum00, acc00);
-                    acc01 = __fmaf_rn(aw0, sum01, acc01);
-                    acc10 = __fmaf_rn(aw1, sum10, acc10);
-                    acc11 = __fmaf_rn(aw1, sum11, acc11);
                 }
+#undef BSI_TC_BMMA_TM32_SB6_DO_I
             } else {
                 const int Sb_full = Sb & ~(JBLOCK - 1); // fast path for full JBLOCKs
                 for (int j0 = 0; j0 < Sb_full; j0 += JBLOCK) {
