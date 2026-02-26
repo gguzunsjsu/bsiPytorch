@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <bit>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
 
@@ -191,6 +192,33 @@ static bool bsi_cuda_fixed_chunk_scale_queries() {
     }
     cached = (v != 0) ? 1 : 0;
     return cached != 0;
+}
+
+static bool bsi_cuda_profile_enabled_local() {
+    static int cached = -1;
+    if (cached >= 0) return cached != 0;
+    int v = 0;
+    if (const char* s = std::getenv("BSI_PROFILE")) {
+        v = (std::atoi(s) != 0) ? 1 : 0;
+    }
+    cached = v;
+    return cached != 0;
+}
+
+static uint64_t g_last_query_build_quantize_ns = 0;
+static uint64_t g_last_query_build_pack_ns = 0;
+static uint64_t g_last_query_build_total_ns = 0;
+
+std::tuple<uint64_t, uint64_t, uint64_t> bsi_cuda_get_last_query_build_profile() {
+    return std::make_tuple(g_last_query_build_quantize_ns,
+                           g_last_query_build_pack_ns,
+                           g_last_query_build_total_ns);
+}
+
+void bsi_cuda_reset_last_query_build_profile() {
+    g_last_query_build_quantize_ns = 0;
+    g_last_query_build_pack_ns = 0;
+    g_last_query_build_total_ns = 0;
 }
 
 static inline torch::Tensor round_half_away_from_zero(const torch::Tensor& x) {
@@ -575,8 +603,28 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& inp
             }
         }
     }
+    const bool profile = bsi_cuda_profile_enabled_local();
+    const bool profile_cuda = profile && input.is_cuda();
+    float quantize_ms = 0.0f;
+    float pack_ms = 0.0f;
+    cudaEvent_t quantize_start_evt = nullptr;
+    cudaEvent_t quantize_end_evt = nullptr;
+    if (profile_cuda) {
+        cudaEventCreate(&quantize_start_evt);
+        cudaEventCreate(&quantize_end_evt);
+        auto stream = at::cuda::getCurrentCUDAStream();
+        cudaEventRecord(quantize_start_evt, stream.stream());
+    }
     auto q = bsi_cuda_quantize_to_int64_and_scale(
         input, decimal_places, device, /*per_row_scale=*/true, fixed_bits, chunk_scale);
+    if (profile_cuda) {
+        auto stream = at::cuda::getCurrentCUDAStream();
+        cudaEventRecord(quantize_end_evt, stream.stream());
+        cudaEventSynchronize(quantize_end_evt);
+        cudaEventElapsedTime(&quantize_ms, quantize_start_evt, quantize_end_evt);
+        cudaEventDestroy(quantize_start_evt);
+        cudaEventDestroy(quantize_end_evt);
+    }
     auto scaled = q.ints;
     const int64_t Q = scaled.size(0);
     const int64_t d = scaled.size(1);
@@ -605,6 +653,14 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& inp
                               torch::TensorOptions().dtype(torch::kInt64).device(device));
 
     if (Q > 0 && d > 0) {
+        cudaEvent_t pack_start_evt = nullptr;
+        cudaEvent_t pack_end_evt = nullptr;
+        if (profile_cuda) {
+            cudaEventCreate(&pack_start_evt);
+            cudaEventCreate(&pack_end_evt);
+            auto stream = at::cuda::getCurrentCUDAStream();
+            cudaEventRecord(pack_start_evt, stream.stream());
+        }
         unsigned long long value_mask = (slices >= 64)
             ? ~0ULL
             : ((1ULL << slices) - 1ULL);
@@ -619,6 +675,14 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& inp
             value_mask,
             reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(words)),
             stream.stream());
+        if (profile_cuda) {
+            auto stream2 = at::cuda::getCurrentCUDAStream();
+            cudaEventRecord(pack_end_evt, stream2.stream());
+            cudaEventSynchronize(pack_end_evt);
+            cudaEventElapsedTime(&pack_ms, pack_start_evt, pack_end_evt);
+            cudaEventDestroy(pack_start_evt);
+            cudaEventDestroy(pack_end_evt);
+        }
     }
 
     auto neg_flags = (Q > 0) ? scaled.lt(0).any(1) : torch::zeros({Q}, torch::TensorOptions().dtype(torch::kBool).device(device));
@@ -646,6 +710,16 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& inp
     out.slice_weights = slice_weights;
     if (fixed_bits > 0 && chunk_scale) {
         out.chunk_scales = q.scale.contiguous();
+    }
+
+    if (profile_cuda) {
+        g_last_query_build_quantize_ns = static_cast<uint64_t>(quantize_ms * 1.0e6);
+        g_last_query_build_pack_ns = static_cast<uint64_t>(pack_ms * 1.0e6);
+        g_last_query_build_total_ns = g_last_query_build_quantize_ns + g_last_query_build_pack_ns;
+    } else {
+        g_last_query_build_quantize_ns = 0;
+        g_last_query_build_pack_ns = 0;
+        g_last_query_build_total_ns = 0;
     }
 
     if (verbose || bsi_cuda_should_log()) {

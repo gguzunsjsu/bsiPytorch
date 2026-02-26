@@ -120,6 +120,17 @@ static int bsi_cuda_fixed_bits_keys_env() {
     return cached;
 }
 
+static bool bsi_cuda_profile_enabled() {
+    static int cached = -1;
+    if (cached >= 0) return cached != 0;
+    int v = 0; // default off: do not synchronize inside every dot call
+    if (const char* s = std::getenv("BSI_PROFILE")) {
+        v = (std::atoi(s) != 0) ? 1 : 0;
+    }
+    cached = v;
+    return cached != 0;
+}
+
 // --- GPU prebuilt keys (device-packed words) ---
 struct KeyMeta {
     int S = 0;
@@ -493,11 +504,16 @@ struct TempGroup {
     const int totalDecimals = common_decimals + keys->decimals;
     const double scale_inv = (totalDecimals > 0) ? (1.0 / std::pow(10.0, totalDecimals)) : 1.0;
 
-    cudaEvent_t start_evt, end_evt;
-    cudaEventCreate(&start_evt);
-    cudaEventCreate(&end_evt);
     auto stream = at::cuda::getCurrentCUDAStream();
-    cudaEventRecord(start_evt, stream.stream());
+    float kernel_ms = 0.0f;
+    const bool profile = bsi_cuda_profile_enabled();
+    cudaEvent_t start_evt = nullptr;
+    cudaEvent_t end_evt = nullptr;
+    if (profile) {
+        cudaEventCreate(&start_evt);
+        cudaEventCreate(&end_evt);
+        cudaEventRecord(start_evt, stream.stream());
+    }
 
     for (const auto& pg : prepared) {
         const auto* A = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(pg.words));
@@ -556,12 +572,13 @@ struct TempGroup {
         }
     }
 
-    cudaEventRecord(end_evt, stream.stream());
-    cudaEventSynchronize(end_evt);
-    float kernel_ms = 0.0f;
-    cudaEventElapsedTime(&kernel_ms, start_evt, end_evt);
-    cudaEventDestroy(start_evt);
-    cudaEventDestroy(end_evt);
+    if (profile) {
+        cudaEventRecord(end_evt, stream.stream());
+        cudaEventSynchronize(end_evt);
+        cudaEventElapsedTime(&kernel_ms, start_evt, end_evt);
+        cudaEventDestroy(start_evt);
+        cudaEventDestroy(end_evt);
+    }
 
     // Total GPU time (ns) spent inside the fused dot kernels launched in this call.
     // This covers computing the full output matrix of shape [Q, R].
@@ -635,11 +652,16 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
     const int totalDecimals = qb->decimals + keys->decimals;
     const double scale_inv = (totalDecimals > 0) ? (1.0 / std::pow(10.0, totalDecimals)) : 1.0;
 
-    cudaEvent_t start_evt, end_evt;
-    cudaEventCreate(&start_evt);
-    cudaEventCreate(&end_evt);
     auto stream = at::cuda::getCurrentCUDAStream();
-    cudaEventRecord(start_evt, stream.stream());
+    float kernel_ms = 0.0f;
+    const bool profile = bsi_cuda_profile_enabled();
+    cudaEvent_t start_evt = nullptr;
+    cudaEvent_t end_evt = nullptr;
+    if (profile) {
+        cudaEventCreate(&start_evt);
+        cudaEventCreate(&end_evt);
+        cudaEventRecord(start_evt, stream.stream());
+    }
 
     const auto* A = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(qb->words));
     const auto* Aw = tensor_data_ptr<float>(qb->slice_weights);
@@ -678,12 +700,13 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
             stream.stream());
     }
 
-    cudaEventRecord(end_evt, stream.stream());
-    cudaEventSynchronize(end_evt);
-    float kernel_ms = 0.0f;
-    cudaEventElapsedTime(&kernel_ms, start_evt, end_evt);
-    cudaEventDestroy(start_evt);
-    cudaEventDestroy(end_evt);
+    if (profile) {
+        cudaEventRecord(end_evt, stream.stream());
+        cudaEventSynchronize(end_evt);
+        cudaEventElapsedTime(&kernel_ms, start_evt, end_evt);
+        cudaEventDestroy(start_evt);
+        cudaEventDestroy(end_evt);
+    }
 
     const uint64_t dot_kernel_ns_total = static_cast<uint64_t>(kernel_ms * 1.0e6);
     const double dot_kernel_ns_per_query =
@@ -889,6 +912,12 @@ void register_bsi_cuda(pybind11::module& m) {
         pybind11::arg("decimal_places"),
         pybind11::arg("compress_threshold") = 0.2f,
         "Build a packed (batched) BSI query object on CUDA (no per-row capsules)");
+    m.def("get_last_query_build_profile_cuda",
+        &bsi_cuda_get_last_query_build_profile,
+        "Return (quantize_ns, pack_ns, total_ns) for the last CUDA query-batch build");
+    m.def("reset_last_query_build_profile_cuda",
+        &bsi_cuda_reset_last_query_build_profile,
+        "Reset last CUDA query-batch build profile counters to zero");
 
     // Hybrid compressed query builder
     m.def("build_bsi_query_cuda_hybrid",

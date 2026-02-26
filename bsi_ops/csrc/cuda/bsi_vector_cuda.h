@@ -76,3 +76,8 @@ bsi_cuda_quantize_debug(const torch::Tensor& values,
 BsiVectorCudaData create_bsi_vector_cuda_from_cpu(const BsiVector<uint64_t>& src,
                                                   const torch::Device& device,
                                                   bool verbose = false);
+
+// Last-call query build profiling (set by build_bsi_queries_cuda_batch_data when BSI_PROFILE=1).
+// Returns (quantize_ns, pack_ns, total_ns). Values are 0 when profiling is disabled.
+std::tuple<uint64_t, uint64_t, uint64_t> bsi_cuda_get_last_query_build_profile();
+void bsi_cuda_reset_last_query_build_profile();
