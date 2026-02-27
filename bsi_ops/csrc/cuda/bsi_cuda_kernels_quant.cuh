@@ -635,6 +635,53 @@ extern "C" void launch_quantize_shift_pack_chunk_batch(
     }
 }
 
+template <int BLOCK_SIZE>
+__global__ void compute_slice_activity_masks_kernel(
+    const unsigned long long* __restrict__ words, // [Q, slices, words_per_slice]
+    int Q,
+    int slices,
+    int words_per_slice,
+    int chunk_words,
+    int chunks,
+    uint32_t* __restrict__ out_masks) // [Q, chunks]
+{
+    const int chunk = blockIdx.x;
+    const int q = blockIdx.y;
+    if (q >= Q || chunk >= chunks) return;
+
+    uint32_t local_mask = 0u;
+    const int w0 = chunk * chunk_words;
+    for (int s = threadIdx.x; s < slices; s += BLOCK_SIZE) {
+        const size_t base = ((size_t)q * (size_t)slices + (size_t)s) * (size_t)words_per_slice + (size_t)w0;
+        unsigned long long any = 0ull;
+#pragma unroll
+        for (int cw = 0; cw < 4; ++cw) {
+            const int w = w0 + cw;
+            if (cw < chunk_words && w < words_per_slice) {
+                any |= words[base + (size_t)cw];
+            }
+        }
+        if (any != 0ull) {
+            local_mask |= (1u << s);
+        }
+    }
+
+    // Block-wide OR reduction.
+    __shared__ uint32_t smem[BLOCK_SIZE];
+    smem[threadIdx.x] = local_mask;
+    __syncthreads();
+    for (int stride = BLOCK_SIZE / 2; stride > 0; stride >>= 1) {
+        if (threadIdx.x < stride) {
+            smem[threadIdx.x] |= smem[threadIdx.x + stride];
+        }
+        __syncthreads();
+    }
+
+    if (threadIdx.x == 0) {
+        out_masks[(size_t)q * (size_t)chunks + (size_t)chunk] = smem[0];
+    }
+}
+
 extern "C" void launch_quantize_round_to_int64_batch(
     const void* input,
     int input_dtype,
@@ -731,4 +778,22 @@ extern "C" void launch_apply_chunk_shift_clamp(
     const int grid = static_cast<int>((total + BLOCK - 1) / BLOCK);
     apply_chunk_shift_clamp_kernel<<<grid, BLOCK, 0, stream>>>(
         ints, total, d, chunks, shifts, qmin, qmax);
+}
+
+extern "C" void launch_compute_slice_activity_masks(
+    const unsigned long long* words,
+    int Q,
+    int slices,
+    int words_per_slice,
+    int chunk_words,
+    uint32_t* out_masks,
+    cudaStream_t stream) {
+    if (Q <= 0 || slices <= 0 || words_per_slice <= 0 || chunk_words <= 0) return;
+    if (slices > 32) return;
+    const int chunks = (words_per_slice + chunk_words - 1) / chunk_words;
+    if (chunks <= 0) return;
+    constexpr int BLOCK = 256;
+    dim3 grid(static_cast<unsigned>(chunks), static_cast<unsigned>(Q), 1);
+    compute_slice_activity_masks_kernel<BLOCK><<<grid, BLOCK, 0, stream>>>(
+        words, Q, slices, words_per_slice, chunk_words, chunks, out_masks);
 }

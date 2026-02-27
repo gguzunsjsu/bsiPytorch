@@ -1047,6 +1047,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
 #else
     (void)A;
     (void)Aw;
+    (void)A_chunk_scales;
+    (void)A_scale_stride;
     (void)Sa;
     (void)W64;
     (void)B;
@@ -1078,6 +1080,8 @@ __device__ __forceinline__ void bsi_bmma_tm32_accum_sa7_sb_hot(
     bool use_chunk_scale,
     float qscale_m0,
     float qscale_m1,
+    uint32_t qslice_mask_or,
+    uint32_t kslice_mask_or,
     float& acc00,
     float& acc01,
     float& acc10,
@@ -1089,10 +1093,14 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
     const float* __restrict__ Aw,                // [Q, Sa]
     const float* __restrict__ A_chunk_scales,    // [Q, chunks] or nullptr
     int A_scale_stride,                          // chunks (W64/4) or 0
+    const uint32_t* __restrict__ A_slice_masks,  // [Q, chunks] or nullptr
+    int A_mask_stride,                           // chunks (W64/4) or 0
     int Sa,
     int W64,
     const unsigned long long* __restrict__ B,    // [R, Sb, W64]
     const float* __restrict__ Bw,                // [R, Sb]
+    const uint32_t* __restrict__ B_slice_masks,  // [R, chunks] or nullptr
+    int B_mask_stride,                           // chunks (W64/4) or 0
     int Sb,
     int R,
     int Q,
@@ -1370,6 +1378,10 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
         }
 
         const bool use_chunk_scale = (A_chunk_scales != nullptr) && (A_scale_stride > 0);
+        const bool use_slice_masks_hot =
+            (A_slice_masks != nullptr) && (A_mask_stride > 0) &&
+            (B_slice_masks != nullptr) && (B_mask_stride > 0) &&
+            (Sa == 7) && (Sb == 6 || Sb == 7);
         float qscale_m0 = 1.0f;
         float qscale_m1 = 1.0f;
         if (use_chunk_scale) {
@@ -1393,10 +1405,40 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
             qscale_m1 = __shfl_sync(0xffffffff, qscale_m1, lane & ~3);
         }
 
+        uint32_t qslice_mask_or = 0xffffffffu;
+        if (use_slice_masks_hot) {
+            if (threadID == 0) {
+                const int q_m0 = q0 + m0;
+                const int q_m1 = q0 + m1;
+                uint32_t qm0 = 0u, qm1 = 0u;
+                if (full_q_tile || q_m0 < Q) {
+                    qm0 = __ldg(&A_slice_masks[(size_t)q_m0 * (size_t)A_mask_stride + (size_t)chunk]);
+                }
+                if (full_q_tile || q_m1 < Q) {
+                    qm1 = __ldg(&A_slice_masks[(size_t)q_m1 * (size_t)A_mask_stride + (size_t)chunk]);
+                }
+                qslice_mask_or = qm0 | qm1;
+            }
+            qslice_mask_or = __shfl_sync(0xffffffff, qslice_mask_or, lane & ~3);
+        }
+
         if (cache_sb) {
             constexpr int JBLOCK = 4;
             const int b_slice_stride = TN * K_STRIDE32;
             const uint32_t* b_col_base = B_bits + (col_base + groupID) * K_STRIDE32;
+            uint32_t kslice_mask_or = 0xffffffffu;
+            if (use_slice_masks_hot) {
+                const int r_out0 = r0 + col0;
+                const int r_out1 = r0 + col1;
+                uint32_t km0 = 0u, km1 = 0u;
+                if (r_out0 < R) {
+                    km0 = __ldg(&B_slice_masks[(size_t)r_out0 * (size_t)B_mask_stride + (size_t)chunk]);
+                }
+                if (r_out1 < R) {
+                    km1 = __ldg(&B_slice_masks[(size_t)r_out1 * (size_t)B_mask_stride + (size_t)chunk]);
+                }
+                kslice_mask_or = km0 | km1;
+            }
             // Sb==7/6 are hot configurations (fixed-bit weights) and tend to regress if the compiler
             // can't specialize away the tail checks. Keep explicit fast paths.
             if (Sa == 7 && Sb == 7) {
@@ -1412,6 +1454,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                     use_chunk_scale,
                     qscale_m0,
                     qscale_m1,
+                    qslice_mask_or,
+                    kslice_mask_or,
                     acc00,
                     acc01,
                     acc10,
@@ -1429,6 +1473,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                     use_chunk_scale,
                     qscale_m0,
                     qscale_m1,
+                    qslice_mask_or,
+                    kslice_mask_or,
                     acc00,
                     acc01,
                     acc10,
@@ -2145,6 +2191,10 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
     (void)W64;
     (void)B;
     (void)Bw;
+    (void)A_slice_masks;
+    (void)A_mask_stride;
+    (void)B_slice_masks;
+    (void)B_mask_stride;
     (void)Sb;
     (void)R;
     (void)Q;
@@ -2173,6 +2223,8 @@ __device__ __forceinline__ void bsi_bmma_tm32_accum_sa7_sb_hot(
     bool use_chunk_scale,
     float qscale_m0,
     float qscale_m1,
+    uint32_t qslice_mask_or,
+    uint32_t kslice_mask_or,
     float& acc00,
     float& acc01,
     float& acc10,
@@ -2185,6 +2237,9 @@ __device__ __forceinline__ void bsi_bmma_tm32_accum_sa7_sb_hot(
     constexpr int TN = 32;
     constexpr int K_STRIDE32 = 12;
     const int b_slice_stride = TN * K_STRIDE32;
+    const uint32_t valid_i_mask = qslice_mask_or & ((1u << SA) - 1u);
+    const uint32_t valid_j_mask = kslice_mask_or & ((1u << SB) - 1u);
+    if (valid_i_mask == 0u || valid_j_mask == 0u) return;
 
     uint32_t b0_cache[SB];
     uint32_t b1_cache[SB];
@@ -2193,16 +2248,24 @@ __device__ __forceinline__ void bsi_bmma_tm32_accum_sa7_sb_hot(
 
 #pragma unroll
     for (int j = 0; j < SB; ++j) {
-        const uint32_t* b_col = b_col_base + j * b_slice_stride;
-        b0_cache[j] = b_col[threadID];
-        b1_cache[j] = b_col[threadID + 4];
-        bw0_cache[j] = bw_col0[j];
-        bw1_cache[j] = bw_col1[j];
+        if ((valid_j_mask & (1u << j)) != 0u) {
+            const uint32_t* b_col = b_col_base + j * b_slice_stride;
+            b0_cache[j] = b_col[threadID];
+            b1_cache[j] = b_col[threadID + 4];
+            bw0_cache[j] = bw_col0[j];
+            bw1_cache[j] = bw_col1[j];
+        } else {
+            b0_cache[j] = 0u;
+            b1_cache[j] = 0u;
+            bw0_cache[j] = 0.0f;
+            bw1_cache[j] = 0.0f;
+        }
     }
 
     float chunk00 = 0.0f, chunk01 = 0.0f, chunk10 = 0.0f, chunk11 = 0.0f;
 #pragma unroll
     for (int i = 0; i < SA; ++i) {
+        if ((valid_i_mask & (1u << i)) == 0u) continue;
         const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
         const uint32_t a0 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)threadID];
         const uint32_t a1 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)threadID];
@@ -2212,6 +2275,7 @@ __device__ __forceinline__ void bsi_bmma_tm32_accum_sa7_sb_hot(
         float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
 #pragma unroll
         for (int j = 0; j < SB; ++j) {
+            if ((valid_j_mask & (1u << j)) == 0u) continue;
             int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
             asm volatile(
                 "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
@@ -2255,6 +2319,8 @@ __device__ __forceinline__ void bsi_bmma_tm32_accum_sa7_sb_hot(
     (void)use_chunk_scale;
     (void)qscale_m0;
     (void)qscale_m1;
+    (void)qslice_mask_or;
+    (void)kslice_mask_or;
     (void)acc00;
     (void)acc01;
     (void)acc10;
@@ -2393,6 +2459,8 @@ __device__ __forceinline__ void bsi_bmma_tm32_mq2_process_qtile(
         use_chunk_scale,
         qscale_m0,
         qscale_m1,
+        0xffffffffu,
+        0xffffffffu,
         acc00,
         acc01,
         acc10,
@@ -2928,6 +2996,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_persistent_rtile_h
                 use_chunk_scale,
                 qscale_m0,
                 qscale_m1,
+                0xffffffffu,
+                0xffffffffu,
                 acc00,
                 acc01,
                 acc10,
@@ -3063,10 +3133,14 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     const float* Aw,
     const float* A_chunk_scales,
     int A_scale_stride,
+    const uint32_t* A_slice_masks,
+    int A_mask_stride,
     int Sa,
     int W,
     const unsigned long long* B,
     const float* Bw,
+    const uint32_t* B_slice_masks,
+    int B_mask_stride,
     int Sb,
     int R,
     int Q,
@@ -3135,10 +3209,10 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                 : (cached_tc_tm_mode == 32 ? TcTmMode::TM32 : TcTmMode::Auto);
 
             // Persistent R-tile BMMA path for large fixed-hot shapes.
-            // Default is on; disable via BSI_TC_PERSIST=0.
+            // Default is off; enable via BSI_TC_PERSIST=1.
             static int cached_tc_persist = -1;
             if (cached_tc_persist < 0) {
-                int v = 1;
+                int v = 0; // default off; enable explicitly for experiments
                 if (const char* s = getenv("BSI_TC_PERSIST")) {
                     v = (atoi(s) != 0) ? 1 : 0;
                 }
@@ -3382,10 +3456,14 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                         Aw,
                         A_chunk_scales,
                         A_scale_stride,
+                        A_slice_masks,
+                        A_mask_stride,
                         Sa,
                         W,
                         B,
                         Bw,
+                        B_slice_masks,
+                        B_mask_stride,
                         Sb,
                         R,
                         Q,

@@ -154,6 +154,15 @@ extern "C" void launch_apply_chunk_shift_clamp(
     int fixed_bits,
     cudaStream_t stream);
 
+extern "C" void launch_compute_slice_activity_masks(
+    const unsigned long long* words,
+    int Q,
+    int slices,
+    int words_per_slice,
+    int chunk_words,
+    uint32_t* out_masks,
+    cudaStream_t stream);
+
 extern "C" void launch_compute_row_shift_scale_from_input(
     const void* input,
     int input_dtype,
@@ -348,6 +357,46 @@ static bool bsi_cuda_fused_qpack_enabled() {
     }
     cached = v;
     return cached != 0;
+}
+
+static bool bsi_cuda_dot_slice_masks_enabled() {
+    static int cached = -1;
+    if (cached >= 0) return cached != 0;
+    int v = 1; // default on for exact zero-slice skip fast paths
+    if (const char* s = std::getenv("BSI_DOT_SLICE_MASKS")) {
+        v = (std::atoi(s) != 0) ? 1 : 0;
+    }
+    cached = v;
+    return cached != 0;
+}
+
+static torch::Tensor bsi_cuda_build_slice_activity_masks(
+    const torch::Tensor& words,
+    int64_t Q,
+    int slices,
+    int words_per_slice) {
+    if (!bsi_cuda_dot_slice_masks_enabled()) return torch::Tensor();
+    if (!words.defined() || !words.is_cuda()) return torch::Tensor();
+    // Stage-A metadata is only wired for <=32 slices (uint32 bitmask).
+    if (slices <= 0 || slices > 32) return torch::Tensor();
+    // BMMA chunk size is 256b = 4x u64 words.
+    if (words_per_slice <= 0 || (words_per_slice % 4) != 0) return torch::Tensor();
+    const int chunks = words_per_slice / 4;
+    if (chunks <= 0 || Q <= 0) return torch::Tensor();
+
+    auto masks = torch::zeros(
+        {Q, chunks},
+        torch::TensorOptions().dtype(torch::kInt32).device(words.device()));
+    auto stream = at::cuda::getCurrentCUDAStream();
+    launch_compute_slice_activity_masks(
+        reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words)),
+        static_cast<int>(Q),
+        slices,
+        words_per_slice,
+        /*chunk_words=*/4,
+        reinterpret_cast<uint32_t*>(tensor_data_ptr<int32_t>(masks)),
+        stream.stream());
+    return masks;
 }
 
 static int bsi_cuda_input_dtype_code(const torch::Tensor& values) {
@@ -1041,6 +1090,7 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& inp
                 TORCH_CHECK(scale.defined() && scale.dim() == 1, "Expected [Q] row scales");
                 out.slice_weights = (slice_weights * scale.unsqueeze(1)).contiguous();
             }
+            out.slice_masks = bsi_cuda_build_slice_activity_masks(out.words, Q_input, slices, words_per_slice);
 
             if (profile_cuda) {
                 g_last_query_build_quantize_ns = static_cast<uint64_t>(quantize_ms * 1.0e6);
@@ -1175,6 +1225,7 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& inp
     if (fixed_bits > 0 && chunk_scale) {
         out.chunk_scales = q.scale.contiguous();
     }
+    out.slice_masks = bsi_cuda_build_slice_activity_masks(out.words, Q, slices, words_per_slice);
 
     if (profile_cuda) {
         g_last_query_build_quantize_ns = static_cast<uint64_t>(quantize_ms * 1.0e6);

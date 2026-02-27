@@ -40,10 +40,14 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     const float* Aw,
     const float* A_chunk_scales,
     int A_scale_stride,
+    const uint32_t* A_slice_masks,
+    int A_mask_stride,
     int Sa,
     int W,
     const unsigned long long* B,
     const float* Bw,
+    const uint32_t* B_slice_masks,
+    int B_mask_stride,
     int Sb,
     int R,
     int Q,
@@ -54,6 +58,15 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     float scale_inv,
     int R_total,
     float* out_global,
+    cudaStream_t stream);
+
+extern "C" void launch_compute_slice_activity_masks(
+    const unsigned long long* words,
+    int Q,
+    int slices,
+    int words_per_slice,
+    int chunk_words,
+    uint32_t* out_masks,
     cudaStream_t stream);
 
 template <typename T>
@@ -147,6 +160,7 @@ struct PrebuiltBSIKeysCUDA {
     // Grouped, contiguous views by Sb to avoid per-call stacking
     std::unordered_map<int, at::Tensor> grouped_words;   // Sb -> [R_sb, Sb, W]
     std::unordered_map<int, at::Tensor> grouped_weights; // Sb -> [R_sb, Sb]
+    std::unordered_map<int, at::Tensor> grouped_slice_masks; // Sb -> [R_sb, chunks] int32 cuda
     std::unordered_map<int, std::vector<int64_t>> grouped_indices; // Sb -> original key indices
     std::unordered_map<int, at::Tensor> grouped_indices_dev; // Sb -> [R_sb] int64 cuda
     std::unordered_map<int, bool> grouped_indices_identity; // Sb -> true when idx[i] == i
@@ -157,6 +171,7 @@ struct PrebuiltBSIKeysCUDA {
     bool single_indices_identity = true;
     at::Tensor single_words;   // [Rg, Sb, W]
     at::Tensor single_weights; // [Rg, Sb]
+    at::Tensor single_slice_masks; // [Rg, chunks] int32 cuda
     at::Tensor single_indices_dev; // [Rg] int64 cuda if non-identity
     int W = 0;
     int64_t d = 0;
@@ -175,6 +190,7 @@ struct PrebuiltBSIQueryCUDA {
     at::Tensor dev_words;      // alias of device_view.words
     at::Tensor slice_weights;  // [S]
     at::Tensor chunk_scales;   // [chunks] or undefined
+    at::Tensor slice_masks;    // [chunks] int32 or undefined
     int S = 0;
     int W = 0;
     size_t mem_bytes = 0;
@@ -192,6 +208,7 @@ struct PrebuiltBSIQueryBatchCUDA {
     at::Tensor words;         // [Q, Sa, W] int64 cuda
     at::Tensor slice_weights; // [Q, Sa] float32 cuda
     at::Tensor chunk_scales;  // [Q, chunks] float32 cuda or undefined
+    at::Tensor slice_masks;   // [Q, chunks] int32 cuda or undefined
     int Sa = 0;
     int W = 0;
     int decimals = 0;
@@ -282,7 +299,13 @@ static pybind11::list build_bsi_queries_cuda_batch(torch::Tensor q2d, int decima
             if (chunk_scales.defined() && chunk_scales.numel() > 0) {
                 holder->chunk_scales = chunk_scales[qi].contiguous();
             }
+            if (batch.slice_masks.defined() && batch.slice_masks.numel() > 0) {
+                holder->slice_masks = batch.slice_masks[qi].contiguous();
+            }
             holder->mem_bytes = static_cast<size_t>(holder->dev_words.numel() * holder->dev_words.element_size());
+            if (holder->slice_masks.defined() && holder->slice_masks.numel() > 0) {
+                holder->mem_bytes += static_cast<size_t>(holder->slice_masks.numel() * holder->slice_masks.element_size());
+            }
             holder->device_view.rows = static_cast<int64_t>(q2d.size(1));
             holder->device_view.slices = S;
             holder->device_view.words_per_slice = W;
@@ -347,6 +370,9 @@ static pybind11::capsule build_bsi_queries_cuda_batch_packed(torch::Tensor q2d,
     if (batch.chunk_scales.defined() && batch.chunk_scales.numel() > 0) {
         holder->chunk_scales = batch.chunk_scales.contiguous();
     }
+    if (batch.slice_masks.defined() && batch.slice_masks.numel() > 0) {
+        holder->slice_masks = batch.slice_masks.contiguous();
+    }
     holder->Sa = batch.slices;
     holder->W = batch.words_per_slice;
     holder->decimals = int(decimalPlaces);
@@ -355,6 +381,9 @@ static pybind11::capsule build_bsi_queries_cuda_batch_packed(torch::Tensor q2d,
         static_cast<size_t>(holder->slice_weights.numel() * holder->slice_weights.element_size());
     if (holder->chunk_scales.defined() && holder->chunk_scales.numel() > 0) {
         holder->mem_bytes += static_cast<size_t>(holder->chunk_scales.numel() * holder->chunk_scales.element_size());
+    }
+    if (holder->slice_masks.defined() && holder->slice_masks.numel() > 0) {
+        holder->mem_bytes += static_cast<size_t>(holder->slice_masks.numel() * holder->slice_masks.element_size());
     }
 
     pybind11::capsule cap(holder, "PrebuiltBSIQueryBatchCUDA",
@@ -463,6 +492,7 @@ struct TempGroup {
         torch::Tensor words;      // [Q, S, W]
         torch::Tensor weights;    // [Q, S]
         torch::Tensor chunk_scales; // [Q, chunks] or undefined
+        torch::Tensor slice_masks; // [Q, chunks] or undefined
         torch::Tensor q_indices;  // [Q]
     };
     std::vector<PreparedGroup> prepared;
@@ -476,11 +506,15 @@ struct TempGroup {
         std::vector<torch::Tensor> word_stack;
         std::vector<torch::Tensor> weight_stack;
         std::vector<torch::Tensor> scale_stack;
+        std::vector<torch::Tensor> mask_stack;
         word_stack.reserve(g.queries.size());
         weight_stack.reserve(g.queries.size());
         scale_stack.reserve(g.queries.size());
+        mask_stack.reserve(g.queries.size());
         const bool have_scales =
             (!g.queries.empty() && g.queries[0]->chunk_scales.defined() && g.queries[0]->chunk_scales.numel() > 0);
+        const bool have_masks =
+            (!g.queries.empty() && g.queries[0]->slice_masks.defined() && g.queries[0]->slice_masks.numel() > 0);
         for (auto* qptr : g.queries) {
             word_stack.push_back(qptr->dev_words);
             weight_stack.push_back(qptr->slice_weights);
@@ -492,11 +526,22 @@ struct TempGroup {
                 TORCH_CHECK(!(qptr->chunk_scales.defined() && qptr->chunk_scales.numel() > 0),
                             "Mixed chunk-scale and non-chunk-scale queries in the same group");
             }
+            if (have_masks) {
+                TORCH_CHECK(qptr->slice_masks.defined() && qptr->slice_masks.numel() > 0,
+                            "Mixed slice-mask and non-slice-mask queries in the same group");
+                mask_stack.push_back(qptr->slice_masks);
+            } else {
+                TORCH_CHECK(!(qptr->slice_masks.defined() && qptr->slice_masks.numel() > 0),
+                            "Mixed slice-mask and non-slice-mask queries in the same group");
+            }
         }
         pg.words = torch::stack(word_stack).contiguous();
         pg.weights = torch::stack(weight_stack).contiguous();
         if (have_scales) {
             pg.chunk_scales = torch::stack(scale_stack).contiguous();
+        }
+        if (have_masks) {
+            pg.slice_masks = torch::stack(mask_stack).contiguous();
         }
         pg.q_indices = torch::from_blob(
             g.indices.data(),
@@ -529,6 +574,8 @@ struct TempGroup {
         const auto* Aw = tensor_data_ptr<float>(pg.weights);
         const float* A_chunk_scales = nullptr;
         int A_scale_stride = 0;
+        const uint32_t* A_slice_masks = nullptr;
+        int A_mask_stride = 0;
         if (pg.chunk_scales.defined() && pg.chunk_scales.numel() > 0) {
             // Chunk-scale mode requires the SM90+ BMMA path for correctness.
             {
@@ -546,6 +593,16 @@ struct TempGroup {
             A_chunk_scales = tensor_data_ptr<float>(pg.chunk_scales);
             A_scale_stride = static_cast<int>(pg.chunk_scales.size(1));
         }
+        if (pg.slice_masks.defined() && pg.slice_masks.numel() > 0) {
+            TORCH_CHECK(pg.slice_masks.is_cuda(), "slice_masks must be a CUDA tensor");
+            TORCH_CHECK(pg.slice_masks.dim() == 2, "Expected [Q, chunks] slice masks");
+            TORCH_CHECK(pg.slice_masks.size(0) == pg.Qcount, "slice_masks Q mismatch");
+            TORCH_CHECK(pg.slice_masks.size(1) == (keys->W / 4),
+                        "Slice mask stride mismatch: got ", pg.slice_masks.size(1),
+                        " expected ", (keys->W / 4));
+            A_slice_masks = reinterpret_cast<const uint32_t*>(tensor_data_ptr<int32_t>(pg.slice_masks));
+            A_mask_stride = static_cast<int>(pg.slice_masks.size(1));
+        }
         const auto* q_idx = reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(pg.q_indices));
 
         if (keys->single_group) {
@@ -553,6 +610,17 @@ struct TempGroup {
             const int Rg = keys->single_rg;
             const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(keys->single_words));
             const auto* Bw_ptr = tensor_data_ptr<float>(keys->single_weights);
+            const uint32_t* B_slice_masks = nullptr;
+            int B_mask_stride = 0;
+            if (keys->single_slice_masks.defined() && keys->single_slice_masks.numel() > 0) {
+                TORCH_CHECK(keys->single_slice_masks.dim() == 2, "Expected [R, chunks] key slice masks");
+                TORCH_CHECK(keys->single_slice_masks.size(0) == Rg, "Key slice mask R mismatch");
+                TORCH_CHECK(keys->single_slice_masks.size(1) == (keys->W / 4),
+                            "Key slice mask stride mismatch");
+                B_slice_masks = reinterpret_cast<const uint32_t*>(
+                    tensor_data_ptr<int32_t>(keys->single_slice_masks));
+                B_mask_stride = static_cast<int>(keys->single_slice_masks.size(1));
+            }
             const long long* r_idx_ptr = nullptr;
             if (!keys->single_indices_identity) {
                 r_idx_ptr = reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(keys->single_indices_dev));
@@ -562,10 +630,14 @@ struct TempGroup {
                 Aw,
                 A_chunk_scales,
                 A_scale_stride,
+                A_slice_masks,
+                A_mask_stride,
                 pg.S,
                 keys->W,
                 B_words,
                 Bw_ptr,
+                B_slice_masks,
+                B_mask_stride,
                 Sb,
                 Rg,
                 static_cast<int>(pg.Qcount),
@@ -587,6 +659,19 @@ struct TempGroup {
                 const auto& Bw_stacked = keys->grouped_weights.at(Sb);
                 const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words));
                 const auto* Bw_ptr = tensor_data_ptr<float>(Bw_stacked);
+                const uint32_t* B_slice_masks = nullptr;
+                int B_mask_stride = 0;
+                if (keys->grouped_slice_masks.count(Sb) > 0) {
+                    const auto& sm = keys->grouped_slice_masks.at(Sb);
+                    if (sm.defined() && sm.numel() > 0) {
+                        TORCH_CHECK(sm.dim() == 2, "Expected [R, chunks] key slice masks");
+                        TORCH_CHECK(sm.size(0) == Rg, "Key slice mask R mismatch");
+                        TORCH_CHECK(sm.size(1) == (keys->W / 4),
+                                    "Key slice mask stride mismatch");
+                        B_slice_masks = reinterpret_cast<const uint32_t*>(tensor_data_ptr<int32_t>(sm));
+                        B_mask_stride = static_cast<int>(sm.size(1));
+                    }
+                }
                 const bool identity_r = (keys->grouped_indices_identity.count(Sb) > 0)
                     ? keys->grouped_indices_identity.at(Sb)
                     : false;
@@ -600,10 +685,14 @@ struct TempGroup {
                     Aw,
                     A_chunk_scales,
                     A_scale_stride,
+                    A_slice_masks,
+                    A_mask_stride,
                     pg.S,
                     keys->W,
                     B_words,
                     Bw_ptr,
+                    B_slice_masks,
+                    B_mask_stride,
                     Sb,
                     Rg,
                     static_cast<int>(pg.Qcount),
@@ -672,6 +761,8 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
     // If chunk scales are provided, validate (and enforce SM90 path for correctness).
     const float* A_chunk_scales = nullptr;
     int A_scale_stride = 0;
+    const uint32_t* A_slice_masks = nullptr;
+    int A_mask_stride = 0;
     if (qb->chunk_scales.defined() && qb->chunk_scales.numel() > 0) {
         TORCH_CHECK(qb->chunk_scales.is_cuda(), "chunk_scales must be a CUDA tensor");
         TORCH_CHECK(qb->chunk_scales.dim() == 2, "Expected [Q, chunks] chunk scales");
@@ -689,6 +780,16 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
                     " expected ", (keys->W / 4));
         A_chunk_scales = tensor_data_ptr<float>(qb->chunk_scales);
         A_scale_stride = static_cast<int>(qb->chunk_scales.size(1));
+    }
+    if (qb->slice_masks.defined() && qb->slice_masks.numel() > 0) {
+        TORCH_CHECK(qb->slice_masks.is_cuda(), "slice_masks must be a CUDA tensor");
+        TORCH_CHECK(qb->slice_masks.dim() == 2, "Expected [Q, chunks] slice masks");
+        TORCH_CHECK(qb->slice_masks.size(0) == Q, "slice_masks Q mismatch");
+        TORCH_CHECK(qb->slice_masks.size(1) == (keys->W / 4),
+                    "Slice mask stride mismatch: got ", qb->slice_masks.size(1),
+                    " expected ", (keys->W / 4));
+        A_slice_masks = reinterpret_cast<const uint32_t*>(tensor_data_ptr<int32_t>(qb->slice_masks));
+        A_mask_stride = static_cast<int>(qb->slice_masks.size(1));
     }
 
     // Output: [Q, R_total] (full keyset width).
@@ -719,6 +820,17 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
         const int Rg = keys->single_rg;
         const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(keys->single_words));
         const auto* Bw_ptr = tensor_data_ptr<float>(keys->single_weights);
+        const uint32_t* B_slice_masks = nullptr;
+        int B_mask_stride = 0;
+        if (keys->single_slice_masks.defined() && keys->single_slice_masks.numel() > 0) {
+            TORCH_CHECK(keys->single_slice_masks.dim() == 2, "Expected [R, chunks] key slice masks");
+            TORCH_CHECK(keys->single_slice_masks.size(0) == Rg, "Key slice mask R mismatch");
+            TORCH_CHECK(keys->single_slice_masks.size(1) == (keys->W / 4),
+                        "Key slice mask stride mismatch");
+            B_slice_masks = reinterpret_cast<const uint32_t*>(
+                tensor_data_ptr<int32_t>(keys->single_slice_masks));
+            B_mask_stride = static_cast<int>(keys->single_slice_masks.size(1));
+        }
         const long long* r_idx_ptr = nullptr;
         if (!keys->single_indices_identity) {
             r_idx_ptr = reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(keys->single_indices_dev));
@@ -728,10 +840,14 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
             Aw,
             A_chunk_scales,
             A_scale_stride,
+            A_slice_masks,
+            A_mask_stride,
             static_cast<int>(Sa),
             keys->W,
             B_words,
             Bw_ptr,
+            B_slice_masks,
+            B_mask_stride,
             Sb,
             Rg,
             static_cast<int>(Q),
@@ -753,6 +869,19 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
             const auto& Bw_stacked = keys->grouped_weights.at(Sb);
             const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words));
             const auto* Bw_ptr = tensor_data_ptr<float>(Bw_stacked);
+            const uint32_t* B_slice_masks = nullptr;
+            int B_mask_stride = 0;
+            if (keys->grouped_slice_masks.count(Sb) > 0) {
+                const auto& sm = keys->grouped_slice_masks.at(Sb);
+                if (sm.defined() && sm.numel() > 0) {
+                    TORCH_CHECK(sm.dim() == 2, "Expected [R, chunks] key slice masks");
+                    TORCH_CHECK(sm.size(0) == Rg, "Key slice mask R mismatch");
+                    TORCH_CHECK(sm.size(1) == (keys->W / 4),
+                                "Key slice mask stride mismatch");
+                    B_slice_masks = reinterpret_cast<const uint32_t*>(tensor_data_ptr<int32_t>(sm));
+                    B_mask_stride = static_cast<int>(sm.size(1));
+                }
+            }
             const bool identity_r = (keys->grouped_indices_identity.count(Sb) > 0)
                 ? keys->grouped_indices_identity.at(Sb)
                 : false;
@@ -767,10 +896,14 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
                 Aw,
                 A_chunk_scales,
                 A_scale_stride,
+                A_slice_masks,
+                A_mask_stride,
                 static_cast<int>(Sa),
                 keys->W,
                 B_words,
                 Bw_ptr,
+                B_slice_masks,
+                B_mask_stride,
                 Sb,
                 Rg,
                 static_cast<int>(Q),
@@ -875,6 +1008,9 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
         const int Sb = batch.slices;
         holder->grouped_words[Sb] = batch.words.contiguous();
         holder->grouped_weights[Sb] = batch.slice_weights.contiguous();
+        if (batch.slice_masks.defined() && batch.slice_masks.numel() > 0) {
+            holder->grouped_slice_masks[Sb] = batch.slice_masks.contiguous();
+        }
 
         std::vector<int64_t> idxs(static_cast<size_t>(num_keys));
         for (int64_t i = 0; i < num_keys; ++i) idxs[static_cast<size_t>(i)] = i;
@@ -886,9 +1022,16 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
         holder->single_indices_identity = true;
         holder->single_words = holder->grouped_words[Sb];
         holder->single_weights = holder->grouped_weights[Sb];
+        if (holder->grouped_slice_masks.count(Sb) > 0) {
+            holder->single_slice_masks = holder->grouped_slice_masks[Sb];
+        }
 
         const uint64_t total_mem_bytes = static_cast<uint64_t>(
             holder->grouped_words[Sb].numel() * holder->grouped_words[Sb].element_size());
+        const uint64_t total_mem_bytes_masks = (holder->grouped_slice_masks.count(Sb) > 0)
+            ? static_cast<uint64_t>(holder->grouped_slice_masks[Sb].numel() *
+                                    holder->grouped_slice_masks[Sb].element_size())
+            : 0ull;
 
         pybind11::capsule cap(holder, "PrebuiltBSIKeysCUDA",
             [](PyObject* capsule){
@@ -896,7 +1039,7 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
                 if (p) delete p;
             }
         );
-        return pybind11::make_tuple(cap, total_mem_bytes, num_keys, d, holder->W);
+        return pybind11::make_tuple(cap, total_mem_bytes + total_mem_bytes_masks, num_keys, d, holder->W);
     }
 
     auto Kc = K.detach().to(torch::kCPU, /*non_blocking=*/false).contiguous();
@@ -958,6 +1101,20 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
             }
             holder->grouped_words[Sb] = gw.contiguous();
             holder->grouped_weights[Sb] = gwt.contiguous();
+            if (holder->W % 4 == 0 && Sb <= 32) {
+                const int chunks = holder->W / 4;
+                auto sm = torch::zeros({R, chunks}, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
+                auto stream = at::cuda::getCurrentCUDAStream();
+                launch_compute_slice_activity_masks(
+                    reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(holder->grouped_words[Sb])),
+                    R,
+                    Sb,
+                    holder->W,
+                    /*chunk_words=*/4,
+                    reinterpret_cast<uint32_t*>(tensor_data_ptr<int32_t>(sm)),
+                    stream.stream());
+                holder->grouped_slice_masks[Sb] = sm;
+            }
             holder->grouped_indices[Sb] = idxs;
             bool identity = true;
             for (int i = 0; i < R; ++i) {
@@ -983,6 +1140,9 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
             holder->single_indices_identity = holder->grouped_indices_identity[Sb];
             holder->single_words = holder->grouped_words[Sb];
             holder->single_weights = holder->grouped_weights[Sb];
+            if (holder->grouped_slice_masks.count(Sb) > 0) {
+                holder->single_slice_masks = holder->grouped_slice_masks[Sb];
+            }
             if (!holder->single_indices_identity) {
                 holder->single_indices_dev = holder->grouped_indices_dev[Sb];
             }

@@ -39,6 +39,10 @@ struct BsiQueryBatchCudaData {
     // chunks = words_per_slice / 4 (i.e., 256 bits per chunk).
     // When undefined, slice_weights already include any fixed-bit scaling.
     torch::Tensor chunk_scales;  // [Q, chunks] or undefined
+    // Optional per-row, per-256b-chunk active-slice bitmasks.
+    // Bit i is 1 when slice i has at least one set bit in that chunk.
+    // Shape: [Q, chunks], dtype int32. Undefined when disabled or unsupported.
+    torch::Tensor slice_masks;   // [Q, chunks] int32 or undefined
 };
 
 bool bsi_cuda_should_log();
