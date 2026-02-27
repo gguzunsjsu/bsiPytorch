@@ -154,6 +154,60 @@ extern "C" void launch_apply_chunk_shift_clamp(
     int fixed_bits,
     cudaStream_t stream);
 
+extern "C" void launch_compute_row_shift_scale_from_input(
+    const void* input,
+    int input_dtype,
+    int64_t Q,
+    int64_t d,
+    double dec_scale,
+    int fixed_bits,
+    float clip_k,
+    int* shifts,
+    float* scales,
+    cudaStream_t stream);
+
+extern "C" void launch_compute_chunk_shift_scale_from_input(
+    const void* input,
+    int input_dtype,
+    int64_t Q,
+    int64_t d,
+    int chunks,
+    double dec_scale,
+    int fixed_bits,
+    float clip_k,
+    int* shifts,
+    float* scales,
+    cudaStream_t stream);
+
+extern "C" void launch_quantize_shift_pack_row_batch(
+    const void* input,
+    int input_dtype,
+    int64_t Q,
+    int64_t d,
+    int slices,
+    int words_per_slice,
+    unsigned long long value_mask,
+    double dec_scale,
+    int fixed_bits,
+    const int* shifts,
+    unsigned long long* out,
+    cudaStream_t stream);
+
+extern "C" void launch_quantize_shift_pack_chunk_batch(
+    const void* input,
+    int input_dtype,
+    int64_t Q,
+    int64_t d,
+    int chunks,
+    int slices,
+    int words_per_slice,
+    unsigned long long value_mask,
+    double dec_scale,
+    int fixed_bits,
+    const int* shifts,
+    unsigned long long* out,
+    cudaStream_t stream);
+
 extern "C" void launch_slice_popcount_sum(
     const unsigned long long* words,
     int S,
@@ -285,6 +339,24 @@ static bool bsi_cuda_custom_quant_enabled() {
     return cached != 0;
 }
 
+static bool bsi_cuda_fused_qpack_enabled() {
+    static int cached = -1;
+    if (cached >= 0) return cached != 0;
+    int v = 1; // default on
+    if (const char* s = std::getenv("BSI_FUSED_QPACK")) {
+        v = (std::atoi(s) != 0) ? 1 : 0;
+    }
+    cached = v;
+    return cached != 0;
+}
+
+static int bsi_cuda_input_dtype_code(const torch::Tensor& values) {
+    int input_dtype = 0;
+    if (values.scalar_type() == torch::kFloat16) input_dtype = 1;
+    else if (values.scalar_type() == torch::kBFloat16) input_dtype = 2;
+    return input_dtype;
+}
+
 static uint64_t g_last_query_build_quantize_ns = 0;
 static uint64_t g_last_query_build_pack_ns = 0;
 static uint64_t g_last_query_build_total_ns = 0;
@@ -324,6 +396,164 @@ static inline torch::Tensor round_shift_right_signed(const torch::Tensor& ints, 
         torch::zeros_like(shift));
     auto abs_rounded = torch::bitwise_right_shift(abs_ints + round_add, shift);
     return torch::where(ints.lt(0), -abs_rounded, abs_rounded);
+}
+
+static bool bsi_cuda_build_fixed_query_words_fused(const torch::Tensor& input,
+                                                   int decimal_places,
+                                                   int fixed_bits,
+                                                   bool chunk_scale,
+                                                   const torch::Device& device,
+                                                   bool profile_cuda,
+                                                   torch::Tensor& words_out,
+                                                   torch::Tensor& scale_out,
+                                                   float& quantize_ms,
+                                                   float& pack_ms) {
+    if (fixed_bits <= 0 || !input.is_cuda()) {
+        return false;
+    }
+    auto values = input.to(device, input.scalar_type(), /*non_blocking=*/true).contiguous();
+    if (!(values.scalar_type() == torch::kFloat32 ||
+          values.scalar_type() == torch::kFloat16 ||
+          values.scalar_type() == torch::kBFloat16)) {
+        values = values.to(torch::kFloat32);
+    }
+    TORCH_CHECK(values.dim() == 2, "Fused fixed-bit query build expects 2D input");
+    const int64_t Q = values.size(0);
+    const int64_t d = values.size(1);
+    const int slices = std::max(1, fixed_bits);
+    const int words_per_slice = (d > 0) ? static_cast<int>((d + 63) / 64) : 1;
+    auto stream = at::cuda::getCurrentCUDAStream();
+
+    words_out = torch::zeros({Q, slices, words_per_slice},
+                             torch::TensorOptions().dtype(torch::kInt64).device(device));
+
+    if (Q <= 0 || d <= 0) {
+        if (chunk_scale) {
+            const int chunks = static_cast<int>((d + 255) / 256);
+            scale_out = torch::ones({Q, chunks}, torch::TensorOptions().dtype(torch::kFloat32).device(device));
+        } else {
+            scale_out = torch::ones({Q}, torch::TensorOptions().dtype(torch::kFloat32).device(device));
+        }
+        quantize_ms = 0.0f;
+        pack_ms = 0.0f;
+        return true;
+    }
+
+    const int input_dtype = bsi_cuda_input_dtype_code(values);
+    const double dec_scale = std::pow(10.0, static_cast<double>(decimal_places));
+    const float clip_k = bsi_cuda_fixed_clip_k();
+    const unsigned long long value_mask =
+        (slices >= 64) ? ~0ULL : ((1ULL << slices) - 1ULL);
+
+    cudaEvent_t quantize_start_evt = nullptr;
+    cudaEvent_t quantize_end_evt = nullptr;
+    cudaEvent_t pack_start_evt = nullptr;
+    cudaEvent_t pack_end_evt = nullptr;
+    if (profile_cuda) {
+        cudaEventCreate(&quantize_start_evt);
+        cudaEventCreate(&quantize_end_evt);
+        cudaEventCreate(&pack_start_evt);
+        cudaEventCreate(&pack_end_evt);
+    }
+
+    if (chunk_scale) {
+        const int chunks = static_cast<int>((d + 255) / 256);
+        auto shifts = torch::empty({Q, chunks}, torch::TensorOptions().dtype(torch::kInt32).device(device));
+        auto scales = torch::empty({Q, chunks}, torch::TensorOptions().dtype(torch::kFloat32).device(device));
+
+        if (profile_cuda) cudaEventRecord(quantize_start_evt, stream.stream());
+        launch_compute_chunk_shift_scale_from_input(
+            values.data_ptr(),
+            input_dtype,
+            Q,
+            d,
+            chunks,
+            dec_scale,
+            fixed_bits,
+            clip_k,
+            shifts.data_ptr<int>(),
+            tensor_data_ptr<float>(scales),
+            stream.stream());
+        if (profile_cuda) {
+            cudaEventRecord(quantize_end_evt, stream.stream());
+            cudaEventSynchronize(quantize_end_evt);
+            cudaEventElapsedTime(&quantize_ms, quantize_start_evt, quantize_end_evt);
+        }
+
+        if (profile_cuda) cudaEventRecord(pack_start_evt, stream.stream());
+        launch_quantize_shift_pack_chunk_batch(
+            values.data_ptr(),
+            input_dtype,
+            Q,
+            d,
+            chunks,
+            slices,
+            words_per_slice,
+            value_mask,
+            dec_scale,
+            fixed_bits,
+            shifts.data_ptr<int>(),
+            reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(words_out)),
+            stream.stream());
+        if (profile_cuda) {
+            cudaEventRecord(pack_end_evt, stream.stream());
+            cudaEventSynchronize(pack_end_evt);
+            cudaEventElapsedTime(&pack_ms, pack_start_evt, pack_end_evt);
+        }
+
+        scale_out = scales.contiguous();
+    } else {
+        auto shifts = torch::empty({Q}, torch::TensorOptions().dtype(torch::kInt32).device(device));
+        auto scales = torch::empty({Q}, torch::TensorOptions().dtype(torch::kFloat32).device(device));
+
+        if (profile_cuda) cudaEventRecord(quantize_start_evt, stream.stream());
+        launch_compute_row_shift_scale_from_input(
+            values.data_ptr(),
+            input_dtype,
+            Q,
+            d,
+            dec_scale,
+            fixed_bits,
+            clip_k,
+            shifts.data_ptr<int>(),
+            tensor_data_ptr<float>(scales),
+            stream.stream());
+        if (profile_cuda) {
+            cudaEventRecord(quantize_end_evt, stream.stream());
+            cudaEventSynchronize(quantize_end_evt);
+            cudaEventElapsedTime(&quantize_ms, quantize_start_evt, quantize_end_evt);
+        }
+
+        if (profile_cuda) cudaEventRecord(pack_start_evt, stream.stream());
+        launch_quantize_shift_pack_row_batch(
+            values.data_ptr(),
+            input_dtype,
+            Q,
+            d,
+            slices,
+            words_per_slice,
+            value_mask,
+            dec_scale,
+            fixed_bits,
+            shifts.data_ptr<int>(),
+            reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(words_out)),
+            stream.stream());
+        if (profile_cuda) {
+            cudaEventRecord(pack_end_evt, stream.stream());
+            cudaEventSynchronize(pack_end_evt);
+            cudaEventElapsedTime(&pack_ms, pack_start_evt, pack_end_evt);
+        }
+
+        scale_out = scales.contiguous();
+    }
+
+    if (profile_cuda) {
+        cudaEventDestroy(quantize_start_evt);
+        cudaEventDestroy(quantize_end_evt);
+        cudaEventDestroy(pack_start_evt);
+        cudaEventDestroy(pack_end_evt);
+    }
+    return true;
 }
 
 static QuantizedIntsAndScale bsi_cuda_quantize_to_int64_and_scale(const torch::Tensor& input,
@@ -766,6 +996,73 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& inp
     const bool profile_cuda = profile && input.is_cuda();
     float quantize_ms = 0.0f;
     float pack_ms = 0.0f;
+    const int64_t Q_input = input.size(0);
+    const int64_t d_input = input.size(1);
+
+    // Fused fixed-bit query builder: compute shifts/scales directly from input and
+    // quantize+pack directly into bitplanes (no intermediate int64 staging tensor).
+    if (!for_keys &&
+        fixed_bits > 0 &&
+        input.is_cuda() &&
+        bsi_cuda_custom_quant_enabled() &&
+        bsi_cuda_fused_qpack_enabled()) {
+        const int offset = 0;
+        const int slices = std::max(1, fixed_bits);
+        const int words_per_slice = (d_input > 0) ? static_cast<int>((d_input + 63) / 64) : 1;
+
+        torch::Tensor words;
+        torch::Tensor scale;
+        const bool fused_ok = bsi_cuda_build_fixed_query_words_fused(
+            input,
+            decimal_places,
+            fixed_bits,
+            chunk_scale,
+            device,
+            profile_cuda,
+            words,
+            scale,
+            quantize_ms,
+            pack_ms);
+
+        if (fused_ok) {
+            auto weights_twos = make_slice_weights_cuda_cached(slices, offset, true, device);
+            auto slice_weights = weights_twos.unsqueeze(0).expand({Q_input, slices});
+            BsiQueryBatchCudaData out;
+            out.rows = Q_input;
+            out.slices = slices;
+            out.words_per_slice = words_per_slice;
+            out.offset = offset;
+            out.words = words.contiguous();
+            if (chunk_scale) {
+                TORCH_CHECK(scale.defined() && scale.dim() == 2, "Expected [Q, chunks] chunk scales");
+                out.slice_weights = slice_weights.contiguous();
+                out.chunk_scales = scale.contiguous();
+            } else {
+                TORCH_CHECK(scale.defined() && scale.dim() == 1, "Expected [Q] row scales");
+                out.slice_weights = (slice_weights * scale.unsqueeze(1)).contiguous();
+            }
+
+            if (profile_cuda) {
+                g_last_query_build_quantize_ns = static_cast<uint64_t>(quantize_ms * 1.0e6);
+                g_last_query_build_pack_ns = static_cast<uint64_t>(pack_ms * 1.0e6);
+                g_last_query_build_total_ns = g_last_query_build_quantize_ns + g_last_query_build_pack_ns;
+            } else {
+                g_last_query_build_quantize_ns = 0;
+                g_last_query_build_pack_ns = 0;
+                g_last_query_build_total_ns = 0;
+            }
+
+            if (verbose || bsi_cuda_should_log()) {
+                std::cout << "[BSI_CUDA] build_bsi_queries_cuda_batch_data (fused): "
+                          << "Q=" << Q_input
+                          << " slices=" << slices
+                          << " words_per_slice=" << words_per_slice
+                          << std::endl;
+            }
+            return out;
+        }
+    }
+
     cudaEvent_t quantize_start_evt = nullptr;
     cudaEvent_t quantize_end_evt = nullptr;
     if (profile_cuda) {
