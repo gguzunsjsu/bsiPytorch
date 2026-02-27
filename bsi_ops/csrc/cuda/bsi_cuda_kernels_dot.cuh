@@ -1156,10 +1156,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_packed(
             uint32_t v = 0u;
             const int q = q0 + m;
             if (q < Q) {
-                v = __ldg(&A_tc[(size_t)q * (size_t)a_row_stride +
-                                (size_t)i * (size_t)a_slice_stride +
-                                (size_t)chunk * (size_t)K_STRIDE32 +
-                                (size_t)k32]);
+                const int a_off = q * a_row_stride + i * a_slice_stride + chunk * K_STRIDE32;
+                v = __ldg(A_tc + a_off + k32);
             }
             A_bits[(size_t)(i * TM + m) * (size_t)K_STRIDE32 + (size_t)k32] = v;
         }
@@ -1173,10 +1171,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_packed(
             uint32_t v = 0u;
             const int r = r0 + n;
             if (r < R) {
-                v = __ldg(&B_tc[(size_t)r * (size_t)b_row_stride +
-                                (size_t)j * (size_t)b_slice_stride +
-                                (size_t)chunk * (size_t)K_STRIDE32 +
-                                (size_t)k32]);
+                const int b_off = r * b_row_stride + j * b_slice_stride + chunk * K_STRIDE32;
+                v = __ldg(B_tc + b_off + k32);
             }
             B_bits[(size_t)(j * TN + n) * (size_t)K_STRIDE32 + (size_t)k32] = v;
         }
@@ -2627,11 +2623,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_packed(
             const int q = q0 + m;
             const int k32 = g << 2;
             const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + k32;
-            const uint32_t* src = A_tc +
-                (size_t)q * (size_t)a_row_stride +
-                (size_t)i * (size_t)a_slice_stride +
-                (size_t)0 * (size_t)K_STRIDE32 +
-                (size_t)k32;
+            const int a_off = q * a_row_stride + i * a_slice_stride;
+            const uint32_t* src = A_tc + a_off + k32;
             bsi_cp_async_cg_16B(A_bits + base, src);
         }
         for (int idx = threadIdx.x; idx < TN * Sb * K_GROUPS_16B; idx += blockDim.x) {
@@ -2643,11 +2636,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_packed(
             const int r = r0 + n;
             const int k32 = g << 2;
             const int base = ((j * TN + n) * K_STRIDE32) + k32;
-            const uint32_t* src = B_tc +
-                (size_t)r * (size_t)b_row_stride +
-                (size_t)j * (size_t)b_slice_stride +
-                (size_t)0 * (size_t)K_STRIDE32 +
-                (size_t)k32;
+            const int b_off = r * b_row_stride + j * b_slice_stride;
+            const uint32_t* src = B_tc + b_off + k32;
             bsi_cp_async_cg_16B(B_bits + base, src);
         }
         bsi_cp_async_commit_group();
@@ -2669,10 +2659,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_packed(
                     const int m = t & (TM_TOTAL - 1);
                     const int i = t >> 5;
                     const int q = q0 + m;
-                    const uint32_t v = __ldg(&A_tc[(size_t)q * (size_t)a_row_stride +
-                                                   (size_t)i * (size_t)a_slice_stride +
-                                                   (size_t)chunk * (size_t)K_STRIDE32 +
-                                                   (size_t)k32]);
+                    const int a_off = q * a_row_stride + i * a_slice_stride + chunk * K_STRIDE32;
+                    const uint32_t v = __ldg(A_tc + a_off + k32);
                     const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + k32;
                     A_bits[base] = v;
                 }
@@ -2686,10 +2674,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_packed(
                     uint32_t v = 0u;
                     const int q = q0 + m;
                     if (q < Q) {
-                        v = __ldg(&A_tc[(size_t)q * (size_t)a_row_stride +
-                                        (size_t)i * (size_t)a_slice_stride +
-                                        (size_t)chunk * (size_t)K_STRIDE32 +
-                                        (size_t)k32]);
+                        const int a_off = q * a_row_stride + i * a_slice_stride + chunk * K_STRIDE32;
+                        v = __ldg(A_tc + a_off + k32);
                     }
                     const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + k32;
                     A_bits[base] = v;
@@ -2704,10 +2690,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_packed(
                     const int n = t & (TN - 1);
                     const int j = t >> 5;
                     const int r = r0 + n;
-                    const uint32_t v = __ldg(&B_tc[(size_t)r * (size_t)b_row_stride +
-                                                   (size_t)j * (size_t)b_slice_stride +
-                                                   (size_t)chunk * (size_t)K_STRIDE32 +
-                                                   (size_t)k32]);
+                    const int b_off = r * b_row_stride + j * b_slice_stride + chunk * K_STRIDE32;
+                    const uint32_t v = __ldg(B_tc + b_off + k32);
                     const int base = ((j * TN + n) * K_STRIDE32) + k32;
                     B_bits[base] = v;
                 }
@@ -2721,10 +2705,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_packed(
                     uint32_t v = 0u;
                     const int r = r0 + n;
                     if (r < R) {
-                        v = __ldg(&B_tc[(size_t)r * (size_t)b_row_stride +
-                                        (size_t)j * (size_t)b_slice_stride +
-                                        (size_t)chunk * (size_t)K_STRIDE32 +
-                                        (size_t)k32]);
+                        const int b_off = r * b_row_stride + j * b_slice_stride + chunk * K_STRIDE32;
+                        v = __ldg(B_tc + b_off + k32);
                     }
                     const int base = ((j * TN + n) * K_STRIDE32) + k32;
                     B_bits[base] = v;
@@ -2747,11 +2729,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_packed(
                     const int q = q0 + m;
                     const int k32 = g << 2;
                     const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + k32;
-                    const uint32_t* src = A_tc +
-                        (size_t)q * (size_t)a_row_stride +
-                        (size_t)i * (size_t)a_slice_stride +
-                        (size_t)next_chunk * (size_t)K_STRIDE32 +
-                        (size_t)k32;
+                    const int a_off = q * a_row_stride + i * a_slice_stride + next_chunk * K_STRIDE32;
+                    const uint32_t* src = A_tc + a_off + k32;
                     bsi_cp_async_cg_16B(A_bits_next + base, src);
                 }
                 for (int idx = threadIdx.x; idx < TN * Sb * K_GROUPS_16B; idx += blockDim.x) {
@@ -2763,11 +2742,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_packed(
                     const int r = r0 + n;
                     const int k32 = g << 2;
                     const int base = ((j * TN + n) * K_STRIDE32) + k32;
-                    const uint32_t* src = B_tc +
-                        (size_t)r * (size_t)b_row_stride +
-                        (size_t)j * (size_t)b_slice_stride +
-                        (size_t)next_chunk * (size_t)K_STRIDE32 +
-                        (size_t)k32;
+                    const int b_off = r * b_row_stride + j * b_slice_stride + next_chunk * K_STRIDE32;
+                    const uint32_t* src = B_tc + b_off + k32;
                     bsi_cp_async_cg_16B(B_bits_next + base, src);
                 }
                 bsi_cp_async_commit_group();
@@ -3525,6 +3501,19 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq_tc_packed(
     float* out_global,
     cudaStream_t stream)
 {
+    static int cached_carveout = -1;
+    if (cached_carveout < 0) {
+        cudaFuncSetAttribute(
+            popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_packed,
+            cudaFuncAttributePreferredSharedMemoryCarveout,
+            100);
+        cudaFuncSetAttribute(
+            popcount_weighted_keys_literal_fused_bmma_tc_kernel_packed,
+            cudaFuncAttributePreferredSharedMemoryCarveout,
+            100);
+        cached_carveout = 1;
+    }
+
     static int cached_tc_ok = -1;
     if (cached_tc_ok < 0) {
         int dev = 0;
