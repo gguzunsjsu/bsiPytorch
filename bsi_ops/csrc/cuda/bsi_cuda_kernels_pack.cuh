@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdint.h>
+
 extern "C" __global__
 void pack_bits_all_ballot_multi_kernel(
     const long long* __restrict__ values,
@@ -225,4 +227,48 @@ extern "C" void launch_pack_bits_all_ballot_batch(
         pack_bits_all_ballot_multi_kernel_batch<<<grid_legacy, block, 0, stream>>>(
             values, Q, n, slices, words_per_slice, value_mask, out);
     }
+}
+
+extern "C" __global__
+void bsi_words_to_tc_layout_kernel(
+    const unsigned long long* __restrict__ in_words, // [rows, S, W64]
+    int rows,
+    int S,
+    int W64,
+    uint32_t* __restrict__ out_words_tc) // [rows, S, chunks, 12]
+{
+    const int idx = (int)(blockIdx.x * blockDim.x + threadIdx.x);
+    const int total = rows * S * W64;
+    if (idx >= total) return;
+    const int w64_i = idx % W64;
+    int t = idx / W64;
+    const int s = t % S;
+    const int row = t / S;
+    const int chunks = W64 >> 2;
+    const int chunk = w64_i >> 2;
+    const int within = w64_i & 3;
+
+    const unsigned long long w = in_words[idx];
+    const uint32_t lo = static_cast<uint32_t>(w);
+    const uint32_t hi = static_cast<uint32_t>(w >> 32);
+    const int base = (((row * S + s) * chunks + chunk) * 12) + (within << 1);
+    out_words_tc[base] = lo;
+    out_words_tc[base + 1] = hi;
+}
+
+extern "C" void launch_bsi_words_to_tc_layout(
+    const unsigned long long* in_words,
+    int rows,
+    int S,
+    int W64,
+    uint32_t* out_words_tc,
+    cudaStream_t stream)
+{
+    if (rows <= 0 || S <= 0 || W64 <= 0) return;
+    if ((W64 & 3) != 0) return;
+    const int total = rows * S * W64;
+    const int threads = 256;
+    const int blocks = (total + threads - 1) / threads;
+    bsi_words_to_tc_layout_kernel<<<blocks, threads, 0, stream>>>(
+        in_words, rows, S, W64, out_words_tc);
 }
