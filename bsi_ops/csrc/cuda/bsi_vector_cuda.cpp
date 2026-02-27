@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <unordered_map>
 
 #include <cuda_runtime.h>
 
@@ -63,6 +64,27 @@ inline torch::Tensor make_slice_weights_cuda_local(int S,
                torch::TensorOptions().dtype(torch::kFloat32))
         .clone()
         .to(device, /*non_blocking=*/true);
+}
+
+inline torch::Tensor make_slice_weights_cuda_cached(int S,
+                                                    int offset,
+                                                    bool twos,
+                                                    const torch::Device& device) {
+    // Cache immutable [S] base weights on-device; query build reuses them every forward.
+    static std::unordered_map<uint64_t, torch::Tensor> cache;
+    const int dev_idx = device.has_index() ? device.index() : 0;
+    const uint64_t key =
+        (static_cast<uint64_t>(static_cast<uint32_t>(dev_idx)) << 32) ^
+        (static_cast<uint64_t>(static_cast<uint16_t>(S)) << 16) ^
+        static_cast<uint64_t>(static_cast<uint16_t>(offset)) ^
+        (twos ? (1ull << 63) : 0ull);
+    auto it = cache.find(key);
+    if (it != cache.end() && it->second.defined()) {
+        return it->second;
+    }
+    auto t = make_slice_weights_cuda_local(S, offset, twos, device).contiguous();
+    cache.emplace(key, t);
+    return t;
 }
 } // namespace
 
@@ -822,11 +844,12 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& inp
         }
     }
 
-    auto neg_flags = (Q > 0) ? scaled.lt(0).any(1) : torch::zeros({Q}, torch::TensorOptions().dtype(torch::kBool).device(device));
-    auto weights_unsigned = make_slice_weights_cuda_local(slices, offset, false, device);
-    auto weights_twos = make_slice_weights_cuda_local(slices, offset, true, device);
-    auto slice_weights = torch::where(neg_flags.unsqueeze(1), weights_twos, weights_unsigned);
+    torch::Tensor slice_weights;
     if (fixed_bits > 0) {
+        // Fixed-bit path always uses signed representation; base twos-complement
+        // slice weights are reused across all rows.
+        auto weights_twos = make_slice_weights_cuda_cached(slices, offset, true, device);
+        slice_weights = weights_twos.unsqueeze(0).expand({Q, slices});
         if (chunk_scale) {
             // Fixed-bit chunk-scale path: per-chunk power-of-two scales are applied inside the dot kernel.
             // Keep slice_weights as the exact base powers-of-two (with sign handling).
@@ -836,6 +859,13 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& inp
             TORCH_CHECK(q.scale.defined() && q.scale.dim() == 1, "Expected [Q] row scales");
             slice_weights = slice_weights * q.scale.unsqueeze(1);
         }
+    } else {
+        auto neg_flags = (Q > 0)
+            ? scaled.lt(0).any(1)
+            : torch::zeros({Q}, torch::TensorOptions().dtype(torch::kBool).device(device));
+        auto weights_unsigned = make_slice_weights_cuda_cached(slices, offset, false, device);
+        auto weights_twos = make_slice_weights_cuda_cached(slices, offset, true, device);
+        slice_weights = torch::where(neg_flags.unsqueeze(1), weights_twos, weights_unsigned);
     }
 
     BsiQueryBatchCudaData out;
@@ -844,7 +874,7 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& inp
     out.words_per_slice = words_per_slice;
     out.offset = offset;
     out.words = words;
-    out.slice_weights = slice_weights;
+    out.slice_weights = slice_weights.contiguous();
     if (fixed_bits > 0 && chunk_scale) {
         out.chunk_scales = q.scale.contiguous();
     }

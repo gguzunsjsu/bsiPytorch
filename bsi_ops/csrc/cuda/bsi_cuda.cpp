@@ -149,6 +149,7 @@ struct PrebuiltBSIKeysCUDA {
     std::unordered_map<int, at::Tensor> grouped_weights; // Sb -> [R_sb, Sb]
     std::unordered_map<int, std::vector<int64_t>> grouped_indices; // Sb -> original key indices
     std::unordered_map<int, at::Tensor> grouped_indices_dev; // Sb -> [R_sb] int64 cuda
+    std::unordered_map<int, bool> grouped_indices_identity; // Sb -> true when idx[i] == i
     int W = 0;
     int64_t d = 0;
     int64_t num_keys = 0;
@@ -546,9 +547,16 @@ struct TempGroup {
 
             const auto& words = keys->grouped_words.at(Sb);
             const auto& Bw_stacked = keys->grouped_weights.at(Sb);
-        const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words));
+            const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words));
             const auto* Bw_ptr = tensor_data_ptr<float>(Bw_stacked);
-            const auto& idx_dev = keys->grouped_indices_dev.at(Sb);
+            const bool identity_r = (keys->grouped_indices_identity.count(Sb) > 0)
+                ? keys->grouped_indices_identity.at(Sb)
+                : false;
+            const long long* r_idx_ptr = nullptr;
+            if (!identity_r) {
+                const auto& idx_dev = keys->grouped_indices_dev.at(Sb);
+                r_idx_ptr = reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev));
+            }
             launch_popcount_weighted_keys_literal_fused_multiq(
                 A,
                 Aw,
@@ -563,7 +571,7 @@ struct TempGroup {
                 static_cast<int>(pg.Qcount),
                 bsi_cuda_q_tile(),
                 bsi_cuda_r_tile(),
-                reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev)),
+                r_idx_ptr,
                 q_idx,
                 static_cast<float>(scale_inv),
                 static_cast<int>(R),
@@ -676,7 +684,14 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
         const auto& Bw_stacked = keys->grouped_weights.at(Sb);
         const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words));
         const auto* Bw_ptr = tensor_data_ptr<float>(Bw_stacked);
-        const auto& idx_dev = keys->grouped_indices_dev.at(Sb);
+        const bool identity_r = (keys->grouped_indices_identity.count(Sb) > 0)
+            ? keys->grouped_indices_identity.at(Sb)
+            : false;
+        const long long* r_idx_ptr = nullptr;
+        if (!identity_r) {
+            const auto& idx_dev = keys->grouped_indices_dev.at(Sb);
+            r_idx_ptr = reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev));
+        }
 
         launch_popcount_weighted_keys_literal_fused_multiq(
             A,
@@ -692,7 +707,7 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
             static_cast<int>(Q),
             bsi_cuda_q_tile(),
             bsi_cuda_r_tile(),
-            reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev)),
+            r_idx_ptr,
             indices_q,
             static_cast<float>(scale_inv),
             static_cast<int>(R),
@@ -794,9 +809,7 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
         std::vector<int64_t> idxs(static_cast<size_t>(num_keys));
         for (int64_t i = 0; i < num_keys; ++i) idxs[static_cast<size_t>(i)] = i;
         holder->grouped_indices[Sb] = idxs;
-        holder->grouped_indices_dev[Sb] = torch::arange(
-            num_keys,
-            torch::TensorOptions().dtype(torch::kInt64).device(torch::kCUDA)).contiguous();
+        holder->grouped_indices_identity[Sb] = true;
 
         const uint64_t total_mem_bytes = static_cast<uint64_t>(
             holder->grouped_words[Sb].numel() * holder->grouped_words[Sb].element_size());
@@ -870,11 +883,21 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
             holder->grouped_words[Sb] = gw.contiguous();
             holder->grouped_weights[Sb] = gwt.contiguous();
             holder->grouped_indices[Sb] = idxs;
-            auto idx_cpu = torch::from_blob(
-                const_cast<int64_t*>(idxs.data()),
-                {R},
-                torch::TensorOptions().dtype(torch::kInt64)).clone();
-            holder->grouped_indices_dev[Sb] = idx_cpu.to(torch::kCUDA).contiguous();
+            bool identity = true;
+            for (int i = 0; i < R; ++i) {
+                if (idxs[static_cast<size_t>(i)] != static_cast<int64_t>(i)) {
+                    identity = false;
+                    break;
+                }
+            }
+            holder->grouped_indices_identity[Sb] = identity;
+            if (!identity) {
+                auto idx_cpu = torch::from_blob(
+                    const_cast<int64_t*>(idxs.data()),
+                    {R},
+                    torch::TensorOptions().dtype(torch::kInt64)).clone();
+                holder->grouped_indices_dev[Sb] = idx_cpu.to(torch::kCUDA).contiguous();
+            }
         }
     }
     pybind11::capsule cap(holder, "PrebuiltBSIKeysCUDA",
