@@ -1065,6 +1065,24 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
 // BMMA TC variant: 8 warps per block (32x32 output tile).
 // This reuses the same B tile across 2x as many query rows (vs TM=16), which
 // cuts B global->shared traffic per output.
+template <int SB>
+__device__ __forceinline__ void bsi_bmma_tm32_accum_sa7_sb_hot(
+    const uint32_t* __restrict__ A_bits,
+    const float* __restrict__ Aw_tile,
+    const uint32_t* __restrict__ b_col_base,
+    const float* __restrict__ bw_col0,
+    const float* __restrict__ bw_col1,
+    int threadID,
+    int m0,
+    int m1,
+    bool use_chunk_scale,
+    float qscale_m0,
+    float qscale_m1,
+    float& acc00,
+    float& acc01,
+    float& acc10,
+    float& acc11);
+
 extern "C" __global__ __launch_bounds__(256)
 void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
     const unsigned long long* __restrict__ A,    // [Q, Sa, W64]
@@ -1381,7 +1399,41 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
             const uint32_t* b_col_base = B_bits + (col_base + groupID) * K_STRIDE32;
             // Sb==7/6 are hot configurations (fixed-bit weights) and tend to regress if the compiler
             // can't specialize away the tail checks. Keep explicit fast paths.
-            if (Sb == 7) {
+            if (Sa == 7 && Sb == 7) {
+                bsi_bmma_tm32_accum_sa7_sb_hot<7>(
+                    A_bits,
+                    Aw_tile,
+                    b_col_base,
+                    bw_col0,
+                    bw_col1,
+                    threadID,
+                    m0,
+                    m1,
+                    use_chunk_scale,
+                    qscale_m0,
+                    qscale_m1,
+                    acc00,
+                    acc01,
+                    acc10,
+                    acc11);
+            } else if (Sa == 7 && Sb == 6) {
+                bsi_bmma_tm32_accum_sa7_sb_hot<6>(
+                    A_bits,
+                    Aw_tile,
+                    b_col_base,
+                    bw_col0,
+                    bw_col1,
+                    threadID,
+                    m0,
+                    m1,
+                    use_chunk_scale,
+                    qscale_m0,
+                    qscale_m1,
+                    acc00,
+                    acc01,
+                    acc10,
+                    acc11);
+            } else if (Sb == 7) {
                 // j0 = 0..3
                 {
                     uint32_t b0_cache[JBLOCK];
@@ -2102,6 +2154,111 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
     (void)R_total;
     (void)out_global;
     (void)use_cpasync;
+#endif
+}
+
+// Hot fixed-bit specialization for TM32: Sa==7 with Sb in {6,7}.
+// This keeps the BMMA math identical but makes Sa/Sb compile-time constants and
+// applies chunk qscale once per row per chunk (outside the inner i loop).
+template <int SB>
+__device__ __forceinline__ void bsi_bmma_tm32_accum_sa7_sb_hot(
+    const uint32_t* __restrict__ A_bits,
+    const float* __restrict__ Aw_tile,
+    const uint32_t* __restrict__ b_col_base,
+    const float* __restrict__ bw_col0,
+    const float* __restrict__ bw_col1,
+    int threadID,
+    int m0,
+    int m1,
+    bool use_chunk_scale,
+    float qscale_m0,
+    float qscale_m1,
+    float& acc00,
+    float& acc01,
+    float& acc10,
+    float& acc11)
+{
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900)
+    static_assert(SB == 6 || SB == 7, "SB must be 6 or 7");
+    constexpr int SA = 7;
+    constexpr int TM_TOTAL = 32;
+    constexpr int TN = 32;
+    constexpr int K_STRIDE32 = 12;
+    const int b_slice_stride = TN * K_STRIDE32;
+
+    uint32_t b0_cache[SB];
+    uint32_t b1_cache[SB];
+    float bw0_cache[SB];
+    float bw1_cache[SB];
+
+#pragma unroll
+    for (int j = 0; j < SB; ++j) {
+        const uint32_t* b_col = b_col_base + j * b_slice_stride;
+        b0_cache[j] = b_col[threadID];
+        b1_cache[j] = b_col[threadID + 4];
+        bw0_cache[j] = bw_col0[j];
+        bw1_cache[j] = bw_col1[j];
+    }
+
+    float chunk00 = 0.0f, chunk01 = 0.0f, chunk10 = 0.0f, chunk11 = 0.0f;
+#pragma unroll
+    for (int i = 0; i < SA; ++i) {
+        const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
+        const uint32_t a0 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)threadID];
+        const uint32_t a1 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)threadID];
+        const uint32_t a2 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+        const uint32_t a3 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+
+        float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
+#pragma unroll
+        for (int j = 0; j < SB; ++j) {
+            int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
+            asm volatile(
+                "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
+                "{%0, %1, %2, %3}, "
+                "{%4, %5, %6, %7}, "
+                "{%8, %9}, "
+                "{%0, %1, %2, %3};\n"
+                : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
+                : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
+                  "r"(b0_cache[j]), "r"(b1_cache[j]));
+
+            sum00 = __fmaf_rn(static_cast<float>(c0), bw0_cache[j], sum00);
+            sum01 = __fmaf_rn(static_cast<float>(c1), bw1_cache[j], sum01);
+            sum10 = __fmaf_rn(static_cast<float>(c2), bw0_cache[j], sum10);
+            sum11 = __fmaf_rn(static_cast<float>(c3), bw1_cache[j], sum11);
+        }
+
+        const float aw0 = Aw_tile[(size_t)m0 * (size_t)SA + (size_t)i];
+        const float aw1 = Aw_tile[(size_t)m1 * (size_t)SA + (size_t)i];
+        chunk00 = __fmaf_rn(aw0, sum00, chunk00);
+        chunk01 = __fmaf_rn(aw0, sum01, chunk01);
+        chunk10 = __fmaf_rn(aw1, sum10, chunk10);
+        chunk11 = __fmaf_rn(aw1, sum11, chunk11);
+    }
+
+    const float qmul0 = use_chunk_scale ? qscale_m0 : 1.0f;
+    const float qmul1 = use_chunk_scale ? qscale_m1 : 1.0f;
+    acc00 = __fmaf_rn(qmul0, chunk00, acc00);
+    acc01 = __fmaf_rn(qmul0, chunk01, acc01);
+    acc10 = __fmaf_rn(qmul1, chunk10, acc10);
+    acc11 = __fmaf_rn(qmul1, chunk11, acc11);
+#else
+    (void)A_bits;
+    (void)Aw_tile;
+    (void)b_col_base;
+    (void)bw_col0;
+    (void)bw_col1;
+    (void)threadID;
+    (void)m0;
+    (void)m1;
+    (void)use_chunk_scale;
+    (void)qscale_m0;
+    (void)qscale_m1;
+    (void)acc00;
+    (void)acc01;
+    (void)acc10;
+    (void)acc11;
 #endif
 }
 
