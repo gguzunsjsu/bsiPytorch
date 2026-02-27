@@ -85,6 +85,53 @@ extern "C" void launch_pack_bits_all_ballot_batch(
     unsigned long long* out,
     cudaStream_t stream);
 
+extern "C" void launch_quantize_round_to_int64_batch(
+    const void* input,
+    int input_dtype,
+    int64_t Q,
+    int64_t d,
+    double dec_scale,
+    long long* out_ints,
+    cudaStream_t stream);
+
+extern "C" void launch_compute_row_shift_scale(
+    const long long* ints,
+    int64_t Q,
+    int64_t d,
+    int fixed_bits,
+    float clip_k,
+    int* shifts,
+    float* scales,
+    cudaStream_t stream);
+
+extern "C" void launch_compute_chunk_shift_scale(
+    const long long* ints,
+    int64_t Q,
+    int64_t d,
+    int chunks,
+    int fixed_bits,
+    float clip_k,
+    int* shifts,
+    float* scales,
+    cudaStream_t stream);
+
+extern "C" void launch_apply_row_shift_clamp(
+    long long* ints,
+    int64_t Q,
+    int64_t d,
+    const int* shifts,
+    int fixed_bits,
+    cudaStream_t stream);
+
+extern "C" void launch_apply_chunk_shift_clamp(
+    long long* ints,
+    int64_t Q,
+    int64_t d,
+    int chunks,
+    const int* shifts,
+    int fixed_bits,
+    cudaStream_t stream);
+
 extern "C" void launch_slice_popcount_sum(
     const unsigned long long* words,
     int S,
@@ -205,6 +252,17 @@ static bool bsi_cuda_profile_enabled_local() {
     return cached != 0;
 }
 
+static bool bsi_cuda_custom_quant_enabled() {
+    static int cached = -1;
+    if (cached >= 0) return cached != 0;
+    int v = 1; // default on
+    if (const char* s = std::getenv("BSI_CUSTOM_QUANT")) {
+        v = (std::atoi(s) != 0) ? 1 : 0;
+    }
+    cached = v;
+    return cached != 0;
+}
+
 static uint64_t g_last_query_build_quantize_ns = 0;
 static uint64_t g_last_query_build_pack_ns = 0;
 static uint64_t g_last_query_build_total_ns = 0;
@@ -263,6 +321,85 @@ static QuantizedIntsAndScale bsi_cuda_quantize_to_int64_and_scale(const torch::T
         out.scale = per_row_scale
             ? torch::ones({out.ints.size(0)}, torch::TensorOptions().dtype(torch::kFloat32).device(device))
             : torch::ones({}, torch::TensorOptions().dtype(torch::kFloat32).device(device));
+        return out;
+    }
+
+    // Fast custom CUDA path for fixed-bit batched quantization.
+    // This avoids large float64 tensor-op graphs (log2/pow/where) and computes shift/scale with custom kernels.
+    if (per_row_scale && input.is_cuda() && bsi_cuda_custom_quant_enabled()) {
+        auto values = input.to(device, input.scalar_type(), /*non_blocking=*/true).contiguous();
+        if (!(values.scalar_type() == torch::kFloat32 ||
+              values.scalar_type() == torch::kFloat16 ||
+              values.scalar_type() == torch::kBFloat16)) {
+            values = values.to(torch::kFloat32);
+        }
+        TORCH_CHECK(values.dim() == 2, "Custom fixed-bit quantization expects 2D input");
+        const int64_t Q = values.size(0);
+        const int64_t d = values.size(1);
+        auto ints = torch::empty({Q, d}, torch::TensorOptions().dtype(torch::kInt64).device(device));
+        const double dec_scale = std::pow(10.0, static_cast<double>(decimal_places));
+        int input_dtype = 0;
+        if (values.scalar_type() == torch::kFloat16) input_dtype = 1;
+        else if (values.scalar_type() == torch::kBFloat16) input_dtype = 2;
+
+        auto stream = at::cuda::getCurrentCUDAStream();
+        launch_quantize_round_to_int64_batch(
+            values.data_ptr(),
+            input_dtype,
+            Q,
+            d,
+            dec_scale,
+            reinterpret_cast<long long*>(tensor_data_ptr<int64_t>(ints)),
+            stream.stream());
+
+        const float clip_k = bsi_cuda_fixed_clip_k();
+        QuantizedIntsAndScale out;
+        if (chunk_scale) {
+            const int chunks = static_cast<int>((d + 255) / 256);
+            auto shifts = torch::empty({Q, chunks}, torch::TensorOptions().dtype(torch::kInt32).device(device));
+            auto scales = torch::empty({Q, chunks}, torch::TensorOptions().dtype(torch::kFloat32).device(device));
+            launch_compute_chunk_shift_scale(
+                reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(ints)),
+                Q,
+                d,
+                chunks,
+                fixed_bits,
+                clip_k,
+                shifts.data_ptr<int>(),
+                tensor_data_ptr<float>(scales),
+                stream.stream());
+            launch_apply_chunk_shift_clamp(
+                reinterpret_cast<long long*>(tensor_data_ptr<int64_t>(ints)),
+                Q,
+                d,
+                chunks,
+                shifts.data_ptr<int>(),
+                fixed_bits,
+                stream.stream());
+            out.ints = ints.contiguous();
+            out.scale = scales.contiguous();
+        } else {
+            auto shifts = torch::empty({Q}, torch::TensorOptions().dtype(torch::kInt32).device(device));
+            auto scales = torch::empty({Q}, torch::TensorOptions().dtype(torch::kFloat32).device(device));
+            launch_compute_row_shift_scale(
+                reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(ints)),
+                Q,
+                d,
+                fixed_bits,
+                clip_k,
+                shifts.data_ptr<int>(),
+                tensor_data_ptr<float>(scales),
+                stream.stream());
+            launch_apply_row_shift_clamp(
+                reinterpret_cast<long long*>(tensor_data_ptr<int64_t>(ints)),
+                Q,
+                d,
+                shifts.data_ptr<int>(),
+                fixed_bits,
+                stream.stream());
+            out.ints = ints.contiguous();
+            out.scale = scales.contiguous();
+        }
         return out;
     }
 
