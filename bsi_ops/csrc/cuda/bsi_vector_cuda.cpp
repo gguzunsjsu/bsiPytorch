@@ -362,7 +362,7 @@ static bool bsi_cuda_fused_qpack_enabled() {
 static bool bsi_cuda_dot_slice_masks_enabled() {
     static int cached = -1;
     if (cached >= 0) return cached != 0;
-    int v = 1; // default on for exact zero-slice skip fast paths
+    int v = 0; // default off: enable only when proven beneficial for the workload
     if (const char* s = std::getenv("BSI_DOT_SLICE_MASKS")) {
         v = (std::atoi(s) != 0) ? 1 : 0;
     }

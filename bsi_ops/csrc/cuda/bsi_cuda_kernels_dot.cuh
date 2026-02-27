@@ -1086,6 +1086,24 @@ __device__ __forceinline__ void bsi_bmma_tm32_accum_sa7_sb_hot(
     float& acc11);
 
 template <int SB>
+__device__ __forceinline__ void bsi_bmma_tm32_accum_sa7_sb_hot_lowreg(
+    const uint32_t* __restrict__ A_bits,
+    const float* __restrict__ Aw_tile,
+    const uint32_t* __restrict__ b_col_base,
+    const float* __restrict__ bw_col0,
+    const float* __restrict__ bw_col1,
+    int threadID,
+    int m0,
+    int m1,
+    bool use_chunk_scale,
+    float qscale_m0,
+    float qscale_m1,
+    float& acc00,
+    float& acc01,
+    float& acc10,
+    float& acc11);
+
+template <int SB>
 __device__ __forceinline__ void bsi_bmma_tm32_accum_sa7_sb_hot_masked(
     const uint32_t* __restrict__ A_bits,
     const float* __restrict__ Aw_tile,
@@ -1127,7 +1145,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
     float scale_inv,
     int R_total,
     float* __restrict__ out_global,
-    int use_cpasync)
+    int use_cpasync,
+    int use_lowreg_hot)
 {
 #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900)
     constexpr int TM_TOTAL = 32;
@@ -1225,6 +1244,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
 
     const int chunks = W64 / K_WORDS64;
     const bool can_cpasync = (use_cpasync != 0) && full_q_tile && full_r_tile && (chunks > 1);
+    const bool use_lowreg_hot_kernel = (use_lowreg_hot != 0);
 
     // Prime the pipeline: load chunk 0 into stage 0.
     if (can_cpasync) {
@@ -1480,22 +1500,41 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                         acc10,
                         acc11);
                 } else {
-                    bsi_bmma_tm32_accum_sa7_sb_hot<7>(
-                        A_bits,
-                        Aw_tile,
-                        b_col_base,
-                        bw_col0,
-                        bw_col1,
-                        threadID,
-                        m0,
-                        m1,
-                        use_chunk_scale,
-                        qscale_m0,
-                        qscale_m1,
-                        acc00,
-                        acc01,
-                        acc10,
-                        acc11);
+                    if (use_lowreg_hot_kernel) {
+                        bsi_bmma_tm32_accum_sa7_sb_hot_lowreg<7>(
+                            A_bits,
+                            Aw_tile,
+                            b_col_base,
+                            bw_col0,
+                            bw_col1,
+                            threadID,
+                            m0,
+                            m1,
+                            use_chunk_scale,
+                            qscale_m0,
+                            qscale_m1,
+                            acc00,
+                            acc01,
+                            acc10,
+                            acc11);
+                    } else {
+                        bsi_bmma_tm32_accum_sa7_sb_hot<7>(
+                            A_bits,
+                            Aw_tile,
+                            b_col_base,
+                            bw_col0,
+                            bw_col1,
+                            threadID,
+                            m0,
+                            m1,
+                            use_chunk_scale,
+                            qscale_m0,
+                            qscale_m1,
+                            acc00,
+                            acc01,
+                            acc10,
+                            acc11);
+                    }
                 }
             } else if (Sa == 7 && Sb == 6) {
                 if (use_slice_masks_hot) {
@@ -1518,22 +1557,41 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                         acc10,
                         acc11);
                 } else {
-                    bsi_bmma_tm32_accum_sa7_sb_hot<6>(
-                        A_bits,
-                        Aw_tile,
-                        b_col_base,
-                        bw_col0,
-                        bw_col1,
-                        threadID,
-                        m0,
-                        m1,
-                        use_chunk_scale,
-                        qscale_m0,
-                        qscale_m1,
-                        acc00,
-                        acc01,
-                        acc10,
-                        acc11);
+                    if (use_lowreg_hot_kernel) {
+                        bsi_bmma_tm32_accum_sa7_sb_hot_lowreg<6>(
+                            A_bits,
+                            Aw_tile,
+                            b_col_base,
+                            bw_col0,
+                            bw_col1,
+                            threadID,
+                            m0,
+                            m1,
+                            use_chunk_scale,
+                            qscale_m0,
+                            qscale_m1,
+                            acc00,
+                            acc01,
+                            acc10,
+                            acc11);
+                    } else {
+                        bsi_bmma_tm32_accum_sa7_sb_hot<6>(
+                            A_bits,
+                            Aw_tile,
+                            b_col_base,
+                            bw_col0,
+                            bw_col1,
+                            threadID,
+                            m0,
+                            m1,
+                            use_chunk_scale,
+                            qscale_m0,
+                            qscale_m1,
+                            acc00,
+                            acc01,
+                            acc10,
+                            acc11);
+                    }
                 }
             } else if (Sb == 7) {
                 // j0 = 0..3
@@ -2260,6 +2318,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
     (void)R_total;
     (void)out_global;
     (void)use_cpasync;
+    (void)use_lowreg_hot;
 #endif
 }
 
@@ -2333,6 +2392,99 @@ __device__ __forceinline__ void bsi_bmma_tm32_accum_sa7_sb_hot(
             sum01 = __fmaf_rn(static_cast<float>(c1), bw1_cache[j], sum01);
             sum10 = __fmaf_rn(static_cast<float>(c2), bw0_cache[j], sum10);
             sum11 = __fmaf_rn(static_cast<float>(c3), bw1_cache[j], sum11);
+        }
+
+        const float aw0 = Aw_tile[(size_t)m0 * (size_t)SA + (size_t)i];
+        const float aw1 = Aw_tile[(size_t)m1 * (size_t)SA + (size_t)i];
+        chunk00 = __fmaf_rn(aw0, sum00, chunk00);
+        chunk01 = __fmaf_rn(aw0, sum01, chunk01);
+        chunk10 = __fmaf_rn(aw1, sum10, chunk10);
+        chunk11 = __fmaf_rn(aw1, sum11, chunk11);
+    }
+
+    const float qmul0 = use_chunk_scale ? qscale_m0 : 1.0f;
+    const float qmul1 = use_chunk_scale ? qscale_m1 : 1.0f;
+    acc00 = __fmaf_rn(qmul0, chunk00, acc00);
+    acc01 = __fmaf_rn(qmul0, chunk01, acc01);
+    acc10 = __fmaf_rn(qmul1, chunk10, acc10);
+    acc11 = __fmaf_rn(qmul1, chunk11, acc11);
+#else
+    (void)A_bits;
+    (void)Aw_tile;
+    (void)b_col_base;
+    (void)bw_col0;
+    (void)bw_col1;
+    (void)threadID;
+    (void)m0;
+    (void)m1;
+    (void)use_chunk_scale;
+    (void)qscale_m0;
+    (void)qscale_m1;
+    (void)acc00;
+    (void)acc01;
+    (void)acc10;
+    (void)acc11;
+#endif
+}
+
+template <int SB>
+__device__ __forceinline__ void bsi_bmma_tm32_accum_sa7_sb_hot_lowreg(
+    const uint32_t* __restrict__ A_bits,
+    const float* __restrict__ Aw_tile,
+    const uint32_t* __restrict__ b_col_base,
+    const float* __restrict__ bw_col0,
+    const float* __restrict__ bw_col1,
+    int threadID,
+    int m0,
+    int m1,
+    bool use_chunk_scale,
+    float qscale_m0,
+    float qscale_m1,
+    float& acc00,
+    float& acc01,
+    float& acc10,
+    float& acc11)
+{
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900)
+    static_assert(SB == 6 || SB == 7, "SB must be 6 or 7");
+    constexpr int SA = 7;
+    constexpr int TM_TOTAL = 32;
+    constexpr int TN = 32;
+    constexpr int K_STRIDE32 = 12;
+    const int b_slice_stride = TN * K_STRIDE32;
+
+    float chunk00 = 0.0f, chunk01 = 0.0f, chunk10 = 0.0f, chunk11 = 0.0f;
+#pragma unroll 1
+    for (int i = 0; i < SA; ++i) {
+        const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
+        const uint32_t a0 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)threadID];
+        const uint32_t a1 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)threadID];
+        const uint32_t a2 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+        const uint32_t a3 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+
+        float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
+#pragma unroll 1
+        for (int j = 0; j < SB; ++j) {
+            const uint32_t* b_col = b_col_base + j * b_slice_stride;
+            const uint32_t b0 = b_col[threadID];
+            const uint32_t b1 = b_col[threadID + 4];
+            const float bw0 = bw_col0[j];
+            const float bw1 = bw_col1[j];
+
+            int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
+            asm volatile(
+                "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
+                "{%0, %1, %2, %3}, "
+                "{%4, %5, %6, %7}, "
+                "{%8, %9}, "
+                "{%0, %1, %2, %3};\n"
+                : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
+                : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0), "r"(b1));
+
+            sum00 = __fmaf_rn(static_cast<float>(c0), bw0, sum00);
+            sum01 = __fmaf_rn(static_cast<float>(c1), bw1, sum01);
+            sum10 = __fmaf_rn(static_cast<float>(c2), bw0, sum10);
+            sum11 = __fmaf_rn(static_cast<float>(c3), bw1, sum11);
         }
 
         const float aw0 = Aw_tile[(size_t)m0 * (size_t)SA + (size_t)i];
@@ -3362,6 +3514,22 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                 ? TcTmMode::TM16
                 : (cached_tc_tm_mode == 32 ? TcTmMode::TM32 : TcTmMode::Auto);
 
+            // Low-register TM32 hot path:
+            // - default on for large fixed-hot shapes (Sa=7, Sb=6/7)
+            // - disable with BSI_TC_LOWREG=0
+            static int cached_tc_lowreg = -1;
+            if (cached_tc_lowreg < 0) {
+                int v = 1;
+                if (const char* s = getenv("BSI_TC_LOWREG")) {
+                    v = (atoi(s) != 0) ? 1 : 0;
+                }
+                cached_tc_lowreg = v;
+            }
+            const int use_lowreg_hot =
+                (cached_tc_lowreg != 0 && Sa == 7 && (Sb == 6 || Sb == 7) && R >= 2048 && Q >= 256)
+                    ? 1
+                    : 0;
+
             // Persistent R-tile BMMA path for large fixed-hot shapes.
             // Default is off; enable via BSI_TC_PERSIST=1.
             static int cached_tc_persist = -1;
@@ -3626,7 +3794,8 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                         scale_inv,
                         R_total,
                         out_global,
-                        use_cpasync);
+                        use_cpasync,
+                        use_lowreg_hot);
                     return true;
                 }
                 return false;
