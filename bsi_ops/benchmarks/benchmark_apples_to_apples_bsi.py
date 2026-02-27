@@ -128,6 +128,7 @@ def run_model_e2e(args: argparse.Namespace) -> None:
         "--compress_threshold", str(args.compress_threshold),
         "--scope", args.scope,
         "--bsi_device", args.bsi_device,
+        "--bsi_profile", str(args.bsi_profile),
     ]
     env = dict(os.environ)
     env["BSI_PROFILE"] = "1" if int(args.bsi_profile) != 0 else "0"
