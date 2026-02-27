@@ -741,7 +741,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
     const long long* __restrict__ query_indices, // [Q]
     float scale_inv,
     int R_total,
-    float* __restrict__ out_global)
+    float* __restrict__ out_global,
+    int use_qscale_shared)
 {
 #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900)
     constexpr int TM = 16;
@@ -763,6 +764,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
 
     const int q0 = blockIdx.y * TM;
     const int r0 = blockIdx.x * TN;
+    const bool full_q_tile = (q0 + TM) <= Q;
 
     // --- Shared memory layout (dynamic) ---
     extern __shared__ unsigned char smem_raw[];
@@ -778,6 +780,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
     p += (size_t)TM * (size_t)Sa * sizeof(float);
     auto* Bw_tile = reinterpret_cast<float*>(p);   // [TN, Sb]
     p += (size_t)TN * (size_t)Sb * sizeof(float);
+    auto* qscale_tile = reinterpret_cast<float*>(p); // [TM]
+    p += (size_t)TM * sizeof(float);
     (void)p;
 
     // Load all slice weights for the tile.
@@ -873,19 +877,37 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
         float qscale_row0 = 1.0f;
         float qscale_row1 = 1.0f;
         if (use_chunk_scale) {
-            // Each 4-lane group shares the same query rows (row0/row1). Broadcast to reduce redundant loads.
-            if (threadID == 0) {
-                const int q_row0 = q0 + row0;
-                const int q_row1 = q0 + row1;
-                qscale_row0 = (q_row0 < Q)
-                    ? __ldg(&A_chunk_scales[(size_t)q_row0 * (size_t)A_scale_stride + (size_t)chunk])
-                    : 0.0f;
-                qscale_row1 = (q_row1 < Q)
-                    ? __ldg(&A_chunk_scales[(size_t)q_row1 * (size_t)A_scale_stride + (size_t)chunk])
-                    : 0.0f;
+            if (use_qscale_shared != 0) {
+                if (full_q_tile) {
+                    for (int m = threadIdx.x; m < TM; m += blockDim.x) {
+                        qscale_tile[m] = __ldg(&A_chunk_scales[(size_t)(q0 + m) * (size_t)A_scale_stride + (size_t)chunk]);
+                    }
+                } else {
+                    for (int m = threadIdx.x; m < TM; m += blockDim.x) {
+                        const int q_row = q0 + m;
+                        qscale_tile[m] = (q_row < Q)
+                            ? __ldg(&A_chunk_scales[(size_t)q_row * (size_t)A_scale_stride + (size_t)chunk])
+                            : 0.0f;
+                    }
+                }
+                __syncthreads();
+                qscale_row0 = qscale_tile[row0];
+                qscale_row1 = qscale_tile[row1];
+            } else {
+                // Each 4-lane group shares the same query rows (row0/row1). Broadcast to reduce redundant loads.
+                if (threadID == 0) {
+                    const int q_row0 = q0 + row0;
+                    const int q_row1 = q0 + row1;
+                    qscale_row0 = (q_row0 < Q)
+                        ? __ldg(&A_chunk_scales[(size_t)q_row0 * (size_t)A_scale_stride + (size_t)chunk])
+                        : 0.0f;
+                    qscale_row1 = (q_row1 < Q)
+                        ? __ldg(&A_chunk_scales[(size_t)q_row1 * (size_t)A_scale_stride + (size_t)chunk])
+                        : 0.0f;
+                }
+                qscale_row0 = __shfl_sync(0xffffffff, qscale_row0, lane & ~3);
+                qscale_row1 = __shfl_sync(0xffffffff, qscale_row1, lane & ~3);
             }
-            qscale_row0 = __shfl_sync(0xffffffff, qscale_row0, lane & ~3);
-            qscale_row1 = __shfl_sync(0xffffffff, qscale_row1, lane & ~3);
         }
 
         // For each slice pair (i,j), compute 16x8 popcounts for this 256-bit chunk and
@@ -1058,6 +1080,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
     (void)scale_inv;
     (void)R_total;
     (void)out_global;
+    (void)use_qscale_shared;
 #endif
 }
 
@@ -1082,7 +1105,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
     float scale_inv,
     int R_total,
     float* __restrict__ out_global,
-    int use_cpasync)
+    int use_cpasync,
+    int use_qscale_shared)
 {
 #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900)
     constexpr int TM_TOTAL = 32;
@@ -1125,6 +1149,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
     p += (size_t)TM_TOTAL * (size_t)Sa * sizeof(float);
     auto* Bw_tile = reinterpret_cast<float*>(p);   // [TN, Sb]
     p += (size_t)TN * (size_t)Sb * sizeof(float);
+    auto* qscale_tile = reinterpret_cast<float*>(p); // [TM_TOTAL]
+    p += (size_t)TM_TOTAL * sizeof(float);
     (void)p;
 
     if (full_q_tile) {
@@ -1354,24 +1380,42 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
         float qscale_m0 = 1.0f;
         float qscale_m1 = 1.0f;
         if (use_chunk_scale) {
-            // Each 4-lane group shares the same query rows (m0/m1). Broadcast to reduce redundant loads.
-            if (threadID == 0) {
-                const int q_m0 = q0 + m0;
-                const int q_m1 = q0 + m1;
+            if (use_qscale_shared != 0) {
                 if (full_q_tile) {
-                    qscale_m0 = __ldg(&A_chunk_scales[(size_t)q_m0 * (size_t)A_scale_stride + (size_t)chunk]);
-                    qscale_m1 = __ldg(&A_chunk_scales[(size_t)q_m1 * (size_t)A_scale_stride + (size_t)chunk]);
+                    for (int m = threadIdx.x; m < TM_TOTAL; m += blockDim.x) {
+                        qscale_tile[m] = __ldg(&A_chunk_scales[(size_t)(q0 + m) * (size_t)A_scale_stride + (size_t)chunk]);
+                    }
                 } else {
-                    qscale_m0 = (q_m0 < Q)
-                        ? __ldg(&A_chunk_scales[(size_t)q_m0 * (size_t)A_scale_stride + (size_t)chunk])
-                        : 0.0f;
-                    qscale_m1 = (q_m1 < Q)
-                        ? __ldg(&A_chunk_scales[(size_t)q_m1 * (size_t)A_scale_stride + (size_t)chunk])
-                        : 0.0f;
+                    for (int m = threadIdx.x; m < TM_TOTAL; m += blockDim.x) {
+                        const int q_m = q0 + m;
+                        qscale_tile[m] = (q_m < Q)
+                            ? __ldg(&A_chunk_scales[(size_t)q_m * (size_t)A_scale_stride + (size_t)chunk])
+                            : 0.0f;
+                    }
                 }
+                __syncthreads();
+                qscale_m0 = qscale_tile[m0];
+                qscale_m1 = qscale_tile[m1];
+            } else {
+                // Each 4-lane group shares the same query rows (m0/m1). Broadcast to reduce redundant loads.
+                if (threadID == 0) {
+                    const int q_m0 = q0 + m0;
+                    const int q_m1 = q0 + m1;
+                    if (full_q_tile) {
+                        qscale_m0 = __ldg(&A_chunk_scales[(size_t)q_m0 * (size_t)A_scale_stride + (size_t)chunk]);
+                        qscale_m1 = __ldg(&A_chunk_scales[(size_t)q_m1 * (size_t)A_scale_stride + (size_t)chunk]);
+                    } else {
+                        qscale_m0 = (q_m0 < Q)
+                            ? __ldg(&A_chunk_scales[(size_t)q_m0 * (size_t)A_scale_stride + (size_t)chunk])
+                            : 0.0f;
+                        qscale_m1 = (q_m1 < Q)
+                            ? __ldg(&A_chunk_scales[(size_t)q_m1 * (size_t)A_scale_stride + (size_t)chunk])
+                            : 0.0f;
+                    }
+                }
+                qscale_m0 = __shfl_sync(0xffffffff, qscale_m0, lane & ~3);
+                qscale_m1 = __shfl_sync(0xffffffff, qscale_m1, lane & ~3);
             }
-            qscale_m0 = __shfl_sync(0xffffffff, qscale_m0, lane & ~3);
-            qscale_m1 = __shfl_sync(0xffffffff, qscale_m1, lane & ~3);
         }
 
         if (cache_sb) {
@@ -2100,6 +2144,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
     (void)scale_inv;
     (void)R_total;
     (void)out_global;
+    (void)use_cpasync;
+    (void)use_qscale_shared;
 #endif
 }
 
@@ -2253,6 +2299,17 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                 cached_use_cpasync = use_cpasync_env;
             }
             int use_cpasync = cached_use_cpasync;
+            // Optional shared qscale tile for chunk-scale mode. Reduces duplicated
+            // global qscale loads across warps in BMMA kernels.
+            static int cached_use_qscale_shared = -1;
+            if (cached_use_qscale_shared < 0) {
+                int v = 1;
+                if (const char* s = getenv("BSI_TC_QS_SHARED")) {
+                    v = (atoi(s) != 0) ? 1 : 0;
+                }
+                cached_use_qscale_shared = v;
+            }
+            const int use_qscale_shared = cached_use_qscale_shared;
 
             // Optional TM selection for BMMA TC path:
             // - auto (default): try TM32 then TM16 fallback
@@ -2284,7 +2341,8 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                     (size_t)stages * (size_t)Sa * (size_t)TM_TOTAL * (size_t)K_STRIDE32 * sizeof(uint32_t) +
                     (size_t)stages * (size_t)Sb * (size_t)TN * (size_t)K_STRIDE32 * sizeof(uint32_t) +
                     (size_t)TM_TOTAL * (size_t)Sa * sizeof(float) +
-                    (size_t)TN * (size_t)Sb * sizeof(float);
+                    (size_t)TN * (size_t)Sb * sizeof(float) +
+                    (size_t)TM_TOTAL * sizeof(float);
 
                 // If the pipelined (double-buffered) version doesn't fit, retry with stages=1.
                 if (shared_bytes > (size_t)max_shared && use_cpasync) {
@@ -2294,7 +2352,8 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                         (size_t)Sa * (size_t)TM_TOTAL * (size_t)K_STRIDE32 * sizeof(uint32_t) +
                         (size_t)Sb * (size_t)TN * (size_t)K_STRIDE32 * sizeof(uint32_t) +
                         (size_t)TM_TOTAL * (size_t)Sa * sizeof(float) +
-                        (size_t)TN * (size_t)Sb * sizeof(float);
+                        (size_t)TN * (size_t)Sb * sizeof(float) +
+                        (size_t)TM_TOTAL * sizeof(float);
                 }
 
                 if (shared_bytes <= (size_t)max_shared) {
@@ -2323,7 +2382,8 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                         scale_inv,
                         R_total,
                         out_global,
-                        use_cpasync);
+                        use_cpasync,
+                        use_qscale_shared);
                     return true;
                 }
                 return false;
@@ -2340,7 +2400,8 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                     (size_t)Sa * (size_t)TM * (size_t)K_STRIDE32 * sizeof(uint32_t) +
                     (size_t)Sb * (size_t)TN * (size_t)K_STRIDE32 * sizeof(uint32_t) +
                     (size_t)TM * (size_t)Sa * sizeof(float) +
-                    (size_t)TN * (size_t)Sb * sizeof(float);
+                    (size_t)TN * (size_t)Sb * sizeof(float) +
+                    (size_t)TM * sizeof(float);
 
                 if (shared_bytes <= (size_t)max_shared) {
                     static size_t configured_shared_tm16 = 0;
@@ -2367,7 +2428,8 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                         indices_q,
                         scale_inv,
                         R_total,
-                        out_global);
+                        out_global,
+                        use_qscale_shared);
                     return true;
                 }
                 return false;
