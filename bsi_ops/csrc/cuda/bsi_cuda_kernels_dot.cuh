@@ -2096,11 +2096,13 @@ static inline void launch_w32_sb_kernel(
     cudaStream_t stream,
     int max_shared_default)
 {
-    if (shared_bytes > (size_t)max_shared_default) {
+    static size_t configured_shared = 0;
+    if (shared_bytes > (size_t)max_shared_default && shared_bytes > configured_shared) {
         cudaFuncSetAttribute(
             popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_sb<SB>,
             cudaFuncAttributeMaxDynamicSharedMemorySize,
             (int)shared_bytes);
+        configured_shared = shared_bytes;
     }
     popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_sb<SB><<<grid_warp, block, shared_bytes, stream>>>(
         A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r, indices_r, indices_q, scale_inv, R_total, out_global);
@@ -2130,14 +2132,37 @@ static inline void launch_w128_sb_kernel(
     cudaStream_t stream,
     int max_shared_default)
 {
-    if (shared_bytes > (size_t)max_shared_default) {
+    static size_t configured_shared = 0;
+    if (shared_bytes > (size_t)max_shared_default && shared_bytes > configured_shared) {
         cudaFuncSetAttribute(
             popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w128_sb<SB>,
             cudaFuncAttributeMaxDynamicSharedMemorySize,
             (int)shared_bytes);
+        configured_shared = shared_bytes;
     }
     popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w128_sb<SB><<<grid_warp, block, shared_bytes, stream>>>(
         A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r, indices_r, indices_q, scale_inv, R_total, out_global);
+}
+
+struct BsiSharedLimits {
+    int max_shared_default = 0;
+    int max_shared_optin = 0;
+    int max_shared = 0;
+};
+
+static inline const BsiSharedLimits& bsi_get_shared_limits_cached() {
+    static BsiSharedLimits limits = []() {
+        BsiSharedLimits out;
+        int dev = 0;
+        cudaGetDevice(&dev);
+        cudaDeviceGetAttribute(&out.max_shared_default, cudaDevAttrMaxSharedMemoryPerBlock, dev);
+        cudaDeviceGetAttribute(&out.max_shared_optin, cudaDevAttrMaxSharedMemoryPerBlockOptin, dev);
+        out.max_shared = (out.max_shared_optin > out.max_shared_default)
+            ? out.max_shared_optin
+            : out.max_shared_default;
+        return out;
+    }();
+    return limits;
 }
 
 extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
@@ -2182,20 +2207,21 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
             constexpr int K_WORDS32 = 8;           // 256 bits / 32
             constexpr int K_STRIDE32 = K_WORDS32 + 4; // padding to reduce bank conflicts
 
-            int dev = 0;
-            cudaGetDevice(&dev);
-            int max_shared_default = 0;
-            int max_shared_optin = 0;
-            cudaDeviceGetAttribute(&max_shared_default, cudaDevAttrMaxSharedMemoryPerBlock, dev);
-            cudaDeviceGetAttribute(&max_shared_optin, cudaDevAttrMaxSharedMemoryPerBlockOptin, dev);
-            int max_shared = (max_shared_optin > max_shared_default) ? max_shared_optin : max_shared_default;
+            const auto& smem_limits = bsi_get_shared_limits_cached();
+            const int max_shared_default = smem_limits.max_shared_default;
+            const int max_shared = smem_limits.max_shared;
 
             // Enable pipelined per-chunk global->shared loads by default on SM90.
             // You can disable for A/B testing via: BSI_TC_CPASYNC=0
-            int use_cpasync = 1;
-            if (const char* s = getenv("BSI_TC_CPASYNC")) {
-                use_cpasync = (atoi(s) != 0) ? 1 : 0;
+            static int cached_use_cpasync = -1;
+            if (cached_use_cpasync < 0) {
+                int use_cpasync_env = 1;
+                if (const char* s = getenv("BSI_TC_CPASYNC")) {
+                    use_cpasync_env = (atoi(s) != 0) ? 1 : 0;
+                }
+                cached_use_cpasync = use_cpasync_env;
             }
+            int use_cpasync = cached_use_cpasync;
 
             // Keep only the stable BMMA TC tile used for the ~92-93ms runs (TM=32, TN=32).
             // Fall back to the original TM=16, TN=32 kernel if we cannot fit shared memory.
@@ -2225,11 +2251,13 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                 }
 
                 if (shared_bytes <= (size_t)max_shared) {
-                    if (shared_bytes > (size_t)max_shared_default) {
+                    static size_t configured_shared_tm32 = 0;
+                    if (shared_bytes > (size_t)max_shared_default && shared_bytes > configured_shared_tm32) {
                         cudaFuncSetAttribute(
                             popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32,
                             cudaFuncAttributeMaxDynamicSharedMemorySize,
                             (int)shared_bytes);
+                        configured_shared_tm32 = shared_bytes;
                     }
                     popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32<<<grid_tc, block_tc, shared_bytes, stream>>>(
                         A,
@@ -2267,11 +2295,13 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                     (size_t)TN * (size_t)Sb * sizeof(float);
 
                 if (shared_bytes <= (size_t)max_shared) {
-                    if (shared_bytes > (size_t)max_shared_default) {
+                    static size_t configured_shared_tm16 = 0;
+                    if (shared_bytes > (size_t)max_shared_default && shared_bytes > configured_shared_tm16) {
                         cudaFuncSetAttribute(
                             popcount_weighted_keys_literal_fused_bmma_tc_kernel,
                             cudaFuncAttributeMaxDynamicSharedMemorySize,
                             (int)shared_bytes);
+                        configured_shared_tm16 = shared_bytes;
                     }
                     popcount_weighted_keys_literal_fused_bmma_tc_kernel<<<grid_tc, block_tc, shared_bytes, stream>>>(
                         A,
@@ -2339,13 +2369,9 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     }
     bool launch_base = !use_warp_out;
     if (use_warp_out) {
-        int dev = 0;
-        cudaGetDevice(&dev);
-        int max_shared_default = 0;
-        int max_shared_optin = 0;
-        cudaDeviceGetAttribute(&max_shared_default, cudaDevAttrMaxSharedMemoryPerBlock, dev);
-        cudaDeviceGetAttribute(&max_shared_optin, cudaDevAttrMaxSharedMemoryPerBlockOptin, dev);
-        int max_shared = (max_shared_optin > max_shared_default) ? max_shared_optin : max_shared_default;
+        const auto& smem_limits = bsi_get_shared_limits_cached();
+        const int max_shared_default = smem_limits.max_shared_default;
+        const int max_shared = smem_limits.max_shared;
         bool use_w32 = (W == 32 && Sb >= 1 && Sb <= 32);
         bool use_w128 = (W == 128 && Sb >= 1 && Sb <= 16);
         // W==32 kernel double-buffers A (+Aw) to overlap copy/compute; W==128 kernel does not.
@@ -2443,11 +2469,13 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                         break;
                 }
             } else {
-                if (shared_bytes > (size_t)max_shared_default) {
+                static size_t configured_shared_nocoeff = 0;
+                if (shared_bytes > (size_t)max_shared_default && shared_bytes > configured_shared_nocoeff) {
                     cudaFuncSetAttribute(
                         popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff,
                         cudaFuncAttributeMaxDynamicSharedMemorySize,
                         (int)shared_bytes);
+                    configured_shared_nocoeff = shared_bytes;
                 }
                 popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff<<<grid_warp, block, shared_bytes, stream>>>(
                     A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q, scale_inv, R_total, out_global);

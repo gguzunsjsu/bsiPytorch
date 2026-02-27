@@ -129,6 +129,7 @@ def run_model_e2e(args: argparse.Namespace) -> None:
         "--scope", args.scope,
         "--bsi_device", args.bsi_device,
         "--bsi_profile", str(args.bsi_profile),
+        "--base_dtype", args.base_dtype,
     ]
     env = dict(os.environ)
     env["BSI_PROFILE"] = "1" if int(args.bsi_profile) != 0 else "0"
@@ -160,6 +161,8 @@ def main() -> None:
     parser.add_argument("--max_seq_len", type=int, default=512)
     parser.add_argument("--scope", type=str, default="all")
     parser.add_argument("--bsi_device", type=str, default="cuda")
+    parser.add_argument("--base_dtype", type=str, default="fp16", choices=["fp16", "fp32"],
+                        help="Base model dtype for BSI model in model_e2e (default fp16 for apples-to-apples)")
     args = parser.parse_args()
 
     if not torch.cuda.is_available():
