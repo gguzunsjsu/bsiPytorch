@@ -120,6 +120,17 @@ static int bsi_cuda_fixed_bits_keys_env() {
     return cached;
 }
 
+static bool bsi_cuda_profile_enabled() {
+    static int cached = -1;
+    if (cached >= 0) return cached != 0;
+    int v = 0; // default off: do not synchronize inside every dot call
+    if (const char* s = std::getenv("BSI_PROFILE")) {
+        v = (std::atoi(s) != 0) ? 1 : 0;
+    }
+    cached = v;
+    return cached != 0;
+}
+
 // --- GPU prebuilt keys (device-packed words) ---
 struct KeyMeta {
     int S = 0;
@@ -138,6 +149,15 @@ struct PrebuiltBSIKeysCUDA {
     std::unordered_map<int, at::Tensor> grouped_weights; // Sb -> [R_sb, Sb]
     std::unordered_map<int, std::vector<int64_t>> grouped_indices; // Sb -> original key indices
     std::unordered_map<int, at::Tensor> grouped_indices_dev; // Sb -> [R_sb] int64 cuda
+    std::unordered_map<int, bool> grouped_indices_identity; // Sb -> true when idx[i] == i
+    // Fast path for common fixed-bit case: only one Sb group.
+    bool single_group = false;
+    int single_sb = 0;
+    int single_rg = 0;
+    bool single_indices_identity = true;
+    at::Tensor single_words;   // [Rg, Sb, W]
+    at::Tensor single_weights; // [Rg, Sb]
+    at::Tensor single_indices_dev; // [Rg] int64 cuda if non-identity
     int W = 0;
     int64_t d = 0;
     int64_t num_keys = 0;
@@ -493,11 +513,16 @@ struct TempGroup {
     const int totalDecimals = common_decimals + keys->decimals;
     const double scale_inv = (totalDecimals > 0) ? (1.0 / std::pow(10.0, totalDecimals)) : 1.0;
 
-    cudaEvent_t start_evt, end_evt;
-    cudaEventCreate(&start_evt);
-    cudaEventCreate(&end_evt);
     auto stream = at::cuda::getCurrentCUDAStream();
-    cudaEventRecord(start_evt, stream.stream());
+    float kernel_ms = 0.0f;
+    const bool profile = bsi_cuda_profile_enabled();
+    cudaEvent_t start_evt = nullptr;
+    cudaEvent_t end_evt = nullptr;
+    if (profile) {
+        cudaEventCreate(&start_evt);
+        cudaEventCreate(&end_evt);
+        cudaEventRecord(start_evt, stream.stream());
+    }
 
     for (const auto& pg : prepared) {
         const auto* A = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(pg.words));
@@ -523,16 +548,15 @@ struct TempGroup {
         }
         const auto* q_idx = reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(pg.q_indices));
 
-        for (const auto& kv2 : keys->grouped_indices) {
-            int Sb = kv2.first;
-            const auto& idxs = kv2.second;
-            const int Rg = static_cast<int>(idxs.size());
-
-            const auto& words = keys->grouped_words.at(Sb);
-            const auto& Bw_stacked = keys->grouped_weights.at(Sb);
-        const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words));
-            const auto* Bw_ptr = tensor_data_ptr<float>(Bw_stacked);
-            const auto& idx_dev = keys->grouped_indices_dev.at(Sb);
+        if (keys->single_group) {
+            const int Sb = keys->single_sb;
+            const int Rg = keys->single_rg;
+            const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(keys->single_words));
+            const auto* Bw_ptr = tensor_data_ptr<float>(keys->single_weights);
+            const long long* r_idx_ptr = nullptr;
+            if (!keys->single_indices_identity) {
+                r_idx_ptr = reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(keys->single_indices_dev));
+            }
             launch_popcount_weighted_keys_literal_fused_multiq(
                 A,
                 Aw,
@@ -547,21 +571,61 @@ struct TempGroup {
                 static_cast<int>(pg.Qcount),
                 bsi_cuda_q_tile(),
                 bsi_cuda_r_tile(),
-                reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev)),
+                r_idx_ptr,
                 q_idx,
                 static_cast<float>(scale_inv),
                 static_cast<int>(R),
                 tensor_data_ptr<float>(out_all),
                 stream.stream());
+        } else {
+            for (const auto& kv2 : keys->grouped_indices) {
+                int Sb = kv2.first;
+                const auto& idxs = kv2.second;
+                const int Rg = static_cast<int>(idxs.size());
+
+                const auto& words = keys->grouped_words.at(Sb);
+                const auto& Bw_stacked = keys->grouped_weights.at(Sb);
+                const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words));
+                const auto* Bw_ptr = tensor_data_ptr<float>(Bw_stacked);
+                const bool identity_r = (keys->grouped_indices_identity.count(Sb) > 0)
+                    ? keys->grouped_indices_identity.at(Sb)
+                    : false;
+                const long long* r_idx_ptr = nullptr;
+                if (!identity_r) {
+                    const auto& idx_dev = keys->grouped_indices_dev.at(Sb);
+                    r_idx_ptr = reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev));
+                }
+                launch_popcount_weighted_keys_literal_fused_multiq(
+                    A,
+                    Aw,
+                    A_chunk_scales,
+                    A_scale_stride,
+                    pg.S,
+                    keys->W,
+                    B_words,
+                    Bw_ptr,
+                    Sb,
+                    Rg,
+                    static_cast<int>(pg.Qcount),
+                    bsi_cuda_q_tile(),
+                    bsi_cuda_r_tile(),
+                    r_idx_ptr,
+                    q_idx,
+                    static_cast<float>(scale_inv),
+                    static_cast<int>(R),
+                    tensor_data_ptr<float>(out_all),
+                    stream.stream());
+            }
         }
     }
 
-    cudaEventRecord(end_evt, stream.stream());
-    cudaEventSynchronize(end_evt);
-    float kernel_ms = 0.0f;
-    cudaEventElapsedTime(&kernel_ms, start_evt, end_evt);
-    cudaEventDestroy(start_evt);
-    cudaEventDestroy(end_evt);
+    if (profile) {
+        cudaEventRecord(end_evt, stream.stream());
+        cudaEventSynchronize(end_evt);
+        cudaEventElapsedTime(&kernel_ms, start_evt, end_evt);
+        cudaEventDestroy(start_evt);
+        cudaEventDestroy(end_evt);
+    }
 
     // Total GPU time (ns) spent inside the fused dot kernels launched in this call.
     // This covers computing the full output matrix of shape [Q, R].
@@ -635,27 +699,30 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
     const int totalDecimals = qb->decimals + keys->decimals;
     const double scale_inv = (totalDecimals > 0) ? (1.0 / std::pow(10.0, totalDecimals)) : 1.0;
 
-    cudaEvent_t start_evt, end_evt;
-    cudaEventCreate(&start_evt);
-    cudaEventCreate(&end_evt);
     auto stream = at::cuda::getCurrentCUDAStream();
-    cudaEventRecord(start_evt, stream.stream());
+    float kernel_ms = 0.0f;
+    const bool profile = bsi_cuda_profile_enabled();
+    cudaEvent_t start_evt = nullptr;
+    cudaEvent_t end_evt = nullptr;
+    if (profile) {
+        cudaEventCreate(&start_evt);
+        cudaEventCreate(&end_evt);
+        cudaEventRecord(start_evt, stream.stream());
+    }
 
     const auto* A = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(qb->words));
     const auto* Aw = tensor_data_ptr<float>(qb->slice_weights);
     const long long* indices_q = nullptr; // identity mapping in packed batch mode
 
-    for (const auto& kv2 : keys->grouped_indices) {
-        int Sb = kv2.first;
-        const auto& idxs = kv2.second;
-        const int Rg = static_cast<int>(idxs.size());
-
-        const auto& words = keys->grouped_words.at(Sb);
-        const auto& Bw_stacked = keys->grouped_weights.at(Sb);
-        const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words));
-        const auto* Bw_ptr = tensor_data_ptr<float>(Bw_stacked);
-        const auto& idx_dev = keys->grouped_indices_dev.at(Sb);
-
+    if (keys->single_group) {
+        const int Sb = keys->single_sb;
+        const int Rg = keys->single_rg;
+        const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(keys->single_words));
+        const auto* Bw_ptr = tensor_data_ptr<float>(keys->single_weights);
+        const long long* r_idx_ptr = nullptr;
+        if (!keys->single_indices_identity) {
+            r_idx_ptr = reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(keys->single_indices_dev));
+        }
         launch_popcount_weighted_keys_literal_fused_multiq(
             A,
             Aw,
@@ -670,20 +737,61 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
             static_cast<int>(Q),
             bsi_cuda_q_tile(),
             bsi_cuda_r_tile(),
-            reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev)),
+            r_idx_ptr,
             indices_q,
             static_cast<float>(scale_inv),
             static_cast<int>(R),
             tensor_data_ptr<float>(out_all),
             stream.stream());
+    } else {
+        for (const auto& kv2 : keys->grouped_indices) {
+            int Sb = kv2.first;
+            const auto& idxs = kv2.second;
+            const int Rg = static_cast<int>(idxs.size());
+
+            const auto& words = keys->grouped_words.at(Sb);
+            const auto& Bw_stacked = keys->grouped_weights.at(Sb);
+            const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words));
+            const auto* Bw_ptr = tensor_data_ptr<float>(Bw_stacked);
+            const bool identity_r = (keys->grouped_indices_identity.count(Sb) > 0)
+                ? keys->grouped_indices_identity.at(Sb)
+                : false;
+            const long long* r_idx_ptr = nullptr;
+            if (!identity_r) {
+                const auto& idx_dev = keys->grouped_indices_dev.at(Sb);
+                r_idx_ptr = reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev));
+            }
+
+            launch_popcount_weighted_keys_literal_fused_multiq(
+                A,
+                Aw,
+                A_chunk_scales,
+                A_scale_stride,
+                static_cast<int>(Sa),
+                keys->W,
+                B_words,
+                Bw_ptr,
+                Sb,
+                Rg,
+                static_cast<int>(Q),
+                bsi_cuda_q_tile(),
+                bsi_cuda_r_tile(),
+                r_idx_ptr,
+                indices_q,
+                static_cast<float>(scale_inv),
+                static_cast<int>(R),
+                tensor_data_ptr<float>(out_all),
+                stream.stream());
+        }
     }
 
-    cudaEventRecord(end_evt, stream.stream());
-    cudaEventSynchronize(end_evt);
-    float kernel_ms = 0.0f;
-    cudaEventElapsedTime(&kernel_ms, start_evt, end_evt);
-    cudaEventDestroy(start_evt);
-    cudaEventDestroy(end_evt);
+    if (profile) {
+        cudaEventRecord(end_evt, stream.stream());
+        cudaEventSynchronize(end_evt);
+        cudaEventElapsedTime(&kernel_ms, start_evt, end_evt);
+        cudaEventDestroy(start_evt);
+        cudaEventDestroy(end_evt);
+    }
 
     const uint64_t dot_kernel_ns_total = static_cast<uint64_t>(kernel_ms * 1.0e6);
     const double dot_kernel_ns_per_query =
@@ -771,9 +879,13 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
         std::vector<int64_t> idxs(static_cast<size_t>(num_keys));
         for (int64_t i = 0; i < num_keys; ++i) idxs[static_cast<size_t>(i)] = i;
         holder->grouped_indices[Sb] = idxs;
-        holder->grouped_indices_dev[Sb] = torch::arange(
-            num_keys,
-            torch::TensorOptions().dtype(torch::kInt64).device(torch::kCUDA)).contiguous();
+        holder->grouped_indices_identity[Sb] = true;
+        holder->single_group = true;
+        holder->single_sb = Sb;
+        holder->single_rg = static_cast<int>(num_keys);
+        holder->single_indices_identity = true;
+        holder->single_words = holder->grouped_words[Sb];
+        holder->single_weights = holder->grouped_weights[Sb];
 
         const uint64_t total_mem_bytes = static_cast<uint64_t>(
             holder->grouped_words[Sb].numel() * holder->grouped_words[Sb].element_size());
@@ -847,11 +959,33 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
             holder->grouped_words[Sb] = gw.contiguous();
             holder->grouped_weights[Sb] = gwt.contiguous();
             holder->grouped_indices[Sb] = idxs;
-            auto idx_cpu = torch::from_blob(
-                const_cast<int64_t*>(idxs.data()),
-                {R},
-                torch::TensorOptions().dtype(torch::kInt64)).clone();
-            holder->grouped_indices_dev[Sb] = idx_cpu.to(torch::kCUDA).contiguous();
+            bool identity = true;
+            for (int i = 0; i < R; ++i) {
+                if (idxs[static_cast<size_t>(i)] != static_cast<int64_t>(i)) {
+                    identity = false;
+                    break;
+                }
+            }
+            holder->grouped_indices_identity[Sb] = identity;
+            if (!identity) {
+                auto idx_cpu = torch::from_blob(
+                    const_cast<int64_t*>(idxs.data()),
+                    {R},
+                    torch::TensorOptions().dtype(torch::kInt64)).clone();
+                holder->grouped_indices_dev[Sb] = idx_cpu.to(torch::kCUDA).contiguous();
+            }
+        }
+        if (groups.size() == 1) {
+            const int Sb = groups.begin()->first;
+            holder->single_group = true;
+            holder->single_sb = Sb;
+            holder->single_rg = static_cast<int>(groups.begin()->second.size());
+            holder->single_indices_identity = holder->grouped_indices_identity[Sb];
+            holder->single_words = holder->grouped_words[Sb];
+            holder->single_weights = holder->grouped_weights[Sb];
+            if (!holder->single_indices_identity) {
+                holder->single_indices_dev = holder->grouped_indices_dev[Sb];
+            }
         }
     }
     pybind11::capsule cap(holder, "PrebuiltBSIKeysCUDA",
@@ -889,6 +1023,12 @@ void register_bsi_cuda(pybind11::module& m) {
         pybind11::arg("decimal_places"),
         pybind11::arg("compress_threshold") = 0.2f,
         "Build a packed (batched) BSI query object on CUDA (no per-row capsules)");
+    m.def("get_last_query_build_profile_cuda",
+        &bsi_cuda_get_last_query_build_profile,
+        "Return (quantize_ns, pack_ns, total_ns) for the last CUDA query-batch build");
+    m.def("reset_last_query_build_profile_cuda",
+        &bsi_cuda_reset_last_query_build_profile,
+        "Reset last CUDA query-batch build profile counters to zero");
 
     // Hybrid compressed query builder
     m.def("build_bsi_query_cuda_hybrid",

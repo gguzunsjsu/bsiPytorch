@@ -763,6 +763,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
 
     const int q0 = blockIdx.y * TM;
     const int r0 = blockIdx.x * TN;
+    const bool full_q_tile = (q0 + TM) <= Q;
 
     // --- Shared memory layout (dynamic) ---
     extern __shared__ unsigned char smem_raw[];
@@ -1016,10 +1017,20 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
     const int r_out0 = r0 + col0;
     const int r_out1 = r0 + col1;
 
-    const long long gq0 = (q_out0 < Q) ? bsi_load_index_or_identity(query_indices, q_out0) : 0;
-    const long long gq1 = (q_out1 < Q) ? bsi_load_index_or_identity(query_indices, q_out1) : 0;
-    const long long gr0 = (r_out0 < R) ? bsi_load_index_or_identity(key_indices, r_out0) : 0;
-    const long long gr1 = (r_out1 < R) ? bsi_load_index_or_identity(key_indices, r_out1) : 0;
+    const bool identity_q = (query_indices == nullptr);
+    const bool identity_r = (key_indices == nullptr);
+    const long long gq0 = (q_out0 < Q) ? (identity_q ? static_cast<long long>(q_out0)
+                                                     : bsi_load_index_or_identity(query_indices, q_out0))
+                                        : 0;
+    const long long gq1 = (q_out1 < Q) ? (identity_q ? static_cast<long long>(q_out1)
+                                                     : bsi_load_index_or_identity(query_indices, q_out1))
+                                        : 0;
+    const long long gr0 = (r_out0 < R) ? (identity_r ? static_cast<long long>(r_out0)
+                                                     : bsi_load_index_or_identity(key_indices, r_out0))
+                                        : 0;
+    const long long gr1 = (r_out1 < R) ? (identity_r ? static_cast<long long>(r_out1)
+                                                     : bsi_load_index_or_identity(key_indices, r_out1))
+                                        : 0;
 
     if (q_out0 < Q && r_out0 < R) {
         out_global[(size_t)gq0 * (size_t)R_total + (size_t)gr0] = acc00 * scale_inv;
@@ -1054,7 +1065,25 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
 // BMMA TC variant: 8 warps per block (32x32 output tile).
 // This reuses the same B tile across 2x as many query rows (vs TM=16), which
 // cuts B global->shared traffic per output.
-extern "C" __global__ __launch_bounds__(256, 4)
+template <int SB>
+__device__ __forceinline__ void bsi_bmma_tm32_accum_sa7_sb_hot(
+    const uint32_t* __restrict__ A_bits,
+    const float* __restrict__ Aw_tile,
+    const uint32_t* __restrict__ b_col_base,
+    const float* __restrict__ bw_col0,
+    const float* __restrict__ bw_col1,
+    int threadID,
+    int m0,
+    int m1,
+    bool use_chunk_scale,
+    float qscale_m0,
+    float qscale_m1,
+    float& acc00,
+    float& acc01,
+    float& acc10,
+    float& acc11);
+
+extern "C" __global__ __launch_bounds__(256)
 void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
     const unsigned long long* __restrict__ A,    // [Q, Sa, W64]
     const float* __restrict__ Aw,                // [Q, Sa]
@@ -1370,7 +1399,41 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
             const uint32_t* b_col_base = B_bits + (col_base + groupID) * K_STRIDE32;
             // Sb==7/6 are hot configurations (fixed-bit weights) and tend to regress if the compiler
             // can't specialize away the tail checks. Keep explicit fast paths.
-            if (Sb == 7) {
+            if (Sa == 7 && Sb == 7) {
+                bsi_bmma_tm32_accum_sa7_sb_hot<7>(
+                    A_bits,
+                    Aw_tile,
+                    b_col_base,
+                    bw_col0,
+                    bw_col1,
+                    threadID,
+                    m0,
+                    m1,
+                    use_chunk_scale,
+                    qscale_m0,
+                    qscale_m1,
+                    acc00,
+                    acc01,
+                    acc10,
+                    acc11);
+            } else if (Sa == 7 && Sb == 6) {
+                bsi_bmma_tm32_accum_sa7_sb_hot<6>(
+                    A_bits,
+                    Aw_tile,
+                    b_col_base,
+                    bw_col0,
+                    bw_col1,
+                    threadID,
+                    m0,
+                    m1,
+                    use_chunk_scale,
+                    qscale_m0,
+                    qscale_m1,
+                    acc00,
+                    acc01,
+                    acc10,
+                    acc11);
+            } else if (Sb == 7) {
                 // j0 = 0..3
                 {
                     uint32_t b0_cache[JBLOCK];
@@ -2003,7 +2066,15 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
     // - 4 lanes share the same query row (threadID varies)
     // - 8 lanes share the same key col (groupID varies)
     // Broadcast to reduce redundant global loads.
-    if (full_q_tile && full_r_tile) {
+    const bool identity_q = (query_indices == nullptr);
+    const bool identity_r = (key_indices == nullptr);
+    if (full_q_tile && full_r_tile && identity_q && identity_r) {
+        // Packed query path + fixed-bit key fast path: avoid index loads/shuffles.
+        out_global[(size_t)q_out0 * (size_t)R_total + (size_t)r_out0] = acc00 * scale_inv;
+        out_global[(size_t)q_out0 * (size_t)R_total + (size_t)r_out1] = acc01 * scale_inv;
+        out_global[(size_t)q_out1 * (size_t)R_total + (size_t)r_out0] = acc10 * scale_inv;
+        out_global[(size_t)q_out1 * (size_t)R_total + (size_t)r_out1] = acc11 * scale_inv;
+    } else if (full_q_tile && full_r_tile) {
         long long gq0 = 0, gq1 = 0;
         if (threadID == 0) {
             gq0 = bsi_load_index_or_identity(query_indices, q_out0);
@@ -2024,6 +2095,19 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
         out_global[(size_t)gq0 * (size_t)R_total + (size_t)gr1] = acc01 * scale_inv;
         out_global[(size_t)gq1 * (size_t)R_total + (size_t)gr0] = acc10 * scale_inv;
         out_global[(size_t)gq1 * (size_t)R_total + (size_t)gr1] = acc11 * scale_inv;
+    } else if (identity_q && identity_r) {
+        if (q_out0 < Q && r_out0 < R) {
+            out_global[(size_t)q_out0 * (size_t)R_total + (size_t)r_out0] = acc00 * scale_inv;
+        }
+        if (q_out0 < Q && r_out1 < R) {
+            out_global[(size_t)q_out0 * (size_t)R_total + (size_t)r_out1] = acc01 * scale_inv;
+        }
+        if (q_out1 < Q && r_out0 < R) {
+            out_global[(size_t)q_out1 * (size_t)R_total + (size_t)r_out0] = acc10 * scale_inv;
+        }
+        if (q_out1 < Q && r_out1 < R) {
+            out_global[(size_t)q_out1 * (size_t)R_total + (size_t)r_out1] = acc11 * scale_inv;
+        }
     } else {
         long long gq0 = 0, gq1 = 0;
         if (threadID == 0) {
@@ -2069,6 +2153,112 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
     (void)scale_inv;
     (void)R_total;
     (void)out_global;
+    (void)use_cpasync;
+#endif
+}
+
+// Hot fixed-bit specialization for TM32: Sa==7 with Sb in {6,7}.
+// This keeps the BMMA math identical but makes Sa/Sb compile-time constants and
+// applies chunk qscale once per row per chunk (outside the inner i loop).
+template <int SB>
+__device__ __forceinline__ void bsi_bmma_tm32_accum_sa7_sb_hot(
+    const uint32_t* __restrict__ A_bits,
+    const float* __restrict__ Aw_tile,
+    const uint32_t* __restrict__ b_col_base,
+    const float* __restrict__ bw_col0,
+    const float* __restrict__ bw_col1,
+    int threadID,
+    int m0,
+    int m1,
+    bool use_chunk_scale,
+    float qscale_m0,
+    float qscale_m1,
+    float& acc00,
+    float& acc01,
+    float& acc10,
+    float& acc11)
+{
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900)
+    static_assert(SB == 6 || SB == 7, "SB must be 6 or 7");
+    constexpr int SA = 7;
+    constexpr int TM_TOTAL = 32;
+    constexpr int TN = 32;
+    constexpr int K_STRIDE32 = 12;
+    const int b_slice_stride = TN * K_STRIDE32;
+
+    uint32_t b0_cache[SB];
+    uint32_t b1_cache[SB];
+    float bw0_cache[SB];
+    float bw1_cache[SB];
+
+#pragma unroll
+    for (int j = 0; j < SB; ++j) {
+        const uint32_t* b_col = b_col_base + j * b_slice_stride;
+        b0_cache[j] = b_col[threadID];
+        b1_cache[j] = b_col[threadID + 4];
+        bw0_cache[j] = bw_col0[j];
+        bw1_cache[j] = bw_col1[j];
+    }
+
+    float chunk00 = 0.0f, chunk01 = 0.0f, chunk10 = 0.0f, chunk11 = 0.0f;
+#pragma unroll
+    for (int i = 0; i < SA; ++i) {
+        const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
+        const uint32_t a0 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)threadID];
+        const uint32_t a1 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)threadID];
+        const uint32_t a2 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+        const uint32_t a3 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+
+        float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
+#pragma unroll
+        for (int j = 0; j < SB; ++j) {
+            int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
+            asm volatile(
+                "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
+                "{%0, %1, %2, %3}, "
+                "{%4, %5, %6, %7}, "
+                "{%8, %9}, "
+                "{%0, %1, %2, %3};\n"
+                : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
+                : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
+                  "r"(b0_cache[j]), "r"(b1_cache[j]));
+
+            sum00 = __fmaf_rn(static_cast<float>(c0), bw0_cache[j], sum00);
+            sum01 = __fmaf_rn(static_cast<float>(c1), bw1_cache[j], sum01);
+            sum10 = __fmaf_rn(static_cast<float>(c2), bw0_cache[j], sum10);
+            sum11 = __fmaf_rn(static_cast<float>(c3), bw1_cache[j], sum11);
+        }
+
+        const float aw0 = Aw_tile[(size_t)m0 * (size_t)SA + (size_t)i];
+        const float aw1 = Aw_tile[(size_t)m1 * (size_t)SA + (size_t)i];
+        chunk00 = __fmaf_rn(aw0, sum00, chunk00);
+        chunk01 = __fmaf_rn(aw0, sum01, chunk01);
+        chunk10 = __fmaf_rn(aw1, sum10, chunk10);
+        chunk11 = __fmaf_rn(aw1, sum11, chunk11);
+    }
+
+    const float qmul0 = use_chunk_scale ? qscale_m0 : 1.0f;
+    const float qmul1 = use_chunk_scale ? qscale_m1 : 1.0f;
+    acc00 = __fmaf_rn(qmul0, chunk00, acc00);
+    acc01 = __fmaf_rn(qmul0, chunk01, acc01);
+    acc10 = __fmaf_rn(qmul1, chunk10, acc10);
+    acc11 = __fmaf_rn(qmul1, chunk11, acc11);
+#else
+    (void)A_bits;
+    (void)Aw_tile;
+    (void)b_col_base;
+    (void)bw_col0;
+    (void)bw_col1;
+    (void)threadID;
+    (void)m0;
+    (void)m1;
+    (void)use_chunk_scale;
+    (void)qscale_m0;
+    (void)qscale_m1;
+    (void)acc00;
+    (void)acc01;
+    (void)acc10;
+    (void)acc11;
 #endif
 }
 
@@ -2096,11 +2286,13 @@ static inline void launch_w32_sb_kernel(
     cudaStream_t stream,
     int max_shared_default)
 {
-    if (shared_bytes > (size_t)max_shared_default) {
+    static size_t configured_shared = 0;
+    if (shared_bytes > (size_t)max_shared_default && shared_bytes > configured_shared) {
         cudaFuncSetAttribute(
             popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_sb<SB>,
             cudaFuncAttributeMaxDynamicSharedMemorySize,
             (int)shared_bytes);
+        configured_shared = shared_bytes;
     }
     popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w32_sb<SB><<<grid_warp, block, shared_bytes, stream>>>(
         A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r, indices_r, indices_q, scale_inv, R_total, out_global);
@@ -2130,14 +2322,37 @@ static inline void launch_w128_sb_kernel(
     cudaStream_t stream,
     int max_shared_default)
 {
-    if (shared_bytes > (size_t)max_shared_default) {
+    static size_t configured_shared = 0;
+    if (shared_bytes > (size_t)max_shared_default && shared_bytes > configured_shared) {
         cudaFuncSetAttribute(
             popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w128_sb<SB>,
             cudaFuncAttributeMaxDynamicSharedMemorySize,
             (int)shared_bytes);
+        configured_shared = shared_bytes;
     }
     popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_w128_sb<SB><<<grid_warp, block, shared_bytes, stream>>>(
         A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r, indices_r, indices_q, scale_inv, R_total, out_global);
+}
+
+struct BsiSharedLimits {
+    int max_shared_default = 0;
+    int max_shared_optin = 0;
+    int max_shared = 0;
+};
+
+static inline const BsiSharedLimits& bsi_get_shared_limits_cached() {
+    static BsiSharedLimits limits = []() {
+        BsiSharedLimits out;
+        int dev = 0;
+        cudaGetDevice(&dev);
+        cudaDeviceGetAttribute(&out.max_shared_default, cudaDevAttrMaxSharedMemoryPerBlock, dev);
+        cudaDeviceGetAttribute(&out.max_shared_optin, cudaDevAttrMaxSharedMemoryPerBlockOptin, dev);
+        out.max_shared = (out.max_shared_optin > out.max_shared_default)
+            ? out.max_shared_optin
+            : out.max_shared_default;
+        return out;
+    }();
+    return limits;
 }
 
 extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
@@ -2182,24 +2397,41 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
             constexpr int K_WORDS32 = 8;           // 256 bits / 32
             constexpr int K_STRIDE32 = K_WORDS32 + 4; // padding to reduce bank conflicts
 
-            int dev = 0;
-            cudaGetDevice(&dev);
-            int max_shared_default = 0;
-            int max_shared_optin = 0;
-            cudaDeviceGetAttribute(&max_shared_default, cudaDevAttrMaxSharedMemoryPerBlock, dev);
-            cudaDeviceGetAttribute(&max_shared_optin, cudaDevAttrMaxSharedMemoryPerBlockOptin, dev);
-            int max_shared = (max_shared_optin > max_shared_default) ? max_shared_optin : max_shared_default;
+            const auto& smem_limits = bsi_get_shared_limits_cached();
+            const int max_shared_default = smem_limits.max_shared_default;
+            const int max_shared = smem_limits.max_shared;
 
             // Enable pipelined per-chunk global->shared loads by default on SM90.
             // You can disable for A/B testing via: BSI_TC_CPASYNC=0
-            int use_cpasync = 1;
-            if (const char* s = getenv("BSI_TC_CPASYNC")) {
-                use_cpasync = (atoi(s) != 0) ? 1 : 0;
+            static int cached_use_cpasync = -1;
+            if (cached_use_cpasync < 0) {
+                int use_cpasync_env = 1;
+                if (const char* s = getenv("BSI_TC_CPASYNC")) {
+                    use_cpasync_env = (atoi(s) != 0) ? 1 : 0;
+                }
+                cached_use_cpasync = use_cpasync_env;
             }
+            int use_cpasync = cached_use_cpasync;
 
-            // Keep only the stable BMMA TC tile used for the ~92-93ms runs (TM=32, TN=32).
-            // Fall back to the original TM=16, TN=32 kernel if we cannot fit shared memory.
-            {
+            // Optional TM selection for BMMA TC path:
+            // - auto (default): try TM32 then TM16 fallback
+            // - 16: try TM16 first, then TM32 fallback
+            // - 32: try TM32 first, then TM16 fallback
+            enum class TcTmMode : int { Auto = 0, TM16 = 16, TM32 = 32 };
+            static int cached_tc_tm_mode = -1;
+            if (cached_tc_tm_mode < 0) {
+                int mode = 0;
+                if (const char* s = getenv("BSI_TC_TM")) {
+                    int t = atoi(s);
+                    mode = (t == 16 || t == 32) ? t : 0;
+                }
+                cached_tc_tm_mode = mode;
+            }
+            const TcTmMode tc_tm_mode = (cached_tc_tm_mode == 16)
+                ? TcTmMode::TM16
+                : (cached_tc_tm_mode == 32 ? TcTmMode::TM32 : TcTmMode::Auto);
+
+            auto try_tm32 = [&]() -> bool {
                 constexpr int TM_TOTAL = 32;
                 constexpr int TN = 32;
                 dim3 block_tc(256, 1, 1);
@@ -2225,11 +2457,13 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                 }
 
                 if (shared_bytes <= (size_t)max_shared) {
-                    if (shared_bytes > (size_t)max_shared_default) {
+                    static size_t configured_shared_tm32 = 0;
+                    if (shared_bytes > (size_t)max_shared_default && shared_bytes > configured_shared_tm32) {
                         cudaFuncSetAttribute(
                             popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32,
                             cudaFuncAttributeMaxDynamicSharedMemorySize,
                             (int)shared_bytes);
+                        configured_shared_tm32 = shared_bytes;
                     }
                     popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32<<<grid_tc, block_tc, shared_bytes, stream>>>(
                         A,
@@ -2249,11 +2483,12 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                         R_total,
                         out_global,
                         use_cpasync);
-                    return;
+                    return true;
                 }
-            }
+                return false;
+            };
 
-            {
+            auto try_tm16 = [&]() -> bool {
                 constexpr int TM = 16;
                 constexpr int TN = 32;
                 dim3 block_tc(128, 1, 1);
@@ -2267,11 +2502,13 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                     (size_t)TN * (size_t)Sb * sizeof(float);
 
                 if (shared_bytes <= (size_t)max_shared) {
-                    if (shared_bytes > (size_t)max_shared_default) {
+                    static size_t configured_shared_tm16 = 0;
+                    if (shared_bytes > (size_t)max_shared_default && shared_bytes > configured_shared_tm16) {
                         cudaFuncSetAttribute(
                             popcount_weighted_keys_literal_fused_bmma_tc_kernel,
                             cudaFuncAttributeMaxDynamicSharedMemorySize,
                             (int)shared_bytes);
+                        configured_shared_tm16 = shared_bytes;
                     }
                     popcount_weighted_keys_literal_fused_bmma_tc_kernel<<<grid_tc, block_tc, shared_bytes, stream>>>(
                         A,
@@ -2290,9 +2527,23 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                         scale_inv,
                         R_total,
                         out_global);
-                    return;
+                    return true;
                 }
+                return false;
+            };
+
+            bool launched = false;
+            if (tc_tm_mode == TcTmMode::TM16) {
+                launched = try_tm16();
+                if (!launched) launched = try_tm32();
+            } else if (tc_tm_mode == TcTmMode::TM32) {
+                launched = try_tm32();
+                if (!launched) launched = try_tm16();
+            } else {
+                launched = try_tm32();
+                if (!launched) launched = try_tm16();
             }
+            if (launched) return;
         }
     }
 
@@ -2339,13 +2590,9 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     }
     bool launch_base = !use_warp_out;
     if (use_warp_out) {
-        int dev = 0;
-        cudaGetDevice(&dev);
-        int max_shared_default = 0;
-        int max_shared_optin = 0;
-        cudaDeviceGetAttribute(&max_shared_default, cudaDevAttrMaxSharedMemoryPerBlock, dev);
-        cudaDeviceGetAttribute(&max_shared_optin, cudaDevAttrMaxSharedMemoryPerBlockOptin, dev);
-        int max_shared = (max_shared_optin > max_shared_default) ? max_shared_optin : max_shared_default;
+        const auto& smem_limits = bsi_get_shared_limits_cached();
+        const int max_shared_default = smem_limits.max_shared_default;
+        const int max_shared = smem_limits.max_shared;
         bool use_w32 = (W == 32 && Sb >= 1 && Sb <= 32);
         bool use_w128 = (W == 128 && Sb >= 1 && Sb <= 16);
         // W==32 kernel double-buffers A (+Aw) to overlap copy/compute; W==128 kernel does not.
@@ -2443,11 +2690,13 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                         break;
                 }
             } else {
-                if (shared_bytes > (size_t)max_shared_default) {
+                static size_t configured_shared_nocoeff = 0;
+                if (shared_bytes > (size_t)max_shared_default && shared_bytes > configured_shared_nocoeff) {
                     cudaFuncSetAttribute(
                         popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff,
                         cudaFuncAttributeMaxDynamicSharedMemorySize,
                         (int)shared_bytes);
+                    configured_shared_nocoeff = shared_bytes;
                 }
                 popcount_weighted_keys_literal_fused_multiq_kernel_warp_out_nocoeff<<<grid_warp, block, shared_bytes, stream>>>(
                     A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r_eff, indices_r, indices_q, scale_inv, R_total, out_global);
