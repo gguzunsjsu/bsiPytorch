@@ -1064,7 +1064,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
 // BMMA TC variant: 8 warps per block (32x32 output tile).
 // This reuses the same B tile across 2x as many query rows (vs TM=16), which
 // cuts B global->shared traffic per output.
-extern "C" __global__ __launch_bounds__(256, 4)
+extern "C" __global__ __launch_bounds__(256)
 void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
     const unsigned long long* __restrict__ A,    // [Q, Sa, W64]
     const float* __restrict__ Aw,                // [Q, Sa]
@@ -2254,9 +2254,25 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
             }
             int use_cpasync = cached_use_cpasync;
 
-            // Keep only the stable BMMA TC tile used for the ~92-93ms runs (TM=32, TN=32).
-            // Fall back to the original TM=16, TN=32 kernel if we cannot fit shared memory.
-            {
+            // Optional TM selection for BMMA TC path:
+            // - auto (default): try TM32 then TM16 fallback
+            // - 16: try TM16 first, then TM32 fallback
+            // - 32: try TM32 first, then TM16 fallback
+            enum class TcTmMode : int { Auto = 0, TM16 = 16, TM32 = 32 };
+            static int cached_tc_tm_mode = -1;
+            if (cached_tc_tm_mode < 0) {
+                int mode = 0;
+                if (const char* s = getenv("BSI_TC_TM")) {
+                    int t = atoi(s);
+                    mode = (t == 16 || t == 32) ? t : 0;
+                }
+                cached_tc_tm_mode = mode;
+            }
+            const TcTmMode tc_tm_mode = (cached_tc_tm_mode == 16)
+                ? TcTmMode::TM16
+                : (cached_tc_tm_mode == 32 ? TcTmMode::TM32 : TcTmMode::Auto);
+
+            auto try_tm32 = [&]() -> bool {
                 constexpr int TM_TOTAL = 32;
                 constexpr int TN = 32;
                 dim3 block_tc(256, 1, 1);
@@ -2308,11 +2324,12 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                         R_total,
                         out_global,
                         use_cpasync);
-                    return;
+                    return true;
                 }
-            }
+                return false;
+            };
 
-            {
+            auto try_tm16 = [&]() -> bool {
                 constexpr int TM = 16;
                 constexpr int TN = 32;
                 dim3 block_tc(128, 1, 1);
@@ -2351,9 +2368,23 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                         scale_inv,
                         R_total,
                         out_global);
-                    return;
+                    return true;
                 }
+                return false;
+            };
+
+            bool launched = false;
+            if (tc_tm_mode == TcTmMode::TM16) {
+                launched = try_tm16();
+                if (!launched) launched = try_tm32();
+            } else if (tc_tm_mode == TcTmMode::TM32) {
+                launched = try_tm32();
+                if (!launched) launched = try_tm16();
+            } else {
+                launched = try_tm32();
+                if (!launched) launched = try_tm16();
             }
+            if (launched) return;
         }
     }
 
