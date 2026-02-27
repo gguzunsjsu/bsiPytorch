@@ -173,7 +173,8 @@ static bool bsi_cuda_tc_packed_enabled(bool tc_required) {
     if (const char* s = std::getenv("BSI_TC_PACKED")) {
         return std::atoi(s) != 0;
     }
-    return tc_required || bsi_cuda_tc_dot_enabled();
+    (void)tc_required;
+    return false;
 }
 
 static bool bsi_cuda_tc_device_ok() {
