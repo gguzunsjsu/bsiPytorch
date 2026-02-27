@@ -121,7 +121,10 @@ class BSIQuantizedLinear(torch.nn.Module):
         original_shape = x.shape
         if len(x.shape) > 2:
             x = x.view(-1, x.shape[-1])
-        x = x.to(torch.float32)
+        # Keep activations in their native dtype for query build by default.
+        # The CUDA fixed-bit quant kernels accept fp16/bf16/fp32 directly.
+        if os.getenv("BSI_QUERY_FP32", "0") != "0":
+            x = x.to(torch.float32)
 
         dot_ns_this_forward = 0
         

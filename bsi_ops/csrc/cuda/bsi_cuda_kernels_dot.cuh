@@ -1016,10 +1016,20 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel(
     const int r_out0 = r0 + col0;
     const int r_out1 = r0 + col1;
 
-    const long long gq0 = (q_out0 < Q) ? bsi_load_index_or_identity(query_indices, q_out0) : 0;
-    const long long gq1 = (q_out1 < Q) ? bsi_load_index_or_identity(query_indices, q_out1) : 0;
-    const long long gr0 = (r_out0 < R) ? bsi_load_index_or_identity(key_indices, r_out0) : 0;
-    const long long gr1 = (r_out1 < R) ? bsi_load_index_or_identity(key_indices, r_out1) : 0;
+    const bool identity_q = (query_indices == nullptr);
+    const bool identity_r = (key_indices == nullptr);
+    const long long gq0 = (q_out0 < Q) ? (identity_q ? static_cast<long long>(q_out0)
+                                                     : bsi_load_index_or_identity(query_indices, q_out0))
+                                        : 0;
+    const long long gq1 = (q_out1 < Q) ? (identity_q ? static_cast<long long>(q_out1)
+                                                     : bsi_load_index_or_identity(query_indices, q_out1))
+                                        : 0;
+    const long long gr0 = (r_out0 < R) ? (identity_r ? static_cast<long long>(r_out0)
+                                                     : bsi_load_index_or_identity(key_indices, r_out0))
+                                        : 0;
+    const long long gr1 = (r_out1 < R) ? (identity_r ? static_cast<long long>(r_out1)
+                                                     : bsi_load_index_or_identity(key_indices, r_out1))
+                                        : 0;
 
     if (q_out0 < Q && r_out0 < R) {
         out_global[(size_t)gq0 * (size_t)R_total + (size_t)gr0] = acc00 * scale_inv;
@@ -2003,7 +2013,15 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
     // - 4 lanes share the same query row (threadID varies)
     // - 8 lanes share the same key col (groupID varies)
     // Broadcast to reduce redundant global loads.
-    if (full_q_tile && full_r_tile) {
+    const bool identity_q = (query_indices == nullptr);
+    const bool identity_r = (key_indices == nullptr);
+    if (full_q_tile && full_r_tile && identity_q && identity_r) {
+        // Packed query path + fixed-bit key fast path: avoid index loads/shuffles.
+        out_global[(size_t)q_out0 * (size_t)R_total + (size_t)r_out0] = acc00 * scale_inv;
+        out_global[(size_t)q_out0 * (size_t)R_total + (size_t)r_out1] = acc01 * scale_inv;
+        out_global[(size_t)q_out1 * (size_t)R_total + (size_t)r_out0] = acc10 * scale_inv;
+        out_global[(size_t)q_out1 * (size_t)R_total + (size_t)r_out1] = acc11 * scale_inv;
+    } else if (full_q_tile && full_r_tile) {
         long long gq0 = 0, gq1 = 0;
         if (threadID == 0) {
             gq0 = bsi_load_index_or_identity(query_indices, q_out0);
@@ -2024,6 +2042,19 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
         out_global[(size_t)gq0 * (size_t)R_total + (size_t)gr1] = acc01 * scale_inv;
         out_global[(size_t)gq1 * (size_t)R_total + (size_t)gr0] = acc10 * scale_inv;
         out_global[(size_t)gq1 * (size_t)R_total + (size_t)gr1] = acc11 * scale_inv;
+    } else if (identity_q && identity_r) {
+        if (q_out0 < Q && r_out0 < R) {
+            out_global[(size_t)q_out0 * (size_t)R_total + (size_t)r_out0] = acc00 * scale_inv;
+        }
+        if (q_out0 < Q && r_out1 < R) {
+            out_global[(size_t)q_out0 * (size_t)R_total + (size_t)r_out1] = acc01 * scale_inv;
+        }
+        if (q_out1 < Q && r_out0 < R) {
+            out_global[(size_t)q_out1 * (size_t)R_total + (size_t)r_out0] = acc10 * scale_inv;
+        }
+        if (q_out1 < Q && r_out1 < R) {
+            out_global[(size_t)q_out1 * (size_t)R_total + (size_t)r_out1] = acc11 * scale_inv;
+        }
     } else {
         long long gq0 = 0, gq1 = 0;
         if (threadID == 0) {
