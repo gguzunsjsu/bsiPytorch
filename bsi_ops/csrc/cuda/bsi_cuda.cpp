@@ -56,33 +56,6 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     float* out_global,
     cudaStream_t stream);
 
-extern "C" void launch_popcount_weighted_keys_literal_fused_multiq_tc_packed(
-    const uint32_t* A_tc,
-    const float* Aw,
-    const float* A_chunk_scales,
-    int A_scale_stride,
-    int Sa,
-    int W64,
-    const uint32_t* B_tc,
-    const float* Bw,
-    int Sb,
-    int R,
-    int Q,
-    const long long* indices_r,
-    const long long* indices_q,
-    float scale_inv,
-    int R_total,
-    float* out_global,
-    cudaStream_t stream);
-
-extern "C" void launch_bsi_words_to_tc_layout(
-    const unsigned long long* in_words,
-    int rows,
-    int S,
-    int W64,
-    uint32_t* out_words_tc,
-    cudaStream_t stream);
-
 template <typename T>
 inline T* tensor_data_ptr(torch::Tensor& t) {
     return t.data_ptr<T>();
@@ -169,25 +142,6 @@ static bool bsi_cuda_tc_dot_enabled() {
     return cached != 0;
 }
 
-static bool bsi_cuda_tc_packed_enabled(bool tc_required) {
-    if (const char* s = std::getenv("BSI_TC_PACKED")) {
-        return std::atoi(s) != 0;
-    }
-    (void)tc_required;
-    return false;
-}
-
-static bool bsi_cuda_tc_device_ok() {
-    static int cached = -1;
-    if (cached >= 0) return cached != 0;
-    int dev = 0;
-    cudaGetDevice(&dev);
-    int major = 0;
-    cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, dev);
-    cached = (major >= 9) ? 1 : 0;
-    return cached != 0;
-}
-
 // --- GPU prebuilt keys (device-packed words) ---
 struct KeyMeta {
     int S = 0;
@@ -204,7 +158,6 @@ struct PrebuiltBSIKeysCUDA {
     // Grouped, contiguous views by Sb to avoid per-call stacking
     std::unordered_map<int, at::Tensor> grouped_words;   // Sb -> [R_sb, Sb, W]
     std::unordered_map<int, at::Tensor> grouped_weights; // Sb -> [R_sb, Sb]
-    std::unordered_map<int, at::Tensor> grouped_words_tc;   // Sb -> [R_sb, Sb, chunks, 12], int32
     std::unordered_map<int, std::vector<int64_t>> grouped_indices; // Sb -> original key indices
     std::unordered_map<int, at::Tensor> grouped_indices_dev; // Sb -> [R_sb] int64 cuda
     std::unordered_map<int, bool> grouped_indices_identity; // Sb -> true when idx[i] == i
@@ -214,7 +167,6 @@ struct PrebuiltBSIKeysCUDA {
     int single_rg = 0;
     bool single_indices_identity = true;
     at::Tensor single_words;   // [Rg, Sb, W]
-    at::Tensor single_words_tc; // [Rg, Sb, chunks, 12], int32
     at::Tensor single_weights; // [Rg, Sb]
     at::Tensor single_indices_dev; // [Rg] int64 cuda if non-identity
     int W = 0;
@@ -249,7 +201,6 @@ static PrebuiltBSIQueryCUDA* capsule_to_query_cuda(const pybind11::capsule& cap)
 // - re-stacking Q small tensors inside the dot-product path.
 struct PrebuiltBSIQueryBatchCUDA {
     at::Tensor words;         // [Q, Sa, W] int64 cuda
-    at::Tensor words_tc;      // [Q, Sa, chunks, 12] int32 cuda
     at::Tensor slice_weights; // [Q, Sa] float32 cuda
     at::Tensor chunk_scales;  // [Q, chunks] float32 cuda or undefined
     int Sa = 0;
@@ -415,22 +366,6 @@ static pybind11::capsule build_bsi_queries_cuda_batch_packed(torch::Tensor q2d,
         static_cast<size_t>(holder->slice_weights.numel() * holder->slice_weights.element_size());
     if (holder->chunk_scales.defined() && holder->chunk_scales.numel() > 0) {
         holder->mem_bytes += static_cast<size_t>(holder->chunk_scales.numel() * holder->chunk_scales.element_size());
-    }
-    const bool tc_required = holder->chunk_scales.defined() && holder->chunk_scales.numel() > 0;
-    if (bsi_cuda_tc_device_ok() && bsi_cuda_tc_packed_enabled(tc_required) && (holder->W >= 4) && ((holder->W & 3) == 0)) {
-        const int chunks = holder->W >> 2;
-        holder->words_tc = torch::zeros(
-            {holder->Q, holder->Sa, chunks, 12},
-            torch::TensorOptions().dtype(torch::kInt32).device(device));
-        auto stream = at::cuda::getCurrentCUDAStream();
-        launch_bsi_words_to_tc_layout(
-            reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(holder->words)),
-            static_cast<int>(holder->Q),
-            holder->Sa,
-            holder->W,
-            reinterpret_cast<uint32_t*>(tensor_data_ptr<int32_t>(holder->words_tc)),
-            stream.stream());
-        holder->mem_bytes += static_cast<size_t>(holder->words_tc.numel() * holder->words_tc.element_size());
     }
 
     pybind11::capsule cap(holder, "PrebuiltBSIQueryBatchCUDA",
@@ -790,46 +725,53 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
     const auto* Aw = tensor_data_ptr<float>(qb->slice_weights);
     const long long* indices_q = nullptr; // identity mapping in packed batch mode
 
-    const bool tc_required = (A_chunk_scales != nullptr) && (A_scale_stride > 0);
-    const bool tc_requested = tc_required || bsi_cuda_tc_dot_enabled();
-    const bool use_packed_tc = tc_requested && bsi_cuda_tc_device_ok() && bsi_cuda_tc_packed_enabled(tc_required) &&
-        qb->words_tc.defined() && qb->words_tc.numel() > 0;
-    const uint32_t* A_tc = use_packed_tc
-        ? reinterpret_cast<const uint32_t*>(tensor_data_ptr<int32_t>(qb->words_tc))
-        : nullptr;
-
     if (keys->single_group) {
         const int Sb = keys->single_sb;
         const int Rg = keys->single_rg;
         const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(keys->single_words));
         const auto* Bw_ptr = tensor_data_ptr<float>(keys->single_weights);
-        const uint32_t* B_tc = (A_tc != nullptr && keys->single_words_tc.defined() && keys->single_words_tc.numel() > 0)
-            ? reinterpret_cast<const uint32_t*>(tensor_data_ptr<int32_t>(keys->single_words_tc))
-            : nullptr;
         const long long* r_idx_ptr = nullptr;
         if (!keys->single_indices_identity) {
             r_idx_ptr = reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(keys->single_indices_dev));
         }
-        if (A_tc != nullptr && B_tc != nullptr) {
-            launch_popcount_weighted_keys_literal_fused_multiq_tc_packed(
-                A_tc,
-                Aw,
-                A_chunk_scales,
-                A_scale_stride,
-                static_cast<int>(Sa),
-                keys->W,
-                B_tc,
-                Bw_ptr,
-                Sb,
-                Rg,
-                static_cast<int>(Q),
-                r_idx_ptr,
-                indices_q,
-                static_cast<float>(scale_inv),
-                static_cast<int>(R),
-                tensor_data_ptr<float>(out_all),
-                stream.stream());
-        } else {
+        launch_popcount_weighted_keys_literal_fused_multiq(
+            A,
+            Aw,
+            A_chunk_scales,
+            A_scale_stride,
+            static_cast<int>(Sa),
+            keys->W,
+            B_words,
+            Bw_ptr,
+            Sb,
+            Rg,
+            static_cast<int>(Q),
+            bsi_cuda_q_tile(),
+            bsi_cuda_r_tile(),
+            r_idx_ptr,
+            indices_q,
+            static_cast<float>(scale_inv),
+            static_cast<int>(R),
+            tensor_data_ptr<float>(out_all),
+            stream.stream());
+    } else {
+        for (const auto& kv2 : keys->grouped_indices) {
+            int Sb = kv2.first;
+            const auto& idxs = kv2.second;
+            const int Rg = static_cast<int>(idxs.size());
+
+            const auto& words = keys->grouped_words.at(Sb);
+            const auto& Bw_stacked = keys->grouped_weights.at(Sb);
+            const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words));
+            const auto* Bw_ptr = tensor_data_ptr<float>(Bw_stacked);
+            const bool identity_r = (keys->grouped_indices_identity.count(Sb) > 0)
+                ? keys->grouped_indices_identity.at(Sb)
+                : false;
+            const long long* r_idx_ptr = nullptr;
+            if (!identity_r) {
+                const auto& idx_dev = keys->grouped_indices_dev.at(Sb);
+                r_idx_ptr = reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev));
+            }
             launch_popcount_weighted_keys_literal_fused_multiq(
                 A,
                 Aw,
@@ -850,70 +792,6 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
                 static_cast<int>(R),
                 tensor_data_ptr<float>(out_all),
                 stream.stream());
-        }
-    } else {
-        for (const auto& kv2 : keys->grouped_indices) {
-            int Sb = kv2.first;
-            const auto& idxs = kv2.second;
-            const int Rg = static_cast<int>(idxs.size());
-
-            const auto& words = keys->grouped_words.at(Sb);
-            const auto& Bw_stacked = keys->grouped_weights.at(Sb);
-            const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words));
-            const auto* Bw_ptr = tensor_data_ptr<float>(Bw_stacked);
-            const uint32_t* B_tc = (A_tc != nullptr && keys->grouped_words_tc.count(Sb) > 0)
-                ? reinterpret_cast<const uint32_t*>(tensor_data_ptr<int32_t>(keys->grouped_words_tc.at(Sb)))
-                : nullptr;
-            const bool identity_r = (keys->grouped_indices_identity.count(Sb) > 0)
-                ? keys->grouped_indices_identity.at(Sb)
-                : false;
-            const long long* r_idx_ptr = nullptr;
-            if (!identity_r) {
-                const auto& idx_dev = keys->grouped_indices_dev.at(Sb);
-                r_idx_ptr = reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev));
-            }
-
-            if (A_tc != nullptr && B_tc != nullptr) {
-                launch_popcount_weighted_keys_literal_fused_multiq_tc_packed(
-                    A_tc,
-                    Aw,
-                    A_chunk_scales,
-                    A_scale_stride,
-                    static_cast<int>(Sa),
-                    keys->W,
-                    B_tc,
-                    Bw_ptr,
-                    Sb,
-                    Rg,
-                    static_cast<int>(Q),
-                    r_idx_ptr,
-                    indices_q,
-                    static_cast<float>(scale_inv),
-                    static_cast<int>(R),
-                    tensor_data_ptr<float>(out_all),
-                    stream.stream());
-            } else {
-                launch_popcount_weighted_keys_literal_fused_multiq(
-                    A,
-                    Aw,
-                    A_chunk_scales,
-                    A_scale_stride,
-                    static_cast<int>(Sa),
-                    keys->W,
-                    B_words,
-                    Bw_ptr,
-                    Sb,
-                    Rg,
-                    static_cast<int>(Q),
-                    bsi_cuda_q_tile(),
-                    bsi_cuda_r_tile(),
-                    r_idx_ptr,
-                    indices_q,
-                    static_cast<float>(scale_inv),
-                    static_cast<int>(R),
-                    tensor_data_ptr<float>(out_all),
-                    stream.stream());
-            }
         }
     }
 
@@ -1022,24 +900,6 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
         uint64_t total_mem_bytes = static_cast<uint64_t>(
             holder->grouped_words[Sb].numel() * holder->grouped_words[Sb].element_size());
 
-        if (bsi_cuda_tc_device_ok() && bsi_cuda_tc_packed_enabled(/*tc_required=*/false) && (holder->W >= 4) && ((holder->W & 3) == 0)) {
-            const int chunks = holder->W >> 2;
-            holder->grouped_words_tc[Sb] = torch::zeros(
-                {num_keys, Sb, chunks, 12},
-                torch::TensorOptions().dtype(torch::kInt32).device(device));
-            auto stream = at::cuda::getCurrentCUDAStream();
-            launch_bsi_words_to_tc_layout(
-                reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(holder->single_words)),
-                static_cast<int>(num_keys),
-                Sb,
-                holder->W,
-                reinterpret_cast<uint32_t*>(tensor_data_ptr<int32_t>(holder->grouped_words_tc[Sb])),
-                stream.stream());
-            holder->single_words_tc = holder->grouped_words_tc[Sb];
-            total_mem_bytes += static_cast<uint64_t>(
-                holder->single_words_tc.numel() * holder->single_words_tc.element_size());
-        }
-
         pybind11::capsule cap(holder, "PrebuiltBSIKeysCUDA",
             [](PyObject* capsule){
                 auto* p = reinterpret_cast<PrebuiltBSIKeysCUDA*>(PyCapsule_GetPointer(capsule, "PrebuiltBSIKeysCUDA"));
@@ -1108,22 +968,6 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
             }
             holder->grouped_words[Sb] = gw.contiguous();
             holder->grouped_weights[Sb] = gwt.contiguous();
-            if (bsi_cuda_tc_device_ok() && bsi_cuda_tc_packed_enabled(/*tc_required=*/false) && (holder->W >= 4) && ((holder->W & 3) == 0)) {
-                const int chunks = holder->W >> 2;
-                holder->grouped_words_tc[Sb] = torch::zeros(
-                    {R, Sb, chunks, 12},
-                    torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
-                auto stream = at::cuda::getCurrentCUDAStream();
-                launch_bsi_words_to_tc_layout(
-                    reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(holder->grouped_words[Sb])),
-                    R,
-                    Sb,
-                    holder->W,
-                    reinterpret_cast<uint32_t*>(tensor_data_ptr<int32_t>(holder->grouped_words_tc[Sb])),
-                    stream.stream());
-                total_mem += static_cast<size_t>(
-                    holder->grouped_words_tc[Sb].numel() * holder->grouped_words_tc[Sb].element_size());
-            }
             holder->grouped_indices[Sb] = idxs;
             bool identity = true;
             for (int i = 0; i < R; ++i) {
@@ -1148,9 +992,6 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
             holder->single_rg = static_cast<int>(groups.begin()->second.size());
             holder->single_indices_identity = holder->grouped_indices_identity[Sb];
             holder->single_words = holder->grouped_words[Sb];
-            if (holder->grouped_words_tc.count(Sb) > 0) {
-                holder->single_words_tc = holder->grouped_words_tc[Sb];
-            }
             holder->single_weights = holder->grouped_weights[Sb];
             if (!holder->single_indices_identity) {
                 holder->single_indices_dev = holder->grouped_indices_dev[Sb];
