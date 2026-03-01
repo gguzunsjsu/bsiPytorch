@@ -2810,20 +2810,32 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
         qscale_m1 = __shfl_sync(0xffffffff, qscale_m1, lane & ~3);
 
 #pragma unroll
-        for (int t = 0; t < R_SWEEP; ++t) {
-            const uint32_t* B_t = B_bits + (size_t)t * B_words;
-            uint32_t b0_cache[SB];
-            uint32_t b1_cache[SB];
+        for (int t_pair = 0; t_pair < R_SWEEP; t_pair += 2) {
+            const int t0 = t_pair;
+            const int t1 = t_pair + 1;
+            const uint32_t* B0 = B_bits + (size_t)t0 * B_words;
+            const uint32_t* B1 = B_bits + (size_t)t1 * B_words;
+
+            uint32_t b0_0[SB];
+            uint32_t b1_0[SB];
+            uint32_t b0_1[SB];
+            uint32_t b1_1[SB];
+
             const int b_slice_stride = TN * K_STRIDE32;
-            const uint32_t* b_col_base = B_t + (col_base + groupID) * K_STRIDE32;
+            const uint32_t* b_col_base0 = B0 + (col_base + groupID) * K_STRIDE32;
+            const uint32_t* b_col_base1 = B1 + (col_base + groupID) * K_STRIDE32;
 #pragma unroll
             for (int j = 0; j < SB; ++j) {
-                const uint32_t* b_col = b_col_base + j * b_slice_stride;
-                b0_cache[j] = b_col[threadID];
-                b1_cache[j] = b_col[threadID + 4];
+                const uint32_t* b_col0 = b_col_base0 + j * b_slice_stride;
+                const uint32_t* b_col1 = b_col_base1 + j * b_slice_stride;
+                b0_0[j] = b_col0[threadID];
+                b1_0[j] = b_col0[threadID + 4];
+                b0_1[j] = b_col1[threadID];
+                b1_1[j] = b_col1[threadID + 4];
             }
 
-            int chunk00 = 0, chunk01 = 0, chunk10 = 0, chunk11 = 0;
+            int chunk00_0 = 0, chunk01_0 = 0, chunk10_0 = 0, chunk11_0 = 0;
+            int chunk00_1 = 0, chunk01_1 = 0, chunk10_1 = 0, chunk11_1 = 0;
 #pragma unroll
             for (int i = 0; i < SA; ++i) {
                 const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
@@ -2834,6 +2846,9 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
 
 #pragma unroll
                 for (int j = 0; j < SB; ++j) {
+                    const int shift = i + j;
+                    const bool neg = ((i == (SA - 1)) ^ (j == (SB - 1)));
+
                     int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
                     asm volatile(
                         "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
@@ -2843,38 +2858,77 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
                         "{%0, %1, %2, %3};\n"
                         : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
                         : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
-                          "r"(b0_cache[j]), "r"(b1_cache[j]));
+                          "r"(b0_0[j]), "r"(b1_0[j]));
 
-                    const int shift = i + j;
                     const int v0 = c0 << shift;
                     const int v1 = c1 << shift;
                     const int v2 = c2 << shift;
                     const int v3 = c3 << shift;
-                    if (((i == (SA - 1)) ^ (j == (SB - 1)))) {
-                        chunk00 -= v0;
-                        chunk01 -= v1;
-                        chunk10 -= v2;
-                        chunk11 -= v3;
+                    if (neg) {
+                        chunk00_0 -= v0;
+                        chunk01_0 -= v1;
+                        chunk10_0 -= v2;
+                        chunk11_0 -= v3;
                     } else {
-                        chunk00 += v0;
-                        chunk01 += v1;
-                        chunk10 += v2;
-                        chunk11 += v3;
+                        chunk00_0 += v0;
+                        chunk01_0 += v1;
+                        chunk10_0 += v2;
+                        chunk11_0 += v3;
+                    }
+
+                    int d0 = 0, d1 = 0, d2 = 0, d3 = 0;
+                    asm volatile(
+                        "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
+                        "{%0, %1, %2, %3}, "
+                        "{%4, %5, %6, %7}, "
+                        "{%8, %9}, "
+                        "{%0, %1, %2, %3};\n"
+                        : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
+                        : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
+                          "r"(b0_1[j]), "r"(b1_1[j]));
+
+                    const int w0 = d0 << shift;
+                    const int w1 = d1 << shift;
+                    const int w2 = d2 << shift;
+                    const int w3 = d3 << shift;
+                    if (neg) {
+                        chunk00_1 -= w0;
+                        chunk01_1 -= w1;
+                        chunk10_1 -= w2;
+                        chunk11_1 -= w3;
+                    } else {
+                        chunk00_1 += w0;
+                        chunk01_1 += w1;
+                        chunk10_1 += w2;
+                        chunk11_1 += w3;
                     }
                 }
             }
 
-            const float s00 = qscale_m0 * bscale0[t];
-            const float s01 = qscale_m0 * bscale1[t];
-            const float s10 = qscale_m1 * bscale0[t];
-            const float s11 = qscale_m1 * bscale1[t];
-
-            float4 acc = acc0[(size_t)t * (size_t)blockDim.x + (size_t)threadIdx.x];
-            acc.x = __fmaf_rn(static_cast<float>(chunk00), s00, acc.x);
-            acc.y = __fmaf_rn(static_cast<float>(chunk01), s01, acc.y);
-            acc.z = __fmaf_rn(static_cast<float>(chunk10), s10, acc.z);
-            acc.w = __fmaf_rn(static_cast<float>(chunk11), s11, acc.w);
-            acc0[(size_t)t * (size_t)blockDim.x + (size_t)threadIdx.x] = acc;
+            {
+                const float s00 = qscale_m0 * bscale0[t0];
+                const float s01 = qscale_m0 * bscale1[t0];
+                const float s10 = qscale_m1 * bscale0[t0];
+                const float s11 = qscale_m1 * bscale1[t0];
+                float4 acc = acc0[(size_t)t0 * (size_t)blockDim.x + (size_t)threadIdx.x];
+                acc.x = __fmaf_rn(static_cast<float>(chunk00_0), s00, acc.x);
+                acc.y = __fmaf_rn(static_cast<float>(chunk01_0), s01, acc.y);
+                acc.z = __fmaf_rn(static_cast<float>(chunk10_0), s10, acc.z);
+                acc.w = __fmaf_rn(static_cast<float>(chunk11_0), s11, acc.w);
+                acc0[(size_t)t0 * (size_t)blockDim.x + (size_t)threadIdx.x] = acc;
+            }
+            {
+                const float s00 = qscale_m0 * bscale0[t1];
+                const float s01 = qscale_m0 * bscale1[t1];
+                const float s10 = qscale_m1 * bscale0[t1];
+                const float s11 = qscale_m1 * bscale1[t1];
+                float4 acc = acc0[(size_t)t1 * (size_t)blockDim.x + (size_t)threadIdx.x];
+                acc.x = __fmaf_rn(static_cast<float>(chunk00_1), s00, acc.x);
+                acc.y = __fmaf_rn(static_cast<float>(chunk01_1), s01, acc.y);
+                acc.z = __fmaf_rn(static_cast<float>(chunk10_1), s10, acc.z);
+                acc.w = __fmaf_rn(static_cast<float>(chunk11_1), s11, acc.w);
+                acc0[(size_t)t1 * (size_t)blockDim.x + (size_t)threadIdx.x] = acc;
+            }
         }
 
         if (chunk + 1 < chunks) {
