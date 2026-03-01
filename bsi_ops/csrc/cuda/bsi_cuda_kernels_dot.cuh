@@ -2732,19 +2732,20 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
             bsi_cp_async_cg_16B(A_bits + base, &a_slice[(size_t)0 * (size_t)K_WORDS64 + (size_t)w64_i]);
         }
         constexpr int B_CHUNK_ELEMS = TN * SB * K_WORDS64_16B;
-        for (int idx = threadIdx.x; idx < R_SWEEP * B_CHUNK_ELEMS; idx += blockDim.x) {
-            int t_all = idx;
-            const int t = t_all / B_CHUNK_ELEMS;
-            t_all -= t * B_CHUNK_ELEMS;
-            const int w64_pair = t_all & (K_WORDS64_16B - 1);
-            t_all >>= 1;
-            const int n = t_all & (TN - 1);
-            const int j = t_all >> 5;
-            const int r = r_base + t * TN + n;
-            const unsigned long long* b_slice = B + ((size_t)r * (size_t)SB + (size_t)j) * (size_t)W64;
-            const int w64_i = w64_pair << 1;
-            const int base = t * (int)B_words + ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
-            bsi_cp_async_cg_16B(B_bits + base, &b_slice[(size_t)0 * (size_t)K_WORDS64 + (size_t)w64_i]);
+#pragma unroll
+        for (int t = 0; t < R_SWEEP; ++t) {
+            for (int idx = threadIdx.x; idx < B_CHUNK_ELEMS; idx += blockDim.x) {
+                int u = idx;
+                const int w64_pair = u & (K_WORDS64_16B - 1);
+                u >>= 1;
+                const int n = u & (TN - 1);
+                const int j = u >> 5;
+                const int r = r_base + t * TN + n;
+                const unsigned long long* b_slice = B + ((size_t)r * (size_t)SB + (size_t)j) * (size_t)W64;
+                const int w64_i = w64_pair << 1;
+                const size_t base = (size_t)t * B_words + ((size_t)j * (size_t)TN + (size_t)n) * (size_t)K_STRIDE32 + (size_t)(w64_i << 1);
+                bsi_cp_async_cg_16B(B_bits + base, &b_slice[(size_t)0 * (size_t)K_WORDS64 + (size_t)w64_i]);
+            }
         }
         bsi_cp_async_commit_group();
         bsi_cp_async_wait_all();
@@ -2777,21 +2778,22 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
                     &a_slice[(size_t)next_chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
             }
             constexpr int B_CHUNK_ELEMS = TN * SB * K_WORDS64_16B;
-            for (int idx = threadIdx.x; idx < R_SWEEP * B_CHUNK_ELEMS; idx += blockDim.x) {
-                int t_all = idx;
-                const int t = t_all / B_CHUNK_ELEMS;
-                t_all -= t * B_CHUNK_ELEMS;
-                const int w64_pair = t_all & (K_WORDS64_16B - 1);
-                t_all >>= 1;
-                const int n = t_all & (TN - 1);
-                const int j = t_all >> 5;
-                const int r = r_base + t * TN + n;
-                const unsigned long long* b_slice = B + ((size_t)r * (size_t)SB + (size_t)j) * (size_t)W64;
-                const int w64_i = w64_pair << 1;
-                const int base = t * (int)B_words + ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
-                bsi_cp_async_cg_16B(
-                    B_bits_next + base,
-                    &b_slice[(size_t)next_chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+#pragma unroll
+            for (int t = 0; t < R_SWEEP; ++t) {
+                for (int idx = threadIdx.x; idx < B_CHUNK_ELEMS; idx += blockDim.x) {
+                    int u = idx;
+                    const int w64_pair = u & (K_WORDS64_16B - 1);
+                    u >>= 1;
+                    const int n = u & (TN - 1);
+                    const int j = u >> 5;
+                    const int r = r_base + t * TN + n;
+                    const unsigned long long* b_slice = B + ((size_t)r * (size_t)SB + (size_t)j) * (size_t)W64;
+                    const int w64_i = w64_pair << 1;
+                    const size_t base = (size_t)t * B_words + ((size_t)j * (size_t)TN + (size_t)n) * (size_t)K_STRIDE32 + (size_t)(w64_i << 1);
+                    bsi_cp_async_cg_16B(
+                        B_bits_next + base,
+                        &b_slice[(size_t)next_chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+                }
             }
             bsi_cp_async_commit_group();
         }
