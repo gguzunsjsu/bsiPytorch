@@ -2860,22 +2860,6 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
                         : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
                           "r"(b0_0[j]), "r"(b1_0[j]));
 
-                    const int v0 = c0 << shift;
-                    const int v1 = c1 << shift;
-                    const int v2 = c2 << shift;
-                    const int v3 = c3 << shift;
-                    if (neg) {
-                        chunk00_0 -= v0;
-                        chunk01_0 -= v1;
-                        chunk10_0 -= v2;
-                        chunk11_0 -= v3;
-                    } else {
-                        chunk00_0 += v0;
-                        chunk01_0 += v1;
-                        chunk10_0 += v2;
-                        chunk11_0 += v3;
-                    }
-
                     int d0 = 0, d1 = 0, d2 = 0, d3 = 0;
                     asm volatile(
                         "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
@@ -2887,16 +2871,28 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
                         : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
                           "r"(b0_1[j]), "r"(b1_1[j]));
 
+                    const int v0 = c0 << shift;
+                    const int v1 = c1 << shift;
+                    const int v2 = c2 << shift;
+                    const int v3 = c3 << shift;
                     const int w0 = d0 << shift;
                     const int w1 = d1 << shift;
                     const int w2 = d2 << shift;
                     const int w3 = d3 << shift;
                     if (neg) {
+                        chunk00_0 -= v0;
+                        chunk01_0 -= v1;
+                        chunk10_0 -= v2;
+                        chunk11_0 -= v3;
                         chunk00_1 -= w0;
                         chunk01_1 -= w1;
                         chunk10_1 -= w2;
                         chunk11_1 -= w3;
                     } else {
+                        chunk00_0 += v0;
+                        chunk01_0 += v1;
+                        chunk10_0 += v2;
+                        chunk11_0 += v3;
                         chunk00_1 += w0;
                         chunk01_1 += w1;
                         chunk10_1 += w2;
