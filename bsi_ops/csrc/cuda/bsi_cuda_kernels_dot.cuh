@@ -2324,7 +2324,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm16_fixed76_chunkscale
             const uint32_t a3 = A_i[(size_t)row1 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
 
 #pragma unroll
-            for (int j = 0; j < SB; ++j) {
+            for (int j = 0; j < SB; j += 2) {
                 int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
                 asm volatile(
                     "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
@@ -2336,12 +2336,27 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm16_fixed76_chunkscale
                     : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
                       "r"(b0_cache[j]), "r"(b1_cache[j]));
 
-                const int shift = i + j;
-                const int v0 = c0 << shift;
-                const int v1 = c1 << shift;
-                const int v2 = c2 << shift;
-                const int v3 = c3 << shift;
-                if (((i == (SA - 1)) ^ (j == (SB - 1)))) {
+                int d0 = 0, d1 = 0, d2 = 0, d3 = 0;
+                asm volatile(
+                    "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
+                    "{%0, %1, %2, %3}, "
+                    "{%4, %5, %6, %7}, "
+                    "{%8, %9}, "
+                    "{%0, %1, %2, %3};\n"
+                    : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
+                    : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
+                      "r"(b0_cache[j + 1]), "r"(b1_cache[j + 1]));
+
+                const int shift0 = i + j;
+                const int shift1 = shift0 + 1;
+                const bool neg0 = ((i == (SA - 1)) ^ (j == (SB - 1)));
+                const bool neg1 = ((i == (SA - 1)) ^ ((j + 1) == (SB - 1)));
+
+                const int v0 = c0 << shift0;
+                const int v1 = c1 << shift0;
+                const int v2 = c2 << shift0;
+                const int v3 = c3 << shift0;
+                if (neg0) {
                     chunk00 -= v0;
                     chunk01 -= v1;
                     chunk10 -= v2;
@@ -2351,6 +2366,22 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm16_fixed76_chunkscale
                     chunk01 += v1;
                     chunk10 += v2;
                     chunk11 += v3;
+                }
+
+                const int w0 = d0 << shift1;
+                const int w1 = d1 << shift1;
+                const int w2 = d2 << shift1;
+                const int w3 = d3 << shift1;
+                if (neg1) {
+                    chunk00 -= w0;
+                    chunk01 -= w1;
+                    chunk10 -= w2;
+                    chunk11 -= w3;
+                } else {
+                    chunk00 += w0;
+                    chunk01 += w1;
+                    chunk10 += w2;
+                    chunk11 += w3;
                 }
             }
         }
@@ -2566,7 +2597,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
             const uint32_t a3 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
 
 #pragma unroll
-            for (int j = 0; j < SB; ++j) {
+            for (int j = 0; j < SB; j += 2) {
                 int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
                 asm volatile(
                     "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
@@ -2578,12 +2609,27 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
                     : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
                       "r"(b0_cache[j]), "r"(b1_cache[j]));
 
-                const int shift = i + j;
-                const int v0 = c0 << shift;
-                const int v1 = c1 << shift;
-                const int v2 = c2 << shift;
-                const int v3 = c3 << shift;
-                if (((i == (SA - 1)) ^ (j == (SB - 1)))) {
+                int d0 = 0, d1 = 0, d2 = 0, d3 = 0;
+                asm volatile(
+                    "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
+                    "{%0, %1, %2, %3}, "
+                    "{%4, %5, %6, %7}, "
+                    "{%8, %9}, "
+                    "{%0, %1, %2, %3};\n"
+                    : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
+                    : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
+                      "r"(b0_cache[j + 1]), "r"(b1_cache[j + 1]));
+
+                const int shift0 = i + j;
+                const int shift1 = shift0 + 1;
+                const bool neg0 = ((i == (SA - 1)) ^ (j == (SB - 1)));
+                const bool neg1 = ((i == (SA - 1)) ^ ((j + 1) == (SB - 1)));
+
+                const int v0 = c0 << shift0;
+                const int v1 = c1 << shift0;
+                const int v2 = c2 << shift0;
+                const int v3 = c3 << shift0;
+                if (neg0) {
                     chunk00 -= v0;
                     chunk01 -= v1;
                     chunk10 -= v2;
@@ -2593,6 +2639,22 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
                     chunk01 += v1;
                     chunk10 += v2;
                     chunk11 += v3;
+                }
+
+                const int w0 = d0 << shift1;
+                const int w1 = d1 << shift1;
+                const int w2 = d2 << shift1;
+                const int w3 = d3 << shift1;
+                if (neg1) {
+                    chunk00 -= w0;
+                    chunk01 -= w1;
+                    chunk10 -= w2;
+                    chunk11 -= w3;
+                } else {
+                    chunk00 += w0;
+                    chunk01 += w1;
+                    chunk10 += w2;
+                    chunk11 += w3;
                 }
             }
         }
@@ -3327,19 +3389,22 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                 }
             }
             static int debug_printed = 0;
-            auto maybe_debug_print_fixed_int = [&](int tm, int r_sweep) {
+            auto maybe_debug_print_fixed_int = [&](int tm, int r_sweep, int r_tail) {
                 if (!debug || debug_printed) return;
                 debug_printed = 1;
                 const int chunks = W >> 2;
                 const long long work = (long long)chunks * 7ll * 6ll;
                 fprintf(
                     stderr,
-                    "[BSI_DOT] tc_fixed_int=1 tm=%d cpasync=1 Sa=7 Sb=6 W64=%d chunks=%d work=%lld rsweep=%d\n",
+                    "[BSI_DOT] tc_fixed_int=1 tm=%d cpasync=1 Sa=7 Sb=6 Q=%d R=%d W64=%d chunks=%d work=%lld rsweep=%d rtail=%d\n",
                     tm,
+                    Q,
+                    R,
                     W,
                     chunks,
                     work,
-                    r_sweep);
+                    r_sweep,
+                    r_tail);
             };
 
             auto try_tm32 = [&]() -> bool {
@@ -3353,9 +3418,10 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                     constexpr int stages = 2;
                     const int r_sweep = cached_tc_r_sweep;
                     const int tn_sweep = TN * r_sweep;
-                    const bool full_tiles_rsweep = (r_sweep == 1) ? true : ((R % tn_sweep) == 0);
+                    const int r_main = (r_sweep > 1) ? ((R / tn_sweep) * tn_sweep) : 0;
+                    const int r_tail = R - r_main;
 
-                    if (r_sweep > 1 && full_tiles_rsweep) {
+                    if (r_sweep > 1 && r_main >= tn_sweep) {
                         const size_t B_words = (size_t)6 * (size_t)TN * (size_t)K_STRIDE32;
                         const size_t B_words_sweep = (size_t)r_sweep * B_words;
                         size_t shared_bytes =
@@ -3364,7 +3430,7 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                             (size_t)stages * B_words_sweep * sizeof(uint32_t) +
                             (size_t)r_sweep * (size_t)block_tc.x * sizeof(float4);
                         if (shared_bytes <= (size_t)max_shared) {
-                            dim3 grid_fixed(R / tn_sweep, Q / TM_TOTAL, 1);
+                            dim3 grid_fixed(r_main / tn_sweep, Q / TM_TOTAL, 1);
                             if (shared_bytes > (size_t)max_shared_default) {
                                 if (r_sweep == 2) {
                                     static size_t configured_shared_rsweep2 = 0;
@@ -3383,13 +3449,11 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                                         W,
                                         B,
                                         Bw,
-                                        R,
+                                        r_main,
                                         Q,
                                         scale_inv,
                                         R_total,
                                         out_global);
-                                    maybe_debug_print_fixed_int(32, r_sweep);
-                                    return true;
                                 } else if (r_sweep == 4) {
                                     static size_t configured_shared_rsweep4 = 0;
                                     if (shared_bytes > configured_shared_rsweep4) {
@@ -3407,13 +3471,11 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                                         W,
                                         B,
                                         Bw,
-                                        R,
+                                        r_main,
                                         Q,
                                         scale_inv,
                                         R_total,
                                         out_global);
-                                    maybe_debug_print_fixed_int(32, r_sweep);
-                                    return true;
                                 }
                             } else {
                                 if (r_sweep == 2) {
@@ -3425,13 +3487,11 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                                         W,
                                         B,
                                         Bw,
-                                        R,
+                                        r_main,
                                         Q,
                                         scale_inv,
                                         R_total,
                                         out_global);
-                                    maybe_debug_print_fixed_int(32, r_sweep);
-                                    return true;
                                 } else if (r_sweep == 4) {
                                     popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4<<<
                                         grid_fixed, block_tc, shared_bytes, stream>>>(
@@ -3441,15 +3501,43 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                                         W,
                                         B,
                                         Bw,
-                                        R,
+                                        r_main,
                                         Q,
                                         scale_inv,
                                         R_total,
                                         out_global);
-                                    maybe_debug_print_fixed_int(32, r_sweep);
-                                    return true;
                                 }
                             }
+
+                            if (r_tail > 0) {
+                                size_t shared_bytes_tail =
+                                    16u +
+                                    (size_t)stages * (size_t)7 * (size_t)TM_TOTAL * (size_t)K_STRIDE32 * sizeof(uint32_t) +
+                                    (size_t)stages * (size_t)6 * (size_t)TN * (size_t)K_STRIDE32 * sizeof(uint32_t);
+
+                                if (shared_bytes_tail <= (size_t)max_shared) {
+                                    dim3 grid_tail(r_tail / TN, Q / TM_TOTAL, 1);
+                                    const unsigned long long* B_tail =
+                                        B + ((size_t)r_main * (size_t)6 * (size_t)W);
+                                    const float* Bw_tail = Bw + ((size_t)r_main * (size_t)6);
+                                    float* out_tail = out_global + r_main;
+                                    popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale<<<
+                                        grid_tail, block_tc, shared_bytes_tail, stream>>>(
+                                        A,
+                                        A_chunk_scales,
+                                        A_scale_stride,
+                                        W,
+                                        B_tail,
+                                        Bw_tail,
+                                        r_tail,
+                                        Q,
+                                        scale_inv,
+                                        R_total,
+                                        out_tail);
+                                }
+                            }
+                            maybe_debug_print_fixed_int(32, r_sweep, r_tail);
+                            return true;
                         }
                     }
 
@@ -3472,7 +3560,7 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                             scale_inv,
                             R_total,
                             out_global);
-                        maybe_debug_print_fixed_int(32, 1);
+                        maybe_debug_print_fixed_int(32, 1, 0);
                         return true;
                     }
                 }
@@ -3558,7 +3646,7 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                             scale_inv,
                             R_total,
                             out_global);
-                        maybe_debug_print_fixed_int(16, 1);
+                        maybe_debug_print_fixed_int(16, 1, 0);
                         return true;
                     }
                 }
