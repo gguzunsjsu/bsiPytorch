@@ -3189,8 +3189,8 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
         if (!B_tensor_map) return;
         if (is_leader) {
             (void)cuda::device::barrier_arrive_tx(bar[stage], 1, TX_B_BYTES);
-            // Tensor map dims order (innermost->outermost): [w_bytes, sb, n(32), tile].
-            // Shared tile layout (outermost->innermost): [tile, n, sb, w_bytes].
+            // Tensor map dims order (innermost->outermost): [w_bytes, n(32), sb, tile].
+            // Shared tile layout (outermost->innermost): [tile, sb, n, w_bytes].
             const int32_t coords[4] = {(int32_t)(chunk * (int)ROW_BYTES), 0, 0, (int32_t)tile_base};
             auto handle = cuda::device::barrier_native_handle(bar[stage]);
             // NVHPC's CUDA 12.6 CCCL only provides the mbarrier completion overload for
@@ -3276,19 +3276,19 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
             uint32_t b0_1[SB];
             uint32_t b1_1[SB];
 
-            // B shared layout: [tile, n, sb, w_bytes] => within a tile, n-major.
+            // B shared layout: [tile, sb, n, w_bytes] => within a tile, sb-major.
             const int n = col_base + groupID;
-            const int n_stride = SB * K_STRIDE32;
-            const uint32_t* b_n_base0 = B0 + n * n_stride;
-            const uint32_t* b_n_base1 = B1 + n * n_stride;
+            const int b_slice_stride = TN * K_STRIDE32;
+            const uint32_t* b_col_base0 = B0 + n * K_STRIDE32;
+            const uint32_t* b_col_base1 = B1 + n * K_STRIDE32;
 #pragma unroll
             for (int j = 0; j < SB; ++j) {
-                const uint32_t* b_row0 = b_n_base0 + j * K_STRIDE32;
-                const uint32_t* b_row1 = b_n_base1 + j * K_STRIDE32;
-                b0_0[j] = b_row0[threadID];
-                b1_0[j] = b_row0[threadID + 4];
-                b0_1[j] = b_row1[threadID];
-                b1_1[j] = b_row1[threadID + 4];
+                const uint32_t* b_col0 = b_col_base0 + j * b_slice_stride;
+                const uint32_t* b_col1 = b_col_base1 + j * b_slice_stride;
+                b0_0[j] = b_col0[threadID];
+                b1_0[j] = b_col0[threadID + 4];
+                b0_1[j] = b_col1[threadID];
+                b1_1[j] = b_col1[threadID + 4];
             }
 
             int chunk00_0 = 0, chunk01_0 = 0, chunk10_0 = 0, chunk11_0 = 0;
@@ -3773,20 +3773,25 @@ static inline void* bsi_get_or_create_b_fixed76_rsweep_tensor_map(
     if (!encode) return nullptr;
 
     // Tensor map dims order is innermost->outermost.
-    // We encode B as: [w_bytes, sb, n(32), tile(R_total/32)].
+    // We encode B as: [w_bytes, n(32), sb, tile(R_total/32)].
+    //
+    // This makes the TMA destination shared layout (outermost->innermost):
+    //   [tile, sb, n, w_bytes]
+    // which matches the baseline cp.async staging layout but without needing
+    // padding in the innermost dimension.
     const cuuint64_t w_bytes = static_cast<cuuint64_t>(W64) * 8ull;
     const cuuint64_t tile_count = static_cast<cuuint64_t>(R_total / TN);
 
-    const cuuint64_t global_dim[4] = {w_bytes, (cuuint64_t)SB, (cuuint64_t)TN, tile_count};
+    const cuuint64_t global_dim[4] = {w_bytes, (cuuint64_t)TN, (cuuint64_t)SB, tile_count};
     const cuuint64_t global_strides[3] = {
-        // stride (bytes) for sb
-        w_bytes,
         // stride (bytes) for n (r within tile)
         w_bytes * (cuuint64_t)SB,
+        // stride (bytes) for sb
+        w_bytes,
         // stride (bytes) for tile
         w_bytes * (cuuint64_t)SB * (cuuint64_t)TN,
     };
-    const cuuint32_t box_dim[4] = {(cuuint32_t)BYTES_PER_CHUNK, (cuuint32_t)SB, (cuuint32_t)TN, (cuuint32_t)R_sweep};
+    const cuuint32_t box_dim[4] = {(cuuint32_t)BYTES_PER_CHUNK, (cuuint32_t)TN, (cuuint32_t)SB, (cuuint32_t)R_sweep};
     const cuuint32_t elem_strides[4] = {1u, 1u, 1u, 1u};
 
     alignas(64) CUtensorMap tma;
@@ -3952,14 +3957,15 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
 
 	            // Optional TMA-based B staging for fixed76 rsweep TM32 kernels (H100+).
 	            // 0 (default): baseline cp.async staging
-	            // 1: use tensor-map TMA staging for B (fallback to baseline if descriptor creation fails)
+	            // 1: force tensor-map TMA staging for B (fallback to baseline if descriptor creation fails)
+	            // 2: auto (enable only for large-R W64==64 cases)
 	            static int cached_tc_tma = -1;
 	            if (cached_tc_tma < 0) {
 	                int v = 0;
 	                if (const char* s = getenv("BSI_TC_TMA")) {
 	                    v = atoi(s);
 	                }
-	                cached_tc_tma = (v != 0) ? 1 : 0;
+	                cached_tc_tma = (v == 1) ? 1 : ((v == 2) ? 2 : 0);
 	            }
 
             const bool fixed76 = (Sa == 7) && (Sb == 6) &&
@@ -4009,7 +4015,9 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
 	                    int use_tma = 0;
 	                    void* B_tensor_map = nullptr;
 #if defined(__cccl_lib_local_barrier_arrive_tx)
-	                    if (cached_tc_tma) {
+	                    const bool want_tma = (cached_tc_tma == 1) ||
+	                        (cached_tc_tma == 2 && W == 64 && R >= 16384);
+	                    if (want_tma) {
 	                        B_tensor_map = bsi_tma::bsi_get_or_create_b_fixed76_rsweep_tensor_map(
 	                            B, W, R_total, r_sweep, stream);
 	                        use_tma = (B_tensor_map != nullptr) ? 1 : 0;
