@@ -3180,7 +3180,14 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
 
     auto wait_stage_leader = [&](int stage) {
         auto handle = cuda::device::barrier_native_handle(bar[stage]);
-        while (!ptx::mbarrier_try_wait_parity(ptx::sem_acquire, ptx::scope_cta, handle, parity[stage])) {
+        if constexpr (requires { ptx::mbarrier_try_wait_parity(ptx::sem_acquire, ptx::scope_cta, handle, parity[stage], 0u); }) {
+            // Use a non-zero suspend hint to reduce tight polling overhead.
+            constexpr uint32_t kSuspendHint = 1000u;
+            while (!ptx::mbarrier_try_wait_parity(ptx::sem_acquire, ptx::scope_cta, handle, parity[stage], kSuspendHint)) {
+            }
+        } else {
+            while (!ptx::mbarrier_try_wait_parity(ptx::sem_acquire, ptx::scope_cta, handle, parity[stage])) {
+            }
         }
         parity[stage] ^= 1u;
     };
@@ -3387,9 +3394,9 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
         if (next_chunk < chunks) {
             bsi_cp_async_wait_all();
             if (is_leader) wait_stage_leader(next_stage);
+            __syncthreads();
+            stage = next_stage;
         }
-        __syncthreads();
-        stage ^= 1;
     }
 
     const int q_out0 = q0 + m0;
@@ -3683,6 +3690,7 @@ struct TmaTensorMapKey {
     int w64 = 0;
     int r_total = 0;
     int r_sweep = 0;
+    int l2_promotion = 0; // 0/64/128/256 (bytes)
 };
 
 struct TmaTensorMapKeyHash {
@@ -3696,13 +3704,14 @@ struct TmaTensorMapKeyHash {
         mix(std::hash<int>()(k.w64));
         mix(std::hash<int>()(k.r_total));
         mix(std::hash<int>()(k.r_sweep));
+        mix(std::hash<int>()(k.l2_promotion));
         return h;
     }
 };
 
 static inline bool operator==(const TmaTensorMapKey& a, const TmaTensorMapKey& b) {
     return (a.base == b.base) && (a.device == b.device) && (a.w64 == b.w64) && (a.r_total == b.r_total) &&
-        (a.r_sweep == b.r_sweep);
+        (a.r_sweep == b.r_sweep) && (a.l2_promotion == b.l2_promotion);
 }
 
 struct TmaTensorMapValue {
@@ -3736,6 +3745,7 @@ static inline void* bsi_get_or_create_b_fixed76_rsweep_tensor_map(
     int W64,
     int R_total,
     int R_sweep,
+    int L2_promotion_bytes,
     cudaStream_t stream)
 {
     constexpr int TN = 32;
@@ -3747,6 +3757,11 @@ static inline void* bsi_get_or_create_b_fixed76_rsweep_tensor_map(
     if (R_total <= 0 || (R_total & (TN - 1)) != 0) return nullptr;
     if (!(R_sweep == 2 || R_sweep == 4)) return nullptr;
 
+    int l2_promotion = 0;
+    if (L2_promotion_bytes == 64 || L2_promotion_bytes == 128 || L2_promotion_bytes == 256) {
+        l2_promotion = L2_promotion_bytes;
+    }
+
     int dev = 0;
     cudaGetDevice(&dev);
 
@@ -3756,6 +3771,7 @@ static inline void* bsi_get_or_create_b_fixed76_rsweep_tensor_map(
         /*w64=*/W64,
         /*r_total=*/R_total,
         /*r_sweep=*/R_sweep,
+        /*l2_promotion=*/l2_promotion,
     };
 
     static std::mutex mu;
@@ -3794,6 +3810,15 @@ static inline void* bsi_get_or_create_b_fixed76_rsweep_tensor_map(
     const cuuint32_t box_dim[4] = {(cuuint32_t)BYTES_PER_CHUNK, (cuuint32_t)TN, (cuuint32_t)SB, (cuuint32_t)R_sweep};
     const cuuint32_t elem_strides[4] = {1u, 1u, 1u, 1u};
 
+    CUtensorMapL2promotion l2promo = CU_TENSOR_MAP_L2_PROMOTION_NONE;
+    if (l2_promotion == 64) {
+        l2promo = CU_TENSOR_MAP_L2_PROMOTION_L2_64B;
+    } else if (l2_promotion == 128) {
+        l2promo = CU_TENSOR_MAP_L2_PROMOTION_L2_128B;
+    } else if (l2_promotion == 256) {
+        l2promo = CU_TENSOR_MAP_L2_PROMOTION_L2_256B;
+    }
+
     alignas(64) CUtensorMap tma;
     const CUresult res = encode(
         &tma,
@@ -3806,7 +3831,7 @@ static inline void* bsi_get_or_create_b_fixed76_rsweep_tensor_map(
         elem_strides,
         CU_TENSOR_MAP_INTERLEAVE_NONE,
         CU_TENSOR_MAP_SWIZZLE_NONE,
-        CU_TENSOR_MAP_L2_PROMOTION_NONE,
+        l2promo,
         CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE);
     if (res != CUDA_SUCCESS) return nullptr;
 
@@ -3829,6 +3854,7 @@ static inline void* bsi_get_or_create_b_fixed76_rsweep_tensor_map(
 namespace bsi_tma {
 static inline void* bsi_get_or_create_b_fixed76_rsweep_tensor_map(
     const unsigned long long*,
+    int,
     int,
     int,
     int,
@@ -3955,18 +3981,30 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
 	                cached_tc_r_sweep = (v == 2 || v == 4) ? v : 1;
 	            }
 
-	            // Optional TMA-based B staging for fixed76 rsweep TM32 kernels (H100+).
-	            // 0 (default): baseline cp.async staging
-	            // 1: force tensor-map TMA staging for B (fallback to baseline if descriptor creation fails)
-	            // 2: auto (enable only for large-R W64==64 cases)
-	            static int cached_tc_tma = -1;
-	            if (cached_tc_tma < 0) {
-	                int v = 0;
-	                if (const char* s = getenv("BSI_TC_TMA")) {
+		            // Optional TMA-based B staging for fixed76 rsweep TM32 kernels (H100+).
+		            // 0 (default): baseline cp.async staging
+		            // 1: force tensor-map TMA staging for B (fallback to baseline if descriptor creation fails)
+		            // 2: auto (enable for W64==64 cases)
+		            static int cached_tc_tma = -1;
+		            if (cached_tc_tma < 0) {
+		                int v = 0;
+		                if (const char* s = getenv("BSI_TC_TMA")) {
 	                    v = atoi(s);
 	                }
-	                cached_tc_tma = (v == 1) ? 1 : ((v == 2) ? 2 : 0);
-	            }
+		                cached_tc_tma = (v == 1) ? 1 : ((v == 2) ? 2 : 0);
+		            }
+
+		            // Optional L2 promotion for TMA tensor-map loads (bytes):
+		            // - 0 (default): none
+		            // - 64/128/256: request that many bytes of L2 promotion.
+		            static int cached_tc_tma_l2 = -1;
+		            if (cached_tc_tma_l2 < 0) {
+		                int v = 0;
+		                if (const char* s = getenv("BSI_TC_TMA_L2")) {
+		                    v = atoi(s);
+		                }
+		                cached_tc_tma_l2 = (v == 64 || v == 128 || v == 256) ? v : 0;
+		            }
 
             const bool fixed76 = (Sa == 7) && (Sb == 6) &&
                 (cached_fixed_bits_queries == 7) && (cached_fixed_bits_keys == 6);
@@ -4015,13 +4053,12 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
 	                    int use_tma = 0;
 	                    void* B_tensor_map = nullptr;
 #if defined(__cccl_lib_local_barrier_arrive_tx)
-	                    const bool want_tma = (cached_tc_tma == 1) ||
-	                        (cached_tc_tma == 2 && W == 64 && R >= 16384);
-	                    if (want_tma) {
-	                        B_tensor_map = bsi_tma::bsi_get_or_create_b_fixed76_rsweep_tensor_map(
-	                            B, W, R_total, r_sweep, stream);
-	                        use_tma = (B_tensor_map != nullptr) ? 1 : 0;
-	                    }
+		                    const bool want_tma = (cached_tc_tma == 1) || (cached_tc_tma == 2 && W == 64);
+		                    if (want_tma) {
+		                        B_tensor_map = bsi_tma::bsi_get_or_create_b_fixed76_rsweep_tensor_map(
+		                            B, W, R_total, r_sweep, cached_tc_tma_l2, stream);
+		                        use_tma = (B_tensor_map != nullptr) ? 1 : 0;
+		                    }
 #endif
 	                    const int tn_sweep = TN * r_sweep;
 	                    const int r_main = (r_sweep > 1) ? ((R / tn_sweep) * tn_sweep) : 0;
