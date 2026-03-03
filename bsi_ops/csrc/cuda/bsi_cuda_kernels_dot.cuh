@@ -3118,7 +3118,9 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
     const int tile_base = blockIdx.x * R_SWEEP;
 
     uintptr_t p = reinterpret_cast<uintptr_t>(smem_raw);
-    p = (p + 15u) & ~uintptr_t(15u);
+    // TMA bulk tensor copies are picky about destination alignment. Keep all stage
+    // buffers 128B-aligned to avoid misaligned-address faults.
+    p = (p + 127u) & ~uintptr_t(127u);
 
     constexpr int stages = 2;
     constexpr size_t A_words = (size_t)SA * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
@@ -4031,7 +4033,7 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
 	                            (size_t)stages * B_words_sweep * sizeof(uint32_t) +
 	                            (size_t)r_sweep * (size_t)block_tc.x * sizeof(float4);
 	                        const size_t shared_bytes_tma =
-	                            16u +
+	                            128u +
 	                            (size_t)stages * (size_t)7 * (size_t)TM_TOTAL * (size_t)K_STRIDE32_TMA * sizeof(uint32_t) +
 	                            (size_t)stages * B_words_sweep_tma * sizeof(uint32_t) +
 	                            (size_t)r_sweep * (size_t)block_tc.x * sizeof(float4);
