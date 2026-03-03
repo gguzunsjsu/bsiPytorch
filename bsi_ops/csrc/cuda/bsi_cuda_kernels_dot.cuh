@@ -3178,7 +3178,7 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
     constexpr uint32_t ROW_BYTES = (uint32_t)(K_WORDS64 * sizeof(unsigned long long)); // 32B
     constexpr uint32_t TX_B_BYTES = (uint32_t)((size_t)R_SWEEP * (size_t)TN * (size_t)SB * (size_t)ROW_BYTES);
 
-    auto wait_stage = [&](int stage) {
+    auto wait_stage_leader = [&](int stage) {
         auto handle = cuda::device::barrier_native_handle(bar[stage]);
         while (!ptx::mbarrier_try_wait_parity(ptx::sem_acquire, ptx::scope_cta, handle, parity[stage])) {
         }
@@ -3219,7 +3219,7 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
         bsi_cp_async_commit_group();
         prefetch_b_stage(0, 0, B_bits0);
         bsi_cp_async_wait_all();
-        wait_stage(0);
+        if (is_leader) wait_stage_leader(0);
         __syncthreads();
     }
 
@@ -3386,7 +3386,7 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
 
         if (next_chunk < chunks) {
             bsi_cp_async_wait_all();
-            wait_stage(next_stage);
+            if (is_leader) wait_stage_leader(next_stage);
         }
         __syncthreads();
         stage ^= 1;
