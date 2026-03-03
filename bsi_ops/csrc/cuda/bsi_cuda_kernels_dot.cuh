@@ -3655,6 +3655,23 @@ static inline const BsiSharedLimits& bsi_get_shared_limits_cached() {
 #if !defined(__CUDA_ARCH__)
 namespace bsi_tma {
 
+// Some CUDA toolchains ship the cuTensorMapEncodeTiled declaration but not the
+// PFN_cuTensorMapEncodeTiled typedef. Use our own function pointer type so we
+// can still resolve the symbol via cudaGetDriverEntryPointByVersion.
+using BsiCuTensorMapEncodeTiledFn = CUresult (*)(
+    CUtensorMap*,
+    CUtensorMapDataType,
+    unsigned int,
+    void*,
+    const cuuint64_t*,
+    const cuuint64_t*,
+    const cuuint32_t*,
+    const cuuint32_t*,
+    CUtensorMapInterleave,
+    CUtensorMapSwizzle,
+    CUtensorMapL2promotion,
+    CUtensorMapFloatOOBfill);
+
 struct TmaTensorMapKey {
     const void* base = nullptr; // global base pointer encoded into the tensor map
     int device = 0;
@@ -3687,8 +3704,8 @@ struct TmaTensorMapValue {
     void* d_tma = nullptr; // device pointer to CUtensorMap
 };
 
-static inline PFN_cuTensorMapEncodeTiled bsi_get_encode_tiled_fn() {
-    static PFN_cuTensorMapEncodeTiled fn = nullptr;
+static inline BsiCuTensorMapEncodeTiledFn bsi_get_encode_tiled_fn() {
+    static BsiCuTensorMapEncodeTiledFn fn = nullptr;
     static int initialized = 0;
     if (!initialized) {
         initialized = 1;
@@ -3703,7 +3720,7 @@ static inline PFN_cuTensorMapEncodeTiled bsi_get_encode_tiled_fn() {
             cudaEnableDefault,
             &driver_status);
         if (err == cudaSuccess && driver_status == cudaDriverEntryPointSuccess && p != nullptr) {
-            fn = reinterpret_cast<PFN_cuTensorMapEncodeTiled>(p);
+            fn = reinterpret_cast<BsiCuTensorMapEncodeTiledFn>(p);
         }
     }
     return fn;
@@ -3747,7 +3764,7 @@ static inline void* bsi_get_or_create_b_fixed76_rsweep_tensor_map(
         }
     }
 
-    PFN_cuTensorMapEncodeTiled encode = bsi_get_encode_tiled_fn();
+    BsiCuTensorMapEncodeTiledFn encode = bsi_get_encode_tiled_fn();
     if (!encode) return nullptr;
 
     // Tensor map dims order is innermost->outermost.
