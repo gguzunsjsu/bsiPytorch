@@ -3191,7 +3191,10 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
             // Shared tile layout (outermost->innermost): [tile, n, sb, w_bytes].
             const int32_t coords[4] = {(int32_t)(chunk * (int)ROW_BYTES), 0, 0, (int32_t)tile_base};
             auto handle = cuda::device::barrier_native_handle(bar[stage]);
-            ptx::cp_async_bulk_tensor(ptx::space_shared, ptx::space_global, B_dst_bytes, B_tensor_map, coords, handle);
+            // NVHPC's CUDA 12.6 CCCL only provides the mbarrier completion overload for
+            // shared::cluster -> global. With cluster size 1, shared::cluster behaves
+            // like regular shared memory, so this is safe.
+            ptx::cp_async_bulk_tensor(ptx::space_cluster, ptx::space_global, B_dst_bytes, B_tensor_map, coords, handle);
         }
     };
 
