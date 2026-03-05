@@ -61,7 +61,7 @@ Run LAMBADA next-token eval + timing breakdown (examples):
 
 ```bash
 # OPT-125M
-BSI_TC_DOT=1 BSI_WARP_OUT=1 BSI_CK_BLOCK=128 BSI_Q_TILE=8 BSI_R_TILE=4 \
+BSI_TC_DOT=1 BSI_Q_TILE=8 BSI_R_TILE=4 \
   python benchmarks/benchmark_performance_bsi.py \
     --model_name facebook/opt-125m \
     --datasets lambada --split validation --num_samples 200 \
@@ -69,7 +69,7 @@ BSI_TC_DOT=1 BSI_WARP_OUT=1 BSI_CK_BLOCK=128 BSI_Q_TILE=8 BSI_R_TILE=4 \
     --scope all --bsi_device cuda
 
 # OPT-1.3B
-BSI_TC_DOT=1 BSI_WARP_OUT=1 BSI_CK_BLOCK=128 BSI_Q_TILE=8 BSI_R_TILE=4 \
+BSI_TC_DOT=1 BSI_Q_TILE=8 BSI_R_TILE=4 \
   python benchmarks/benchmark_performance_bsi.py \
     --model_name facebook/opt-1.3b \
     --datasets lambada --split validation --num_samples 200 \
@@ -77,7 +77,7 @@ BSI_TC_DOT=1 BSI_WARP_OUT=1 BSI_CK_BLOCK=128 BSI_Q_TILE=8 BSI_R_TILE=4 \
     --scope all --bsi_device cuda
 
 # OPT-6.7B
-BSI_TC_DOT=1 BSI_WARP_OUT=1 BSI_CK_BLOCK=128 BSI_Q_TILE=8 BSI_R_TILE=4 \
+BSI_TC_DOT=1 BSI_Q_TILE=8 BSI_R_TILE=4 \
   python benchmarks/benchmark_performance_bsi.py \
     --model_name facebook/opt-6.7b \
     --datasets lambada --split validation --num_samples 200 \
@@ -85,10 +85,33 @@ BSI_TC_DOT=1 BSI_WARP_OUT=1 BSI_CK_BLOCK=128 BSI_Q_TILE=8 BSI_R_TILE=4 \
     --scope all --bsi_device cuda
 ```
 
+### Stable SM90 fixed76 dot path (baseline)
+
+On SM90/H100, the current stable baseline dot path for fixed-bit BSI (Sa=7, Sb=6) with chunk scaling is:
+- `popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_tma_tensorB` (preferred, if TMA descriptor creation succeeds)
+- Fallback: `popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4` (cp.async staging)
+- Tail fallback (if `R` not divisible by `32*BSI_TC_R_SWEEP`): `popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale`
+
+Recommended env vars for reproducing the fixed76 chunk-scale path:
+
+```bash
+export BSI_TC_DOT=1
+export BSI_TC_FIXED_INT=1
+export BSI_TC_CPASYNC=1
+export BSI_FIXED_BITS_KEYS=6
+export BSI_FIXED_BITS_QUERIES=7
+export BSI_FIXED_CHUNK_SCALE=1
+export BSI_TC_R_SWEEP=4
+export BSI_TC_TMA=1
+
+# Optional (debug only):
+export BSI_DOT_DEBUG=1
+```
+
 ## 4) Tensor-Core Dot Correctness (TC vs Baseline)
 
 ```bash
-BSI_TC_DOT=1 BSI_TC_TM=32 BSI_TC_TN=32 \
+BSI_TC_DOT=1 \
   python benchmarks/verify_tc_dot_correctness.py \
     --Q 64 --R 256 --D 2048 \
     --decimal_places 2 --compress_threshold 0.5
@@ -99,7 +122,7 @@ BSI_TC_DOT=1 BSI_TC_TM=32 BSI_TC_TN=32 \
 FC1-like shape:
 
 ```bash
-BSI_TC_DOT=1 BSI_TC_TM=32 BSI_TC_TN=32 \
+BSI_TC_DOT=1 \
   python benchmarks/benchmark_dot_kernel_micro.py \
     --Q 512 --R 8192 --D 2048 \
     --decimal_places 2 --compress_threshold 0.5 \
@@ -109,7 +132,7 @@ BSI_TC_DOT=1 BSI_TC_TM=32 BSI_TC_TN=32 \
 FC2-like shape:
 
 ```bash
-BSI_TC_DOT=1 BSI_TC_TM=32 BSI_TC_TN=32 \
+BSI_TC_DOT=1 \
   python benchmarks/benchmark_dot_kernel_micro.py \
     --Q 512 --R 2048 --D 8192 \
     --decimal_places 2 --compress_threshold 0.5 \
@@ -121,9 +144,11 @@ BSI_TC_DOT=1 BSI_TC_TM=32 BSI_TC_TN=32 \
 Example NCU command for the tensor-core kernel (single launch):
 
 ```bash
-BSI_TC_DOT=1 BSI_TC_TM=32 BSI_TC_TN=32 \
+BSI_TC_DOT=1 BSI_TC_FIXED_INT=1 BSI_TC_CPASYNC=1 \
+  BSI_FIXED_BITS_KEYS=6 BSI_FIXED_BITS_QUERIES=7 BSI_FIXED_CHUNK_SCALE=1 \
+  BSI_TC_R_SWEEP=4 BSI_TC_TMA=1 \
   ncu --set full --target-processes all -f -o ncu_tc_tm32_full \
-    -k popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32 \
+    -k popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_tma_tensorB \
     --launch-count 1 \
   python benchmarks/benchmark_dot_kernel_micro.py \
     --Q 512 --R 8192 --D 2048 \
