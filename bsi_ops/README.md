@@ -2,34 +2,57 @@
 
 This codebase implements BSI-native linear layers and CUDA dot kernels for compressed LLM inference. The current stable operating point is a fixed-bit, tensor-core, TM32, `R_sweep=4`, chunk-scaled path on SM90/H100-class GPUs.
 
-The main goals of this code are:
-
-- store linear weights in BSI form
-- build BSI queries at runtime from activations
-- execute dot products natively from bit-sliced data
-- benchmark kernel-only, layer-level, and model-level behavior
-- compare dense FP16 and BSI on OPT-family models
-
-## Layout
-- `../bsiCPP`: CPU-side BSI and bitmap implementation
-- `benchmarks/`: kernel and model evaluation scripts
-- `csrc/cuda/`: PyTorch CUDA extension and dot kernels
-
-## Environment
-If you are on the cluster and need outbound access for HuggingFace downloads:
+## 0) GPU + Network Setup (Cluster)
+These commands assume you are at the repository root after cloning. If you are running on a GPU cluster that requires a proxy for outbound traffic, source the network helper first:
 
 ```bash
-source network_connection.sh
+source bsi_ops/network_connection.sh
 ```
 
-Activate the Python environment and rebuild the extension:
+Load the CUDA compiler/module used on the cluster:
 
 ```bash
-source /home/017510883/miniconda3/bin/activate bsiPytorch
+module load nvhpc-hpcx-cuda12/24.11
+```
+
+If your cluster provides an additional GPU connection helper, source it before CUDA environment setup:
+
+```bash
+source gpu_connection.sh
+```
+
+Then set the CUDA toolchain environment variables:
+
+```bash
+source gpu_env_setup.sh
+```
+
+## 1) Repo Setup
+Clone the repository and initialize submodules:
+
+```bash
+git clone https://github.com/gguzunsjsu/bsiPytorch.git
+cd bsiPytorch
+git submodule update --init --recursive
+```
+
+Create and activate a Python environment with a CUDA-enabled PyTorch build that matches your system.
+
+## 2) Build / Rebuild the `bsi_ops` Extension
+Move into the extension directory and rebuild:
+
+```bash
+cd bsi_ops
 bash rebuild_local.sh
 ```
 
-## Stable Same-Bit Baseline Configuration
+Notes:
+- This uninstalls any existing `bsi_ops` installation.
+- It cleans previous build artifacts.
+- It reinstalls the extension through `pip install . -v`.
+- Build logs are written to `bsi_ops/install.log`.
+
+## 3) Stable Same-Bit Baseline Configuration
 Use the following environment variables for the stable same-bit baseline:
 
 ```bash
@@ -50,8 +73,15 @@ Notes:
 - `BSI_PROFILE=0` is better for fairer end-to-end runtime measurement.
 - `BSI_DOT_DEBUG=1` prints the selected kernel path and shape metadata.
 
-## Baseline Test Commands
-### Kernel-Only Checks
+## 4) Kernel-Only Checks
+The apples-to-apples benchmark harness in `benchmarks/benchmark_apples_to_apples_bsi.py` supports three modes:
+
+- `kernel_only`: builds keys and queries once and measures only the BSI dot kernel against `torch.matmul`
+- `linear_e2e`: includes per-call query building and approximates a single BSI linear layer end to end
+- `model_e2e`: shells into the full LAMBADA evaluator and measures end-to-end model behavior
+
+Use `kernel_only` to study the pure kernel, `linear_e2e` to include runtime query construction, and `model_e2e` to study real model behavior.
+
 FC1-like 6.7B shape:
 
 ```bash
@@ -61,7 +91,7 @@ python benchmarks/benchmark_apples_to_apples_bsi.py --modes kernel_only \
   --torch_dtype fp16 --bsi_profile 0 --base_dtype fp16
 ```
 
-LM-head / very-wide output shape:
+Very-wide output shape:
 
 ```bash
 python benchmarks/benchmark_apples_to_apples_bsi.py --modes kernel_only \
@@ -70,7 +100,7 @@ python benchmarks/benchmark_apples_to_apples_bsi.py --modes kernel_only \
   --torch_dtype fp16 --bsi_profile 0 --base_dtype fp16
 ```
 
-### Model End-to-End
+## 5) Model End-to-End
 `opt-6.7b`, `lambada`, `num_samples=200`, attribution mode:
 
 ```bash
@@ -81,7 +111,7 @@ python benchmarks/benchmark_apples_to_apples_bsi.py --modes model_e2e \
   --scope all --bsi_device cuda --bsi_profile 1 --base_dtype fp16
 ```
 
-## Nsight Compute Profiling
+## 6) Nsight Compute Profiling
 The preferred kernel for the current stable path on SM90/H100 is:
 
 - `popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_tma_tensorB`
@@ -132,7 +162,20 @@ Open a saved report with:
 ncu -i ncu_rsweep4_tma_fc1.ncu-rep
 ```
 
-## Notes on Interpretation
+## 7) Figure Workflow
+Generate the benchmark plots used by the LaTeX report:
+
+```bash
+python docs/latex/scripts/generate_benchmark_plots.py
+```
+
+If you export Nsight screenshots or other manual images, place them in `docs/latex/figures/raw/` and stage them into the filenames expected by the LaTeX document:
+
+```bash
+bash docs/latex/scripts/stage_ncu_screenshots.sh docs/latex/figures/raw docs/latex/figures/manual
+```
+
+## 8) Notes on Interpretation
 - Use `kernel_only` to study the pure BSI dot kernel.
 - Use `linear_e2e` to include per-call query building.
 - Use `model_e2e` for end-to-end LLM behavior.
