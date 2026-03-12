@@ -1,0 +1,54 @@
+\chapter{Experimental Setup}
+\section{Hardware and Measurement Conventions}
+The implementation targets CUDA-capable GPUs and is specifically optimized for SM90/H100 systems in the stable tensor-core path. Two measurement regimes are used:
+\begin{enumerate}[leftmargin=2em]
+\item \texttt{BSI\_PROFILE=1} for build/dot attribution,
+\item \texttt{BSI\_PROFILE=0} for fairer runtime timing.
+\end{enumerate}
+Because dot time is the primary optimization target in this thesis, the main kernel-attribution results use \texttt{BSI\_PROFILE=1}. Those numbers should be interpreted as internal timing breakdowns rather than fully asynchronous throughput measurements.
+
+\section{Primary Evaluation Configuration}
+Unless otherwise noted, the principal results use:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{decimal\_places = 2}
+\item \texttt{compress\_threshold = 0.5}
+\item \texttt{num\_samples = 1000}
+\item \texttt{max\_seq\_len = 512}
+\item \texttt{base\_dtype = fp16}
+\end{itemize}
+
+\section{Models}
+The primary model family is OPT with the following checkpoints:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{facebook/opt-125m}
+\item \texttt{facebook/opt-1.3b}
+\item \texttt{facebook/opt-6.7b}
+\end{itemize}
+The 30B model is used as a stress test to study scope sensitivity rather than as the primary optimization target.
+
+\section{Representative Kernel Shapes}
+Kernel-only studies emphasize two shapes for the stable baseline:
+\begin{itemize}[leftmargin=2em]
+\item $Q=512, R=16384, D=4096$, corresponding to an FC1-like layer in \texttt{opt-6.7b}
+\item $Q=512, R=50272, D=4096$, corresponding to a very wide output or vocabulary-scale projection
+\end{itemize}
+These shapes are also used as the primary Nsight Compute profiling targets.
+
+\section{Scope Policies}
+Three scope policies are implemented:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{scope=all}: replace all eligible linear layers,
+\item \texttt{scope=attention}: replace only attention projections,
+\item \texttt{scope=mlp}: replace only feed-forward layers.
+\end{itemize}
+The accuracy results show that these scope choices correspond to meaningfully different performance and quality regimes.
+
+\section{Documentation and Reproducibility Workflow}
+The operational workflow used throughout the study consists of four steps:
+\begin{enumerate}[leftmargin=2em]
+\item initialize network and cluster-specific GPU environment helpers,
+\item activate the Python environment and rebuild the extension,
+\item run kernel-only and model-level experiments,
+\item profile the stable kernel with Nsight Compute.
+\end{enumerate}
+The exact commands are collected in Appendix~A and are mirrored in the project README so that the operational documentation stays aligned across the written report and the project documentation.

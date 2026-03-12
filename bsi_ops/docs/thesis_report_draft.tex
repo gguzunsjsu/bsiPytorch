@@ -1,0 +1,147 @@
+\documentclass[12pt,oneside]{report}
+\usepackage[left=1.5in,right=1in,top=1.25in,bottom=1.25in]{geometry}
+\IfFileExists{mathptmx.sty}{\usepackage{mathptmx}}{}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{setspace}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{xcolor}
+\usepackage{url}
+\usepackage{tocloft}
+\usepackage{etoolbox}
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+\doublespacing
+\pagestyle{plain}
+\raggedright
+\setlength{\parindent}{0.5in}
+\setlength{\parskip}{0pt}
+\graphicspath{{latex/figures/generated/}{latex/figures/manual/}}
+\captionsetup{font=small}
+
+% SJSU-style metadata placeholders
+\newcommand{\ThesisTitle}{BSI-Native Tensor-Core Kernels for Compressed LLM Inference}
+\newcommand{\ThesisAuthor}{Student Name}
+\newcommand{\DegreeName}{Master of Science}
+\newcommand{\ProgramName}{Computer Engineering}
+\newcommand{\InstitutionName}{San Jose State University}
+\newcommand{\GraduationMonth}{May}
+\newcommand{\GraduationYear}{2026}
+\newcommand{\CommitteeA}{Advisor Name, Ph.D.}
+\newcommand{\CommitteeB}{Committee Member Name, Ph.D.}
+\newcommand{\CommitteeC}{Committee Member Name, Ph.D.}
+
+\newcommand{\MakeSJSUTitlePage}{%
+  \thispagestyle{empty}%
+  \begin{center}
+  {\MakeUppercase{\ThesisTitle}\par}
+  \vfill
+  A Thesis\par
+  Presented to\par
+  The Faculty of the Department of \ProgramName\par
+  \InstitutionName\par
+  \vfill
+  In Partial Fulfillment\par
+  of the Requirements for the Degree\par
+  \DegreeName\par
+  \vfill
+  by\par
+  \ThesisAuthor\par
+  \GraduationMonth\ \GraduationYear\par
+  \end{center}
+  \clearpage
+}
+
+\newcommand{\MakeSJSUCopyrightPage}{%
+  \thispagestyle{empty}%
+  \null\vfill
+  \begin{center}
+  \textcopyright\ \GraduationYear\par
+  \ThesisAuthor\par
+  ALL RIGHTS RESERVED
+  \end{center}
+  \vfill\null
+  \clearpage
+}
+
+\newcommand{\MakeSJSUCommitteePage}{%
+  \thispagestyle{empty}%
+  \begin{center}
+  \MakeUppercase{\ThesisTitle}\par
+  \vspace{1.5in}
+  \ThesisAuthor\par
+  \vspace{1in}
+  APPROVED FOR THE DEPARTMENT OF \MakeUppercase{\ProgramName}\par
+  \vspace{0.75in}
+  \end{center}
+  \noindent
+  \CommitteeA\par
+  \vspace{0.75in}
+  \noindent
+  \CommitteeB\par
+  \vspace{0.75in}
+  \noindent
+  \CommitteeC\par
+  \vfill
+  \begin{center}
+  APPROVED FOR THE UNIVERSITY
+  \end{center}
+  \clearpage
+}
+
+\newcommand{\MakeSJSUAbstractPage}{%
+  \thispagestyle{empty}%
+  \begin{center}
+  \MakeUppercase{\ThesisTitle}\par
+  by \ThesisAuthor
+  \end{center}
+  \vspace{0.5in}
+  \input{latex/chapters/00_abstract}
+  \clearpage
+}
+
+\begin{document}
+
+\MakeSJSUTitlePage
+\MakeSJSUCopyrightPage
+\MakeSJSUCommitteePage
+\MakeSJSUAbstractPage
+
+\pagenumbering{roman}
+\setcounter{page}{5}
+
+\chapter*{Acknowledgments}
+Place acknowledgments here.
+\clearpage
+
+\tableofcontents
+\clearpage
+\listoffigures
+\clearpage
+\listoftables
+\clearpage
+
+\pagenumbering{arabic}
+
+\input{latex/chapters/01_introduction}
+\input{latex/chapters/02_background}
+\input{latex/chapters/03_bsi_construction}
+\input{latex/chapters/04_methodology}
+\input{latex/chapters/05_experimental_setup}
+\input{latex/chapters/06_results}
+\input{latex/chapters/07_ablation_profiling}
+\input{latex/chapters/08_discussion}
+\input{latex/chapters/09_future_work}
+\input{latex/chapters/10_conclusion}
+
+\appendix
+\input{latex/chapters/A_reproducibility}
+
+\bibliographystyle{plain}
+\bibliography{latex/references}
+
+\end{document}

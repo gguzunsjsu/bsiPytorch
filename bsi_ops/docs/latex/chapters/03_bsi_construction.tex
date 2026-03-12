@@ -1,0 +1,47 @@
+\chapter{BSI and Bitmap Construction}
+\section{CPU-Side Foundation in \texttt{bsiCPP}}
+The semantic basis of the implementation comes from the CPU-side BSI library in \texttt{../bsiCPP}. The most important classes are \texttt{HybridBitmap}, \texttt{BsiVector}, \texttt{BsiSigned}, and \texttt{BsiUnsigned}. These classes define what a BSI object means before it is lowered into CUDA tensors.
+
+\section{HybridBitmap}
+\texttt{HybridBitmap} stores an individual bitmap slice and supports two modes: compressed bitmap mode and verbatim bitmap mode. Each bitmap stores a word buffer, a density estimate, and a flag indicating whether it is stored verbatim. This detail matters because BSI storage depends not only on slice count but also on slice density.
+
+\begin{figure}[H]
+\centering
+\IfFileExists{hybridbitmap_structure.png}{\includegraphics[width=0.9\textwidth]{hybridbitmap_structure.png}}{\fbox{\parbox{0.9\textwidth}{\centering Placeholder for a figure illustrating the \texttt{HybridBitmap} structure, including compressed and verbatim slice modes, the word buffer, and density metadata.}}}
+\caption{Hybrid bitmap representation used for BSI slices.}
+\label{fig:hybridbitmap}
+\end{figure}
+
+\section{BsiVector, Signedness, and Existence Bitmaps}
+\texttt{BsiVector} stores the slice vector along with the number of slices, the existence bitmap, the sign slice, the row count, decimal scaling metadata, first-slice and last-slice flags, and two's-complement state. For nonnegative values the builder uses \texttt{BsiUnsigned}; for signed values it uses \texttt{BsiSigned} and marks the representation as two's complement. For dense transformer weights and activations, the existence bitmap is typically all ones.
+
+\section{Building BSI from Dense Numeric Values}
+The \texttt{buildBsiVector} routines in \texttt{BsiVector.hpp} implement the core conversion from dense numeric vectors to slices:
+\begin{enumerate}[leftmargin=2em]
+\item scale each value by $10^{\texttt{decimalPlaces}}$,
+\item round to an integer,
+\item determine the required slice count from the maximum absolute value,
+\item transpose values into slice-major bitmaps using \texttt{bringTheBits}.
+\end{enumerate}
+The \texttt{bringTheBits} routine tests whether the relevant bit is set in each input value and writes that result into the appropriate bitmap slice. Each slice also tracks the number of set bits so that the builder can later decide whether compressed or verbatim storage is more appropriate.
+
+\section{Compression Heuristic}
+For each slice, the CPU builder computes
+\[
+\texttt{bitDensity} = \frac{\texttt{ones}}{\texttt{numberOfElements}}
+\]
+and then applies the heuristic
+\[
+\texttt{compressRatio} = 1 - (1 - \texttt{bitDensity})^{2b} - (\texttt{bitDensity})^{2b},
+\]
+where $b$ is the bitmap word size in bits. If the estimated compression ratio is below the configured threshold and nonzero, the slice is stored in compressed form; otherwise it is stored verbatim. This per-slice decision is one reason BSI memory footprint changes nontrivially across models and scopes.
+
+\begin{figure}[H]
+\centering
+\IfFileExists{bsi_build_pipeline.png}{\includegraphics[width=0.9\textwidth]{bsi_build_pipeline.png}}{\fbox{\parbox{0.9\textwidth}{\centering Placeholder for a figure showing dense values being scaled, converted to integers, transposed into slice-major bitmaps, and then classified into compressed or verbatim storage.}}}
+\caption{CPU-side BSI construction pipeline from dense values to slices.}
+\label{fig:bsi-build}
+\end{figure}
+
+\section{Why This Matters for CUDA}
+The CUDA implementation inherits these semantics even when it no longer uses the CPU builder directly for the active inference path. The GPU code must preserve the meaning of slice weights, sign handling, existence masks, and decimal scaling. In that sense, the CPU-side code defines the algebra and the CUDA path defines the execution strategy.

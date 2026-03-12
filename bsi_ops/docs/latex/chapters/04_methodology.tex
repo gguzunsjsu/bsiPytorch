@@ -1,0 +1,43 @@
+\chapter{Methodology}
+\section{Quantized Linear Replacement}
+Each dense linear layer selected by the scope policy is replaced by a BSI-native linear layer. Under \texttt{scope=all}, all linear layers except the language-model head are replaced. Under \texttt{scope=attention}, only the attention projections are replaced. Under \texttt{scope=mlp}, only the feed-forward layers are replaced. This scope control later becomes critical for analyzing large-model sensitivity.
+
+\section{Key Construction}
+The CUDA entry point \texttt{build\_bsi\_keys\_cuda} constructs a prebuilt key capsule from the dense weight matrix. Since weights are static, this stage is the natural place to perform one-time layout preparation. The resulting structure stores the slice words, slice weights, and metadata needed by the fused dot kernel.
+
+\section{Query Construction}
+At runtime, activations are flattened into a two-dimensional batch and passed to \texttt{build\_bsi\_queries\_cuda\_batch\_packed}. This builder returns the query words, slice weights, and chunk-scale tensors used by the fused dot path. Batching the builder call is essential because per-vector Python loops would dominate the cost of narrow layers and would make kernel improvements hard to interpret.
+
+\section{Stable Same-Bit Baseline Configuration}
+The stable same-bit baseline used throughout the main study is:
+\begin{verbatim}
+BSI_TC_DOT=1
+BSI_TC_FIXED_INT=1
+BSI_TC_CPASYNC=1
+BSI_TC_TM=32
+BSI_FIXED_BITS_KEYS=6
+BSI_FIXED_BITS_QUERIES=7
+BSI_FIXED_CHUNK_SCALE=1
+BSI_TC_R_SWEEP=4
+BSI_TC_TMA=1
+\end{verbatim}
+The optional debug flag
+\begin{verbatim}
+BSI_DOT_DEBUG=1
+\end{verbatim}
+prints the selected kernel path and relevant shape metadata.
+
+\section{Tile Shape and Kernel Geometry}
+The most defensible tile shape for this design is a logical $32 \times 128 \times 256$-bit CTA, corresponding to:
+\begin{itemize}[leftmargin=2em]
+\item query tile height $M=32$,
+\item output width $N=32 \times 4 = 128$,
+\item chunk depth $K=256$ bits.
+\end{itemize}
+This tile is defensible because it aligns with the BMMA \texttt{m16n8k256} granularity, remained stable across the principal OPT sizes in the study, and provides a concrete hardware-aware design point that can be defended in a thesis setting.
+
+\section{Weighted Popcount Formulation}
+The dot product is computed from slice pairs. For each query bitplane and key bitplane pair, the kernel computes bitwise overlaps using Boolean tensor-core style operations and then weights those overlaps by the corresponding slice weights. Those weighted overlaps are accumulated across all slice pairs and across all chunks. For the stable same-bit setting, the arithmetic cost grows with $S_a \times S_b = 7 \times 6 = 42$ slice interactions per chunk. This interaction count is one of the reasons native BSI execution remains substantially more expensive than dense FP16 GEMM.
+
+\section{Instrumentation Strategy}
+The evaluation records multiple timing counters inside the BSI linear wrapper, including total build time, total dot time, and finer-grained build subcomponents. This instrumentation made it possible to distinguish improvements that truly reduced dot time from experiments that merely shifted cost into preprocessing or query construction.

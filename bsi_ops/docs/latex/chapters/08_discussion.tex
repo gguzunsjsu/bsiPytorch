@@ -1,0 +1,9 @@
+\chapter{Discussion}
+\section{What Was Achieved}
+The work achieved a full BSI-native inference pipeline for OPT-family models, a functioning CUDA builder for weights and activations, a stable same-bit tensor-core baseline on Hopper-class hardware, and a benchmark harness that separates kernel-only, layer-level, and end-to-end behavior. It also established a clear compression/accuracy/performance tradeoff across scope policies and model sizes.
+
+\section{What Must Be Defended}
+The defensible thesis argument is not that BSI already surpasses dense Torch inference. The defensible argument is that BSI becomes materially more viable only when representation and execution are designed together. The implementation and the measurements support that claim by showing that naive bit-sliced execution is slow, that some layout-aware changes help, and that the remaining gap is now well explained by profiler evidence.
+
+\section{What Was Not Achieved}
+Several things should not be overstated. The BSI dot kernel does not yet match dense FP16 throughput. The current fixed-bit regime does not scale cleanly to the 30B model under \texttt{scope=all}. Lower slice counts improve speed but do not preserve enough accuracy to serve as the main thesis result. These limitations do not invalidate the work, but they define its scope clearly.

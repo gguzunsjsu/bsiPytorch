@@ -1,0 +1,15 @@
+\chapter{Background and Related Work}
+\section{OPT Models}
+The experiments are built around the OPT family introduced by Zhang et al.~\cite{opt}. OPT provides a consistent decoder-only transformer architecture across multiple scales, which makes it a practical platform for studying how representation and kernel changes behave as width and depth increase.
+
+\section{Dense Quantization Context}
+Several influential methods provide context for this work. LLM.int8()~\cite{llmint8} shows that outlier-aware INT8 execution can preserve quality at scale. ZeroQuant~\cite{zeroquant} emphasizes that backend design is part of the quantization problem. GPTQ~\cite{gptq} and AWQ~\cite{awq} demonstrate that aggressive low-bit compression can remain accurate when quantization uses stronger error control or activation awareness. SmoothQuant~\cite{smoothquant} is especially relevant because it provides a practical dense W8A8 reference point and is already represented in this codebase through dedicated benchmark scripts.
+
+\section{LAMBADA}
+The end-to-end evaluation uses the LAMBADA dataset~\cite{lambada}. In this implementation, the task is treated as next-token prediction at the last non-padding position after right-padding or truncation to a maximum sequence length of 512. This yields a lightweight but meaningful measure of quality preservation under BSI replacement.
+
+\section{Hopper Features and Tensor Memory}
+This work targets SM90/H100 systems and uses Hopper-specific features, especially Tensor Memory Accelerator (TMA), to stage tiled data more efficiently from global memory into shared memory~\cite{hopper,tmadocs}. TMA is relevant because BSI kernels operate on structured bitplane tiles rather than ordinary dense tiles. However, better data movement alone is not enough; the kernel is also constrained by scheduling and access inefficiency.
+
+\section{Gap Addressed by This Work}
+The prior literature establishes that quantization can reduce memory footprint and, in dense settings, improve throughput. The gap addressed here is more specialized: how to store weights in BSI form, how to build compatible BSI activations at runtime, how to compute dot products natively from BSI bitplanes, and how to evaluate the resulting system end to end.

@@ -1,0 +1,93 @@
+\chapter{Results}
+\section{Cross-Model Memory and Dot-Latency Results}
+Table~\ref{tab:crossmodel-latency} reports the main comparative results for the stable same-bit baseline.
+
+\begin{table}[H]
+\centering
+\caption{Cross-model memory footprint and per-sample dot latency under the stable same-bit configuration.}
+\label{tab:crossmodel-latency}
+\begin{tabular}{lrrrrrrr}
+\toprule
+Model & FP16 MB & BSI All MB & BSI Attn MB & BSI All Dot & Torch All Dot & BSI Attn Dot & Torch Attn Dot \\
+\midrule
+OPT-125M & 238.875 & 137.783 & 205.195 & 1.913 & 3.044 & 0.890 & 2.158 \\
+OPT-1.3B & 2509.609 & 1070.453 & 2029.984 & 13.859 & 6.955 & 5.158 & 4.210 \\
+OPT-6.7B & 12700.031 & 5022.281 & 10141.031 & 66.452 & 15.493 & 23.003 & 5.357 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+These results show that BSI yields substantial model compression, especially under \texttt{scope=all}. At the same time, dot latency scales less favorably than dense Torch as model size grows. The attention-only regime is consistently cheaper and more accurate than replacing all linear layers.
+
+\begin{figure}[H]
+\centering
+\IfFileExists{memory_comparison.png}{\includegraphics[width=0.9\textwidth]{memory_comparison.png}}{\fbox{\parbox{0.9\textwidth}{\centering Placeholder for a bar chart comparing dense FP16 size, BSI \texttt{scope=all} size, and BSI \texttt{scope=attention} size across OPT-125M, OPT-1.3B, and OPT-6.7B.}}}
+\caption{Model static size comparison across dense and BSI configurations.}
+\label{fig:memory-comparison}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\IfFileExists{dot_latency_comparison.png}{\includegraphics[width=0.9\textwidth]{dot_latency_comparison.png}}{\fbox{\parbox{0.9\textwidth}{\centering Placeholder for a grouped bar chart comparing dense Torch and BSI per-sample dot latency under \texttt{scope=all} and \texttt{scope=attention}.}}}
+\caption{Per-sample dot latency comparison across models and scope policies.}
+\label{fig:dot-latency-comparison}
+\end{figure}
+
+\section{Accuracy Results for \texttt{scope=all}}
+\begin{table}[H]
+\centering
+\caption{Top-1 and Top-5 accuracy under \texttt{scope=all}.}
+\label{tab:scope-all-acc}
+\begin{tabular}{lrrrr}
+\toprule
+Model & Dense Top-1 & BSI Top-1 & Dense Top-5 & BSI Top-5 \\
+\midrule
+OPT-125M & 0.605 & 0.626 & 0.725 & 0.729 \\
+OPT-1.3B & 0.722 & 0.653 & 0.873 & 0.796 \\
+OPT-6.7B & 0.798 & 0.741 & 0.929 & 0.896 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The same-bit baseline is viable on smaller models, but the accuracy gap widens as model size grows. This indicates that a uniform fixed-bit policy is not sufficient for all scales.
+
+\section{Accuracy Results for \texttt{scope=attention}}
+\begin{table}[H]
+\centering
+\caption{Top-1 and Top-5 accuracy under \texttt{scope=attention}.}
+\label{tab:scope-attn-acc}
+\begin{tabular}{lrrrr}
+\toprule
+Model & Dense Top-1 & BSI Top-1 & Dense Top-5 & BSI Top-5 \\
+\midrule
+OPT-125M & 0.605 & 0.608 & 0.725 & 0.722 \\
+OPT-1.3B & 0.722 & 0.666 & 0.873 & 0.821 \\
+OPT-6.7B & 0.798 & 0.779 & 0.929 & 0.921 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Attention-only replacement preserves quality much better than \texttt{scope=all}, especially at larger model sizes. This is consistent with the broader conclusion that the present BSI regime is more compatible with attention projections than with the full feed-forward stack.
+
+\begin{figure}[H]
+\centering
+\IfFileExists{accuracy_scope_all.png}{\includegraphics[width=0.9\textwidth]{accuracy_scope_all.png}}{\fbox{\parbox{0.9\textwidth}{\centering Placeholder for an accuracy plot comparing dense and BSI top-1 and top-5 results under \texttt{scope=all}.}}}
+\caption{Accuracy comparison under \texttt{scope=all}.}
+\label{fig:accuracy-scope-all}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\IfFileExists{accuracy_scope_attention.png}{\includegraphics[width=0.9\textwidth]{accuracy_scope_attention.png}}{\fbox{\parbox{0.9\textwidth}{\centering Placeholder for an accuracy plot comparing dense and BSI top-1 and top-5 results under \texttt{scope=attention}.}}}
+\caption{Accuracy comparison under \texttt{scope=attention}.}
+\label{fig:accuracy-scope-attention}
+\end{figure}
+
+\section{Stable Same-Bit OPT-6.7B Case Study}
+Under the primary evaluation setting, \texttt{facebook/opt-6.7b} produces the following tradeoff:
+\begin{itemize}[leftmargin=2em]
+\item Dense FP16: top-1 $=0.798$, top-5 $=0.929$, dot latency $=15.493$ ms, static size $=12700.031$ MB
+\item BSI, \texttt{scope=all}: top-1 $=0.741$, top-5 $=0.896$, dot latency $=66.452$ ms, static size $=5022.281$ MB
+\item BSI, \texttt{scope=attention}: top-1 $=0.779$, top-5 $=0.921$, dot latency $=23.003$ ms, static size $=10141.031$ MB
+\end{itemize}
+This case study captures the central tradeoff of the work: more aggressive BSI coverage yields better compression but a larger dot-latency penalty and a larger accuracy loss.

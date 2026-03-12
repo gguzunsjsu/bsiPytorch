@@ -1,0 +1,89 @@
+\chapter{Reproducibility Commands}
+\section{Cluster and Environment Setup}
+The following commands assume that the repository has already been cloned and that execution starts from the repository root.
+
+\begin{verbatim}
+source bsi_ops/network_connection.sh
+module load nvhpc-hpcx-cuda12/24.11
+source gpu_connection.sh          # if your cluster provides this helper
+source gpu_env_setup.sh
+git submodule update --init --recursive
+source /home/017510883/miniconda3/bin/activate bsiPytorch
+cd bsi_ops
+bash rebuild_local.sh
+\end{verbatim}
+
+\section{Repository Setup}
+\begin{verbatim}
+git clone https://github.com/gguzunsjsu/bsiPytorch.git
+cd bsiPytorch
+\end{verbatim}
+
+\section{Stable Same-Bit Environment}
+\begin{verbatim}
+export BSI_TC_DOT=1
+export BSI_TC_FIXED_INT=1
+export BSI_TC_CPASYNC=1
+export BSI_TC_TM=32
+export BSI_FIXED_BITS_KEYS=6
+export BSI_FIXED_BITS_QUERIES=7
+export BSI_FIXED_CHUNK_SCALE=1
+export BSI_TC_R_SWEEP=4
+export BSI_TC_TMA=1
+export BSI_DOT_DEBUG=1   # optional
+\end{verbatim}
+
+\section{Kernel-Only Commands}
+\begin{verbatim}
+python benchmarks/benchmark_apples_to_apples_bsi.py --modes kernel_only \
+  --Q 512 --R 16384 --D 4096 \
+  --decimal_places 2 --compress_threshold 0.5 \
+  --torch_dtype fp16 --bsi_profile 0 --base_dtype fp16
+
+python benchmarks/benchmark_apples_to_apples_bsi.py --modes kernel_only \
+  --Q 512 --R 50272 --D 4096 \
+  --decimal_places 2 --compress_threshold 0.5 \
+  --torch_dtype fp16 --bsi_profile 0 --base_dtype fp16
+\end{verbatim}
+
+\section{Model End-to-End Command}
+\begin{verbatim}
+python benchmarks/benchmark_apples_to_apples_bsi.py --modes model_e2e \
+  --model_name facebook/opt-6.7b \
+  --dataset lambada --split validation --num_samples 200 \
+  --decimal_places 2 --compress_threshold 0.5 \
+  --scope all --bsi_device cuda --bsi_profile 1 --base_dtype fp16
+\end{verbatim}
+
+\section{Nsight Compute Commands}
+\begin{verbatim}
+ncu --set full --target-processes all -f -o ncu_rsweep4_tma_fc1 \
+  -k popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_tma_tensorB \
+  --launch-count 1 \
+  python benchmarks/benchmark_apples_to_apples_bsi.py --modes kernel_only \
+    --Q 512 --R 16384 --D 4096 \
+    --decimal_places 2 --compress_threshold 0.5 \
+    --warmup 0 --iters 1 --torch_dtype fp16 --bsi_profile 0 --base_dtype fp16
+
+ncu --set full --target-processes all -f -o ncu_rsweep4_tma_vocab \
+  -k popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_tma_tensorB \
+  --launch-count 1 \
+  python benchmarks/benchmark_apples_to_apples_bsi.py --modes kernel_only \
+    --Q 512 --R 50272 --D 4096 \
+    --decimal_places 2 --compress_threshold 0.5 \
+    --warmup 0 --iters 1 --torch_dtype fp16 --bsi_profile 0 --base_dtype fp16
+
+BSI_TC_TMA=0 ncu --set full --target-processes all -f -o ncu_rsweep4_no_tma \
+  -k popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4 \
+  --launch-count 1 \
+  python benchmarks/benchmark_apples_to_apples_bsi.py --modes kernel_only \
+    --Q 512 --R 16384 --D 4096 \
+    --decimal_places 2 --compress_threshold 0.5 \
+    --warmup 0 --iters 1 --torch_dtype fp16 --bsi_profile 0 --base_dtype fp16
+\end{verbatim}
+
+\section{Figure Generation Commands}
+\begin{verbatim}
+python docs/latex/scripts/generate_benchmark_plots.py
+bash docs/latex/scripts/stage_ncu_screenshots.sh docs/latex/figures/raw docs/latex/figures/manual
+\end{verbatim}

@@ -1,0 +1,10 @@
+\chapter{Future Work}
+The next research steps follow directly from the profiler evidence and the scope-ablation results.
+\begin{enumerate}[leftmargin=2em]
+\item Redesign the arithmetic formulation so that the effective slice interaction count is reduced without abandoning BSI-native execution.
+\item Develop shape-specialized kernels for attention projections, FC1, and FC2 rather than relying on one general stable point.
+\item Introduce layer-aware or subgraph-aware bit policies, especially for MLP layers.
+\item Redesign shared-memory layouts to reduce bank conflicts and excessive wavefronts.
+\item Extend the evaluation beyond OPT and beyond LAMBADA-only scoring.
+\item Calibrate the documentation pipeline further by converting profiler captures and benchmark tables into publication-ready figures automatically.
+\end{enumerate}

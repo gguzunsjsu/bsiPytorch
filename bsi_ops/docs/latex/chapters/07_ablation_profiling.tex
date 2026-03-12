@@ -1,0 +1,33 @@
+\chapter{Ablation Studies and Profiling}
+\section{Scope Ablation}
+The contrast between \texttt{scope=all} and \texttt{scope=attention} is one of the most important ablations in the entire study. It shows that the current BSI regime is not uniformly compatible with all linear subgraphs. Attention-only replacement is clearly more robust. This provides strong motivation for later layer-aware or subgraph-aware policies.
+
+\section{Larger-Model Sensitivity}
+The 30B model was used primarily as a sensitivity study. The observed pattern was that attention-only replacement remained relatively close to the dense baseline, MLP-only replacement degraded more substantially, and \texttt{scope=all} collapsed. The conclusion is that MLP layers are the dominant quality bottleneck under the current fixed-bit BSI regime.
+
+\section{Negative Results from Development}
+Several exploratory ideas did not survive into the stable path:
+\begin{itemize}[leftmargin=2em]
+\item aggressive runtime query repacking increased build time too much,
+\item some low-level layout changes broke end-to-end correctness,
+\item duplicate storage of legacy and experimental tensors inflated model size until corrected,
+\item lower bitwidth improved speed but degraded quality beyond the preferred operating point.
+\end{itemize}
+These negative results are important because they define the real design constraints rather than an idealized design space.
+
+\section{Nsight Compute Findings}
+The most important profiler snapshot came from the same-bit tensor-core kernel on the 6.7B-like FC1 shape $Q=512, R=16384, D=4096$. The critical findings were low achieved occupancy, low eligible warps per scheduler, high no-eligible stall time, and substantial excessive shared/global transaction overhead. The key conclusion is that the current kernel is not primarily DRAM-bandwidth bound. The more fundamental limitation is scheduler and access inefficiency.
+
+\begin{figure}[H]
+\centering
+\IfFileExists{ncu_summary_fc1.png}{\includegraphics[width=0.9\textwidth]{ncu_summary_fc1.png}}{\fbox{\parbox{0.9\textwidth}{\centering Placeholder for an Nsight Compute screenshot or summary chart showing occupancy, eligible warps, no-eligible stalls, and memory throughput for the stable same-bit FC1-like kernel.}}}
+\caption{Nsight Compute summary for the FC1-like stable same-bit kernel.}
+\label{fig:ncu-summary-fc1}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\IfFileExists{ncu_summary_vocab.png}{\includegraphics[width=0.9\textwidth]{ncu_summary_vocab.png}}{\fbox{\parbox{0.9\textwidth}{\centering Placeholder for an Nsight Compute screenshot or summary chart for the very-wide output kernel configuration.}}}
+\caption{Nsight Compute summary for the very-wide output stable same-bit kernel.}
+\label{fig:ncu-summary-vocab}
+\end{figure}
