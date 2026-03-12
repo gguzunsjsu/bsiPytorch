@@ -14,7 +14,6 @@ The main goals of this code are:
 - `../bsiCPP`: CPU-side BSI and bitmap implementation
 - `benchmarks/`: kernel and model evaluation scripts
 - `csrc/cuda/`: PyTorch CUDA extension and dot kernels
-- `docs/`: thesis/report drafts and notes
 
 ## Environment
 If you are on the cluster and need outbound access for HuggingFace downloads:
@@ -82,42 +81,6 @@ python benchmarks/benchmark_apples_to_apples_bsi.py --modes model_e2e \
   --scope all --bsi_device cuda --bsi_profile 1 --base_dtype fp16
 ```
 
-## Primary Evaluation Configuration
-The main comparative numbers used in the report were measured with:
-
-- `decimal_places = 2`
-- `compress_threshold = 0.5`
-- `num_samples = 1000`
-- `max_seq_len = 512`
-- `base_dtype = fp16`
-
-## Baseline Results
-### Memory and Dot Latency
-| Model | Dense FP16 Static Size (MB) | BSI Static Size, `scope=all` (MB) | BSI Static Size, `scope=attention` (MB) | BSI Dot Latency, `scope=all` | Torch Dot Latency, `scope=all` | BSI Dot Latency, `scope=attention` | Torch Dot Latency, `scope=attention` |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| `opt-125m` | 238.875 | 137.783 | 205.195 | 1.913 ms | 3.044 ms | 0.890 ms | 2.158 ms |
-| `opt-1.3b` | 2509.609 | 1070.453 | 2029.984 | 13.859 ms | 6.955 ms | 5.158 ms | 4.210 ms |
-| `opt-6.7b` | 12700.031 | 5022.281 | 10141.031 | 66.452 ms | 15.493 ms | 23.003 ms | 5.357 ms |
-
-### Accuracy, `scope=all`
-| Model | Dense Top-1 | BSI Top-1 | Dense Top-5 | BSI Top-5 |
-|---|---:|---:|---:|---:|
-| `opt-125m` | 0.605 | 0.626 | 0.725 | 0.729 |
-| `opt-1.3b` | 0.722 | 0.653 | 0.873 | 0.796 |
-| `opt-6.7b` | 0.798 | 0.741 | 0.929 | 0.896 |
-
-### Accuracy, `scope=attention`
-| Model | Dense Top-1 | BSI Top-1 | Dense Top-5 | BSI Top-5 |
-|---|---:|---:|---:|---:|
-| `opt-125m` | 0.605 | 0.608 | 0.725 | 0.722 |
-| `opt-1.3b` | 0.722 | 0.666 | 0.873 | 0.821 |
-| `opt-6.7b` | 0.798 | 0.779 | 0.929 | 0.921 |
-
-Interpretation:
-- `scope=all` gives the best compression, but accuracy drops as model size grows.
-- `scope=attention` preserves accuracy better, especially on larger models.
-- Dot latency remains the main bottleneck for `opt-1.3b` and `opt-6.7b`.
-
 ## Nsight Compute Profiling
 The preferred kernel for the current stable path on SM90/H100 is:
 
@@ -174,8 +137,3 @@ ncu -i ncu_rsweep4_tma_fc1.ncu-rep
 - Use `linear_e2e` to include per-call query building.
 - Use `model_e2e` for end-to-end LLM behavior.
 - Use `scope=attention` and `scope=all` separately. They capture different speed/accuracy regimes.
-- For thesis reporting, dot latency and memory compression should be reported alongside accuracy; compression alone is not sufficient.
-
-## Related Documents
-- Thesis draft (Markdown): `docs/thesis_report_draft.md`
-- Thesis draft (LaTeX): `docs/thesis_report_draft.tex`
