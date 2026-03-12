@@ -1,15 +1,58 @@
-\chapter{Background and Related Work}
-\section{OPT Models}
-The experiments are built around the OPT family introduced by Zhang et al.~\cite{opt}. OPT provides a consistent decoder-only transformer architecture across multiple scales, which makes it a practical platform for studying how representation and kernel changes behave as width and depth increase.
+\chapter{Background and Foundations of Bit-Sliced Vector Algebra}
+
+\section{Bitmaps, BSI, and the Origin of the Representation}
+The conceptual foundation of the present implementation is a bitmap-oriented representation rather than a conventional dense tensor representation. In the bitmap view, a numeric vector is decomposed into several bitplanes or slices, and each slice is represented as a bitmap over vector positions. This idea is rooted in Bit-Sliced Indexing, where numeric attributes are encoded so that selection, aggregation, and ranking operations can be carried out through bitwise logic. Earlier database work on hybrid bit-vectors showed that the efficiency of a bitmap representation depends not only on the number of bits stored but also on the density distribution of those bits and the storage form selected for each slice \cite{hybridbitmap}.
+
+The code foundation used in this project adopts that idea in the form of Bit-Sliced Vectors. Instead of storing a vector as a dense array of scalar values, the absolute-value bits are distributed across multiple bitmaps, while sign and existence information are tracked separately. Once that representation is available, arithmetic can be written in terms of bitwise intersections, unions, exclusive-or, and weighted bit counts. This is the algebraic basis from which the later CUDA implementation was derived.
+
+\section{CPU-Side BSI Construction in the Bitmap Library}
+The CPU-side implementation in the \texttt{bsiCPP} codebase provides the semantic definition of a BSI object. Four structures are central to that implementation.
+
+\subsection{HybridBitmap}
+\texttt{HybridBitmap} represents a single bitmap slice. Each slice can be stored either in compressed form or in verbatim form. The object keeps the bitmap words, a density estimate, and a flag indicating whether the stored form is verbatim. This choice is important because slice storage cost depends strongly on bit density. Sparse slices may benefit from compression, while dense or highly irregular slices may be better stored verbatim.
+
+\subsection{BsiVector}
+\texttt{BsiVector} is the abstract container for a full bit-sliced numeric vector. It maintains the vector of slice bitmaps, the number of slices, the row count, the decimal scaling metadata, and the sign and existence bitmaps. The existence bitmap records whether a value is present at a position. The sign bitmap records whether the value is negative. Together, these structures allow the representation to support signed, unsigned, and partially populated vectors.
+
+\subsection{BsiSigned and BsiUnsigned}
+The CPU implementation separates signed and unsigned construction through \texttt{BsiSigned} and \texttt{BsiUnsigned}. Nonnegative values can be represented without a negative sign contribution, while signed values require either sign-magnitude logic or two's-complement handling. In practice, transformer weights and activations require the signed path because the tensors contain both positive and negative values.
+
+\subsection{Building Slices with \texttt{buildBsiVector} and \texttt{bringTheBits}}
+The builder routines scale floating-point values by a decimal factor, round them to integers, determine how many slices are needed from the largest absolute value, and then transpose the resulting integer vector into slice-major bitmaps. The routine that performs the transpose is \texttt{bringTheBits}. For each element and for each bit position of interest, it tests whether that bit is set and writes the result into the corresponding bitmap slice. In other words, \texttt{bringTheBits} converts a list of integers into a stack of aligned bitplanes.
+
+This construction step has two important consequences. First, it exposes a direct tradeoff between precision and the number of slices stored or processed. Second, it makes the storage cost of each slice observable. The builder counts the number of set bits per slice, estimates the slice density, and uses that information to decide whether the slice should remain verbatim or be stored in compressed form.
+
+\section{Compression Heuristic and Existence Tracking}
+Each slice is assigned a density estimate based on the fraction of one bits in that slice. The builder then applies a compression heuristic that compares the expected benefit of compressed storage against a user-provided threshold. This decision happens per slice rather than per vector. As a result, two BSI vectors with the same number of slices can occupy different amounts of memory if their slice densities differ.
+
+The existence bitmap is equally important, even when the application seems dense. In a database-style workload it marks whether values are present or absent at each position. In the transformer setting used here, the existence bitmap is usually all ones because every weight element or activation element exists. Even then, the existence bitmap remains a semantic part of the representation and must be preserved by the builder logic.
+
+\section{Bit-Sliced Vector Algebra from the Earlier CPU Study}
+The earlier technical work on bit-sliced vector algebra extended the representation beyond storage and demonstrated several operations directly on the BSI form.
+
+\subsection{Dot Product}
+The bit-sliced dot product follows a simple but important idea. Given two bit-sliced vectors, corresponding magnitude slices are intersected through bitwise AND operations. The resulting set-bit counts determine how many vector positions contribute at a particular significance level. Those counts are then multiplied by the positional weight implied by the slice indices and accumulated into the final scalar result. Sign bitmaps determine whether a shared overlap contributes positively or negatively.
+
+This formulation is central to the later CUDA design. The GPU kernel is not performing a dense multiply-add over scalar lanes. It is computing overlaps between bitplanes and then converting those overlaps into weighted scalar contributions.
+
+\subsection{Vector Summation}
+Bit-sliced summation uses the same principle without the second input vector. The number of set bits in each slice determines how many values contribute that slice's weight to the total sum. Sign handling then determines whether the contribution is positive or negative. Although this operation is not the main kernel target in the present transformer implementation, it demonstrates that the BSI representation supports a broader numeric algebra than just dot product.
+
+\subsection{Element-Wise Multiplication}
+Element-wise multiplication can also be expressed through bit-sliced interactions. The magnitude slices of one vector are combined with the magnitude slices of another vector, while the sign bitmap of the output is the exclusive-or of the two input sign bitmaps. This is more expensive than the corresponding dense operation, but it reinforces the key idea that the representation is capable of supporting arithmetic directly.
+
+\subsection{Top-K Queries}
+The earlier bit-sliced algebra also implemented top-k maximum and top-k minimum queries. These operations process slices from the most significant slice toward the least significant one, progressively refining the candidate set through bitmap intersections. Top-k is not used directly in the present LLM inference path, but it is part of the broader reason BSI is attractive: the representation supports more than one kind of vector operation and exposes control over precision at the slice level.
+
+\section{Lessons from the Earlier CPU Evaluation}
+The earlier CPU-side report evaluated bit-sliced vector operations on randomly generated vectors and on weights extracted from BERT \cite{bert,cmpe298report}. The random-data experiments used vectors with up to ten million elements across multiple value ranges. The BERT experiments flattened trained model weights into one-dimensional arrays and compared BSI-based operations against dense PyTorch and C++ vector baselines.
+
+Two findings from that earlier study shaped the present work directly.
+
+First, BSI often reduced memory consumption, especially for dot product and summation. That made the representation attractive for resource-constrained inference settings. Second, CPU execution time remained poor for the core arithmetic operations, particularly for dot product and multiplication. The BSI method carried too much bit-manipulation and bookkeeping overhead on general-purpose CPU code to compete with optimized dense implementations. That was the turning point: it suggested that the representation itself was still promising, but that the arithmetic had to be moved to hardware more suited to bit-parallel execution.
 
 \section{Dense Quantization Context}
-Several influential methods provide context for this work. LLM.int8()~\cite{llmint8} shows that outlier-aware INT8 execution can preserve quality at scale. ZeroQuant~\cite{zeroquant} emphasizes that backend design is part of the quantization problem. GPTQ~\cite{gptq} and AWQ~\cite{awq} demonstrate that aggressive low-bit compression can remain accurate when quantization uses stronger error control or activation awareness. SmoothQuant~\cite{smoothquant} is especially relevant because it provides a practical dense W8A8 reference point and is already represented in this codebase through dedicated benchmark scripts.
+The present work is part of a broader inference-optimization landscape. Methods such as LLM.int8() \cite{llmint8}, ZeroQuant \cite{zeroquant}, GPTQ \cite{gptq}, AWQ \cite{awq}, and SmoothQuant \cite{smoothquant} all show that low-bit inference can reduce memory cost and, in dense settings, can improve throughput. The difference is that these methods typically keep the execution substrate dense. They quantize weights or activations but then rely on dense INT8, INT4, or mixed-precision matrix multiplication. The problem studied here is different. The representation itself is bit-sliced, and the execution path is required to stay bit-sliced rather than converting the data back into a dense low-precision matrix before the kernel launch.
 
-\section{LAMBADA}
-The end-to-end evaluation uses the LAMBADA dataset~\cite{lambada}. In this implementation, the task is treated as next-token prediction at the last non-padding position after right-padding or truncation to a maximum sequence length of 512. This yields a lightweight but meaningful measure of quality preservation under BSI replacement.
-
-\section{Hopper Features and Tensor Memory}
-This work targets SM90/H100 systems and uses Hopper-specific features, especially Tensor Memory Accelerator (TMA), to stage tiled data more efficiently from global memory into shared memory~\cite{hopper,tmadocs}. TMA is relevant because BSI kernels operate on structured bitplane tiles rather than ordinary dense tiles. However, better data movement alone is not enough; the kernel is also constrained by scheduling and access inefficiency.
-
-\section{Gap Addressed by This Work}
-The prior literature establishes that quantization can reduce memory footprint and, in dense settings, improve throughput. The gap addressed here is more specialized: how to store weights in BSI form, how to build compatible BSI activations at runtime, how to compute dot products natively from BSI bitplanes, and how to evaluate the resulting system end to end.
+\section{Transformer Context}
+OPT \cite{opt} and the transformer architecture more broadly \cite{attention} provide a practical testbed for this study. Transformer inference stresses precisely the operations that BSI must accelerate: repeated dot products and matrix products in attention projections and feed-forward layers. This makes the transformer setting a natural place to ask whether the bit-sliced algebra that was useful on CPU can be scaled into a practical GPU inference pipeline.

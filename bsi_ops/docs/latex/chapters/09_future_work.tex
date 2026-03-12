@@ -1,10 +1,32 @@
 \chapter{Future Work}
-The next research steps follow directly from the profiler evidence and the scope-ablation results.
+
+The next stage of the work follows directly from the results already collected. The current implementation has moved the problem from representation feasibility to execution efficiency. The remaining challenge is therefore not whether BSI can be used at all, but how the BSI arithmetic and data layout should evolve so that the GPU can execute it more efficiently at fixed quality.
+
+\section{Reduce Effective Slice Interaction Cost}
+The stable same-bit design still pays a high arithmetic cost because every chunk requires many slice-pair interactions. A natural next step is to redesign the arithmetic formulation so that the effective number of interactions per chunk is reduced without abandoning the BSI-native execution model. Mixed-radix or grouped-bit formulations are promising candidates because they change the structure of the arithmetic itself rather than only tuning the same inner loop.
+
+\section{Shape-Specialized Kernel Families}
+The current stable operating point is intentionally general within the fixed-bit setting. A more mature system should specialize further. Attention projections, feed-forward expansion layers, and feed-forward contraction layers do not share the same shapes or the same runtime balance between preprocessing and arithmetic. Separate kernel families for those layer classes could improve tile reuse and reduce the overhead that comes from trying to force several different shapes through one stable kernel geometry.
+
+\section{Layer-Aware Bit Policies}
+The 30B sensitivity study shows that uniform fixed-bit settings are too coarse. Attention layers tolerate the current BSI regime much better than MLP layers. Future work should therefore move toward layer-aware or subgraph-aware policies. That could include different slice counts by layer class, calibration-informed thresholds, or BSI-specific smoothing and scaling policies that preserve the representation while distributing error more intelligently across the model.
+
+\section{Better Layouts for the Dynamic Side}
+The rejected runtime query-repacking experiments showed that dynamic-side layout changes can easily cost more than they save. That does not mean the dynamic side should never be redesigned. It means the redesign must respect the fact that activations are rebuilt every forward pass. Future work should focus on query-side layouts that are simple enough to construct cheaply while still helping the kernel consume slices more efficiently.
+
+\section{Broader Model and Task Coverage}
+The present study uses OPT and LAMBADA because they provide a stable baseline across multiple model sizes and a lightweight next-token metric. Future work should extend the same methodology to other transformer families and to broader evaluation suites. Doing so would clarify whether the observed attention-versus-MLP sensitivity is specific to OPT or reflects a more general property of BSI replacement in decoder-only transformers.
+
+\section{Bridging the CPU and GPU Stories More Tightly}
+The earlier CPU bit-sliced vector algebra work and the present GPU LLM inference work already form a coherent progression. Future work could tighten that bridge further by exposing a single common intermediate representation between CPU and GPU paths. That would make it easier to compare storage decisions, compression policies, and arithmetic variants across the two stages of the project.
+
+\section{From Thesis Baseline to Publishable System}
+The present thesis establishes the baseline and the bottlenecks. A publishable next-stage system would need three things beyond the current scope:
+
 \begin{enumerate}[leftmargin=2em]
-\item Redesign the arithmetic formulation so that the effective slice interaction count is reduced without abandoning BSI-native execution.
-\item Develop shape-specialized kernels for attention projections, FC1, and FC2 rather than relying on one general stable point.
-\item Introduce layer-aware or subgraph-aware bit policies, especially for MLP layers.
-\item Redesign shared-memory layouts to reduce bank conflicts and excessive wavefronts.
-\item Extend the evaluation beyond OPT and beyond LAMBADA-only scoring.
-\item Calibrate the documentation pipeline further by converting profiler captures and benchmark tables into publication-ready figures automatically.
+\item a stronger arithmetic formulation that lowers the fixed same-bit interaction cost,
+\item a more selective and model-aware precision policy,
+\item a broader experimental suite demonstrating that the resulting gains persist across model families and tasks.
 \end{enumerate}
+
+Those are now concrete goals rather than vague aspirations because the current work has already identified where the present implementation succeeds and where it still falls short.

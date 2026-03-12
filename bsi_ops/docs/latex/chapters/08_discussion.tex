@@ -1,9 +1,51 @@
 \chapter{Discussion}
+
 \section{What Was Achieved}
-The work achieved a full BSI-native inference pipeline for OPT-family models, a functioning CUDA builder for weights and activations, a stable same-bit tensor-core baseline on Hopper-class hardware, and a benchmark harness that separates kernel-only, layer-level, and end-to-end behavior. It also established a clear compression/accuracy/performance tradeoff across scope policies and model sizes.
+The work achieved a complete BSI-native inference path for OPT-family models. It starts from a bitmap and bit-sliced vector foundation, carries that representation into CUDA, integrates the resulting operators into PyTorch model execution, and evaluates them at kernel, layer, and model scales. That already moves the problem well beyond toy kernels or isolated arithmetic demonstrations.
+
+The work also established a stable same-bit operating point. This point is not merely a combination of environment variables. It represents a concrete design that survived multiple iterations: fixed query and key slice counts, chunk scaling, batched runtime query construction, and a CUDA dot kernel geometry that remained stable across the primary model sizes in the study.
+
+Finally, the work produced a set of results that are useful even where they are negative. The scope ablations, the 30B sensitivity study, and the rejected runtime query-repacking path all help explain what the current BSI system can and cannot do.
+
+\section{What the Results Mean}
+The cross-model results show that BSI is already valuable as a compression mechanism. The reduction in static model size is substantial under full-scope replacement, especially at the 6.7B scale. That compression benefit is real and repeatable. However, the results also show that storage savings alone do not make the system competitive. The dot-product path remains substantially more expensive than dense FP16 execution, and the cost grows more sharply with model width.
+
+The attention-only results are equally important. They show that the present BSI policy is not uniformly unsuitable for large transformers. Instead, the policy is much more compatible with attention layers than with the full network. That means the limiting factor is not simply the existence of bit-sliced arithmetic. It is the interaction between representation choice, layer type, and execution cost.
 
 \section{What Must Be Defended}
-The defensible thesis argument is not that BSI already surpasses dense Torch inference. The defensible argument is that BSI becomes materially more viable only when representation and execution are designed together. The implementation and the measurements support that claim by showing that naive bit-sliced execution is slow, that some layout-aware changes help, and that the remaining gap is now well explained by profiler evidence.
+The defensible thesis argument is not that BSI already outperforms dense Torch inference. The defensible argument is that BSI becomes materially more viable only when representation and execution are treated as one design problem.
 
-\section{What Was Not Achieved}
-Several things should not be overstated. The BSI dot kernel does not yet match dense FP16 throughput. The current fixed-bit regime does not scale cleanly to the 30B model under \texttt{scope=all}. Lower slice counts improve speed but do not preserve enough accuracy to serve as the main thesis result. These limitations do not invalidate the work, but they define its scope clearly.
+That argument can be defended with the current evidence because the work shows all of the following:
+
+\begin{enumerate}[leftmargin=2em]
+\item a generic bit-sliced representation is not enough,
+\item a working end-to-end BSI inference path can be built,
+\item same-bit layout and kernel refinements improve the practical operating point,
+\item the remaining performance gap is concentrated in the dot path rather than hidden elsewhere in the model,
+\item the quality loss is structured by layer group rather than uniform across the model.
+\end{enumerate}
+
+This is a strong systems result even though the kernel does not yet reach dense FP16 throughput.
+
+\section{Why Dense INT8 Is Not the Same Research Question}
+A common challenge to this work is the question of why one would not simply use a dense INT8 system such as SmoothQuant or another mature quantization backend. The correct answer is that the research question here is different. Dense INT8 methods start from the assumption that the arithmetic substrate remains dense and that the quantized values should be packed into a format optimized for ordinary dense GEMM. The present work asks whether the representation itself can remain bit-sliced and whether the corresponding arithmetic can be executed natively.
+
+This distinction matters because it changes both the representation and the kernel problem. A dense INT8 system can use highly optimized dense arithmetic libraries. A BSI-native system must design its own layout, staging, and accumulation strategy around slice interactions. The fact that dense quantization is strong does not make the present question irrelevant. It explains why the bar is high.
+
+\section{Limitations}
+The thesis should also state its limits clearly.
+
+\begin{enumerate}[leftmargin=2em]
+\item The stable same-bit kernel does not yet match dense FP16 throughput.
+\item The current fixed-bit policy does not scale cleanly to very large models under full-scope replacement.
+\item The end-to-end quality metric is centered on LAMBADA rather than a broader suite of downstream tasks.
+\item The main results focus on inference rather than training.
+\item Some measurements are attribution-oriented and therefore should not be misread as fully asynchronous throughput claims.
+\end{enumerate}
+
+These limits do not weaken the thesis argument. They define the exact scope in which the present contribution should be judged.
+
+\section{What the Work Teaches}
+The most important lesson is that BSI is not just a storage-format problem. If the bit-sliced layout is generic, the system pays too much orchestration cost. If the kernel is tuned without regard for the dynamic query side, the system may win in a microbenchmark and lose in the real model. If the bit count is lowered aggressively, the system may appear faster while moving to an unusable accuracy point. The representation, the layout, the query builder, and the kernel form a single design space.
+
+That lesson is the core thesis result. The implementation shows that BSI-native LLM inference is feasible, that it provides real compression, and that its remaining gap to dense inference is now structured well enough to guide the next stage of research.

@@ -1,33 +1,44 @@
-\chapter{Ablation Studies and Profiling}
+\chapter{Ablation Studies}
+
 \section{Scope Ablation}
-The contrast between \texttt{scope=all} and \texttt{scope=attention} is one of the most important ablations in the entire study. It shows that the current BSI regime is not uniformly compatible with all linear subgraphs. Attention-only replacement is clearly more robust. This provides strong motivation for later layer-aware or subgraph-aware policies.
+The contrast between \texttt{scope=all} and \texttt{scope=attention} is one of the most important ablations in the entire study. It shows that the present BSI regime is not uniformly compatible with all linear subgraphs of a transformer. When all eligible layers are replaced, the model achieves the largest memory reduction but also suffers the largest accuracy and latency penalties. When only attention projections are replaced, the model retains much more of the dense baseline behavior while still reducing static size and dot cost relative to full-scope BSI replacement.
+
+This ablation matters because it establishes that the problem cannot be framed purely as a global bitwidth problem. The same bit policy has different consequences in different layer groups.
 
 \section{Larger-Model Sensitivity}
-The 30B model was used primarily as a sensitivity study. The observed pattern was that attention-only replacement remained relatively close to the dense baseline, MLP-only replacement degraded more substantially, and \texttt{scope=all} collapsed. The conclusion is that MLP layers are the dominant quality bottleneck under the current fixed-bit BSI regime.
+The 30B model was used as a stress test rather than as a primary target. Its value lies in revealing how the current fixed-bit BSI policy fails.
 
-\section{Negative Results from Development}
-Several exploratory ideas did not survive into the stable path:
-\begin{itemize}[leftmargin=2em]
-\item aggressive runtime query repacking increased build time too much,
-\item some low-level layout changes broke end-to-end correctness,
-\item duplicate storage of legacy and experimental tensors inflated model size until corrected,
-\item lower bitwidth improved speed but degraded quality beyond the preferred operating point.
-\end{itemize}
-These negative results are important because they define the real design constraints rather than an idealized design space.
+In that model, attention-only replacement remained relatively close to the dense baseline, while MLP-only replacement degraded much more strongly. When all eligible layers were replaced, the model accuracy dropped sharply. The conclusion is direct: under the current same-bit regime, MLP layers are the dominant quality bottleneck at larger scale. This result is important because it prevents the thesis from presenting BSI quality loss as a uniform effect. The loss is structured, and that structure points directly to future work in layer-aware or subgraph-aware design.
 
-\section{Nsight Compute Findings}
-The most important profiler snapshot came from the same-bit tensor-core kernel on the 6.7B-like FC1 shape $Q=512, R=16384, D=4096$. The critical findings were low achieved occupancy, low eligible warps per scheduler, high no-eligible stall time, and substantial excessive shared/global transaction overhead. The key conclusion is that the current kernel is not primarily DRAM-bandwidth bound. The more fundamental limitation is scheduler and access inefficiency.
+\section{Earlier CPU-to-GPU Ablation}
+The thesis also includes a broader architectural ablation that spans the two development stages of the work.
 
-\begin{figure}[H]
-\centering
-\IfFileExists{ncu_summary_fc1.png}{\includegraphics[width=0.9\textwidth]{ncu_summary_fc1.png}}{\fbox{\parbox{0.9\textwidth}{\centering Placeholder for an Nsight Compute screenshot or summary chart showing occupancy, eligible warps, no-eligible stalls, and memory throughput for the stable same-bit FC1-like kernel.}}}
-\caption{Nsight Compute summary for the FC1-like stable same-bit kernel.}
-\label{fig:ncu-summary-fc1}
-\end{figure}
+On CPU, the earlier BSI vector algebra study demonstrated that bit-sliced dot product, multiplication, and summation could be implemented correctly and could offer memory savings. However, the CPU execution cost remained too high, especially for dot product. Moving to GPU therefore was not a simple implementation convenience. It was an ablation of the execution substrate itself. The transition from CPU to GPU showed that the BSI representation had enough structure to justify further optimization, but that the representation would only be competitive if its execution path was redesigned for parallel hardware.
 
-\begin{figure}[H]
-\centering
-\IfFileExists{ncu_summary_vocab.png}{\includegraphics[width=0.9\textwidth]{ncu_summary_vocab.png}}{\fbox{\parbox{0.9\textwidth}{\centering Placeholder for an Nsight Compute screenshot or summary chart for the very-wide output kernel configuration.}}}
-\caption{Nsight Compute summary for the very-wide output stable same-bit kernel.}
-\label{fig:ncu-summary-vocab}
-\end{figure}
+\section{Design Iterations that Did Not Survive}
+Several aggressive design ideas were implemented and then removed after full-system testing. These negative results are important because they define the real boundary of the design space.
+
+\subsection{Runtime Query Repacking}
+One experiment repacked runtime queries into a more specialized tile layout before launching the dot kernel. That design looked plausible at the kernel level, but it increased end-to-end build cost too much. The additional runtime work outweighed the kernel-level benefit, and the design was removed from the active path. This result demonstrated that the dynamic side of the pipeline must remain simple enough to be rebuilt every layer.
+
+\subsection{Duplicate Storage in Experimental Layouts}
+Another design temporarily stored both legacy and experimental tensor formats at the same time. The result was a large increase in static model size without a proportional runtime benefit. This problem was corrected by removing duplicate storage. The lesson was straightforward: a layout experiment that ignores full-model memory accounting can easily erase the compression advantage that motivated BSI in the first place.
+
+\subsection{Aggressive Low-Bit Frontier Points}
+Lower fixed slice counts were also evaluated. Those runs reduced static size further and improved dot time, but the resulting loss in next-token accuracy was too large for them to serve as the main thesis baseline. This outcome is valuable because it clarifies the thesis argument. The work is not defending the statement that lower bits are always better. It is defending the statement that BSI performance must be studied at fixed representation quality and that the real improvements come from layout and execution design.
+
+\section{Kernel-Tuning Ablations}
+The stable same-bit configuration was reached only after several kernel-level tuning ablations. More aggressive sweep counts, alternate accumulator organizations, and alternative staging choices were tested. Some of these increased register pressure or moved cost into other parts of the pipeline without improving the end-to-end result. The validated operating point therefore should not be interpreted as arbitrary. It is the outcome of a narrowing process in which multiple plausible alternatives were rejected because they did not survive the actual model-level measurements.
+
+\section{What the Ablations Established}
+The ablation program established five conclusions.
+
+\begin{enumerate}[leftmargin=2em]
+\item The execution substrate matters: CPU BSI algebra was informative but not fast enough, which justified the move to CUDA.
+\item The layer group matters: attention layers and MLP layers are not equally tolerant of the same BSI policy.
+\item The dynamic side matters: a query-side optimization can still be a net loss if it must be paid at every forward pass.
+\item The memory footprint matters: a kernel experiment that duplicates state is not acceptable, even if it improves a microbenchmark.
+\item The arithmetic policy matters: reducing slice counts improves speed but cannot be the main result if it destroys too much accuracy.
+\end{enumerate}
+
+These conclusions are part of the thesis contribution because they define the practical constraints of native BSI inference, not just its possible benefits.

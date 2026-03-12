@@ -1,36 +1,70 @@
 \chapter{Introduction}
+
 \section{Motivation}
-Large language model inference is dominated by repeated dense linear projections. In decoder-only transformers such as OPT, these projections appear in self-attention through the query, key, value, and output projections and in the feed-forward network through expansion and contraction layers. As model size grows from 125M to 1.3B, 6.7B, and beyond, these layers dominate both memory footprint and arithmetic cost. The standard response in the literature is quantization into dense INT8 or INT4 arithmetic. A different path is studied here: weights remain stored in a bit-sliced representation and dot products are computed directly from bitplanes.
+Large language model inference is dominated by linear algebra. In decoder-only transformers such as OPT, every token passes through attention projections, feed-forward expansions, feed-forward contractions, and output projections. As model size grows from 125M parameters to billions of parameters, these repeated linear layers dominate both memory footprint and arithmetic cost. The standard response in the literature is to quantize the model into dense INT8 or INT4 arithmetic and then rely on highly optimized dense kernels. That path is important, but it leaves open a different systems question: whether the model can be stored and executed in a bit-sliced form so that the computation itself is driven by bitwise structure rather than by reconstructing a dense low-precision matrix product.
+
+The work described in this thesis begins from that question. The aim is not simply to compress a model, and it is not simply to lower the number of arithmetic bits. The aim is to determine whether Bit-Sliced Indexing can act as a native representation for large language model inference on GPUs. That requires a full pipeline: the data structure must preserve the semantics of the original model well enough for inference, and the GPU kernel must consume that representation efficiently enough that the execution cost is not dominated by representation overhead.
+
+\section{From Bitmap Algebra to Transformer Inference}
+The starting point of the work was not a transformer kernel. It was a bitmap-based algebra built around hybrid bitmaps and bit-sliced vectors. In the earlier CPU-side implementation, each numeric vector was decomposed into slices, each slice was stored as a bitmap, and vector operations such as dot product, summation, element-wise multiplication, and top-k selection were expressed through bitwise operations, bit counts, and weighted accumulation. That earlier system established two important facts.
+
+First, the representation was expressive. Signed values, existence masks, per-slice compression decisions, and precision control could all be handled inside the BSI framework. Second, the CPU experiments showed that representation alone was not enough. In random-vector experiments and in tests using extracted BERT weights, BSI often reduced memory usage but did not consistently beat optimized dense code in raw execution time. Those results made the next step unavoidable: if BSI was to become competitive for modern deep learning inference, the execution substrate had to shift to massively parallel hardware.
+
+The GPU implementation therefore preserves the underlying BSI semantics from the bitmap-based algebra while redesigning the execution layer around CUDA. Static weights are converted once into BSI key structures, dynamic activations are converted on the fly into query slices, and the matrix product is computed through same-bit tensor-core kernels that perform weighted bitwise overlap accumulation. The present work studies that scaled-up system.
 
 \section{Problem Statement}
-The core technical problem has two parts. First, transformer weights and activations must be represented in BSI form without destroying model quality. Second, those BSI tensors must be laid out and consumed by CUDA kernels efficiently enough that the resulting execution approaches dense Torch baselines as closely as possible. The emphasis of this work is on the second problem. Accuracy is always measured, but the central optimization target is dot-product performance.
+The problem addressed here has two tightly coupled parts.
+
+The first part is representational. Transformer weights and activations must be mapped into BSI form in a way that preserves enough numerical information for inference. That includes decisions about decimal scaling, signedness, existence masks, compression thresholds, and the number of slices allocated to keys and queries.
+
+The second part is computational. Once weights and activations are represented in BSI form, they must be laid out in memory and consumed by CUDA kernels in a way that matches the target GPU architecture. If the representation is correct but the layout is generic, then the kernel spends too much time orchestrating slice access, staging tiles, and accumulating weighted overlaps. If the layout is specialized but the representation is rebuilt inefficiently at runtime, then the system loses any kernel-level gains to preprocessing cost. The real problem is therefore a co-design problem, not a purely representational problem and not a purely kernel problem.
 
 \section{Research Questions}
-Four concrete questions structure the work:
+The thesis is organized around four research questions.
+
 \begin{enumerate}[leftmargin=2em]
-\item Can transformer linear layers be replaced by BSI-native operators without abandoning end-to-end autoregressive inference?
-\item Which parts of the BSI pipeline dominate performance on GPU: representation, layout, runtime query construction, or the dot kernel itself?
-\item How does sensitivity vary across quantization scope, especially between attention and MLP layers?
-\item What profiler evidence explains the remaining performance gap between native BSI execution and dense Torch FP16?
+\item Can transformer linear layers be replaced by BSI-native operators while preserving end-to-end autoregressive inference on real OPT checkpoints?
+\item Which parts of the BSI inference pipeline dominate runtime on GPU: static key construction, runtime query construction, memory layout, or the dot kernel itself?
+\item How does the effect of BSI replacement vary across layer groups, especially between attention layers and feed-forward layers?
+\item What do the measurements reveal about why BSI still trails dense Torch FP16 execution even after the major engineering bottlenecks are removed?
 \end{enumerate}
+
+These questions keep the thesis grounded in measurements that were actually collected. They avoid overclaiming and keep the focus on the central systems issue: making native BSI execution materially more competitive at fixed bitwidth.
 
 \section{Thesis Claim}
-The main claim defended in this thesis is the following:
+The central claim defended in this work is the following:
+
 \begin{quote}
-BSI can serve as a native compressed representation for LLM inference on GPUs, but only when the bit-sliced layout and the execution kernel are co-designed for the target hardware. Compression or lower bit count alone does not yield competitive performance.
+BSI can serve as a native compressed representation for LLM inference on GPUs, but only when the bit-sliced layout and the GPU execution kernel are co-designed for the target hardware. Compression or lower bit count alone does not yield competitive performance.
 \end{quote}
-This is intentionally narrower than a claim that BSI already beats dense Torch or that lower precision alone solves inference efficiency.
+
+This is intentionally narrower than a claim that BSI already surpasses dense Torch inference. The experimental results do not support that broader claim. What they do support is a more precise systems claim: naive BSI execution is too expensive, but a hardware-aware BSI pipeline is meaningfully better than a generic one, and the remaining gap is now localized to specific execution bottlenecks.
 
 \section{Contributions}
-The work makes the following contributions:
+The work makes the following contributions.
+
 \begin{enumerate}[leftmargin=2em]
-\item A PyTorch/CUDA implementation of BSI-native linear layers for OPT-family models.
-\item GPU-side construction of BSI keys and batched BSI queries integrated into end-to-end inference.
-\item A stable same-bit tensor-core baseline for BSI dot products on SM90/H100-class hardware.
-\item A benchmark harness spanning kernel-only, layer-level, and model-level measurements.
-\item A detailed set of layout and staging studies that identify what helps, what hurts, and why.
-\item A profiler-based diagnosis showing that scheduler and access inefficiency, not only bandwidth, limit the current kernel family.
+\item It builds a complete BSI-native inference path for OPT-family models by replacing dense linear layers with BSI-based linear operators inside a PyTorch pipeline.
+\item It carries the BSI abstraction from CPU bitmap algebra into CUDA, preserving bit-sliced semantics while changing the execution substrate from scalar CPU code to fused GPU kernels.
+\item It establishes a stable same-bit CUDA operating point based on fixed query and key slice counts, chunk scaling, batched query construction, and tensor-core oriented dot-product kernels.
+\item It provides a measurement stack that separates kernel-only behavior, single-layer behavior, and full-model behavior, which makes it possible to distinguish genuine dot-kernel improvements from preprocessing regressions.
+\item It demonstrates, through experiments across \texttt{opt-125m}, \texttt{opt-1.3b}, and \texttt{opt-6.7b}, that BSI provides meaningful compression while also exposing a clear speed/accuracy tradeoff.
+\item It identifies the practical limits of the current same-bit design, including layer-group sensitivity at larger scales and the fact that generic BSI layout is still too expensive for competitive GPU inference.
 \end{enumerate}
 
-\section{Scope}
-The primary optimization targets are \texttt{facebook/opt-125m}, \texttt{facebook/opt-1.3b}, and \texttt{facebook/opt-6.7b}. The 30B model is used mainly as a sensitivity study. The focus remains a stable same-bit BSI baseline, not a final production inference system.
+\section{Scope of the Study}
+The primary models in the study are \texttt{facebook/opt-125m}, \texttt{facebook/opt-1.3b}, and \texttt{facebook/opt-6.7b}. These models span a useful range of sizes while preserving a common architecture. A larger 30B checkpoint is used only as a sensitivity study to expose where the fixed-bit BSI regime breaks down, especially under full-scope replacement.
+
+The work is also intentionally centered on inference rather than training. The thesis does not attempt to redesign the full training stack around BSI, and it does not claim that the same representation is already suitable for gradient computation. It focuses on static model weights, runtime activation conversion, and the dot-product bottleneck that dominates the linear layers during transformer inference.
+
+\section{What the Thesis Does Not Claim}
+It is equally important to state what this work does not claim.
+
+\begin{enumerate}[leftmargin=2em]
+\item It does not claim that BSI already beats dense Torch FP16 inference.
+\item It does not claim that simply reducing the number of slices is the correct optimization strategy.
+\item It does not claim that a single fixed-bit policy is robust across all transformer layers and all model scales.
+\item It does not claim that the current comparisons with dense quantization baselines such as SmoothQuant are backend-identical.
+\end{enumerate}
+
+These boundaries are necessary for a defensible thesis. The contribution is the implementation and analysis of a BSI-native inference system, not a claim of final superiority over dense arithmetic.

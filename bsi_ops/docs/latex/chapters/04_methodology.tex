@@ -1,15 +1,48 @@
 \chapter{Methodology}
-\section{Quantized Linear Replacement}
-Each dense linear layer selected by the scope policy is replaced by a BSI-native linear layer. Under \texttt{scope=all}, all linear layers except the language-model head are replaced. Under \texttt{scope=attention}, only the attention projections are replaced. Under \texttt{scope=mlp}, only the feed-forward layers are replaced. This scope control later becomes critical for analyzing large-model sensitivity.
 
-\section{Key Construction}
-The CUDA entry point \texttt{build\_bsi\_keys\_cuda} constructs a prebuilt key capsule from the dense weight matrix. Since weights are static, this stage is the natural place to perform one-time layout preparation. The resulting structure stores the slice words, slice weights, and metadata needed by the fused dot kernel.
+\section{Overview of the Inference Pipeline}
+The methodology centers on a single requirement: the weights remain stored in BSI form and the dot product is computed from BSI slices rather than by converting the representation back into a dense low-precision matrix. Every design decision in the pipeline follows from that constraint.
 
-\section{Query Construction}
-At runtime, activations are flattened into a two-dimensional batch and passed to \texttt{build\_bsi\_queries\_cuda\_batch\_packed}. This builder returns the query words, slice weights, and chunk-scale tensors used by the fused dot path. Batching the builder call is essential because per-vector Python loops would dominate the cost of narrow layers and would make kernel improvements hard to interpret.
+At a high level, the inference path works as follows. A dense weight matrix is converted once into a BSI key structure. At runtime, the input activation tensor for a linear layer is flattened into a batch of query rows and converted into BSI query slices on the GPU. A fused dot-product kernel consumes the BSI queries and BSI keys and produces dense output rows. Bias and reshape operations then restore the interface expected by the surrounding transformer layers. The methodology therefore combines representation construction and execution rather than treating them as independent problems.
 
-\section{Stable Same-Bit Baseline Configuration}
-The stable same-bit baseline used throughout the main study is:
+\section{Numeric Conversion into BSI Form}
+\subsection{Decimal Scaling}
+Floating-point weights and activations are first scaled by a decimal factor before conversion into bit-sliced form. The implementation exposes this through the \texttt{decimal\_places} parameter. In the primary study, the standard operating point is \texttt{decimal\_places=2}. A value such as \(x=0.1234\) is therefore scaled to approximately \(12\) before fixed-bit conversion. This step controls the tradeoff between preserving fractional detail and limiting the size of the integer range that must be represented through slices.
+
+\subsection{Compression Threshold}
+The implementation also exposes a \texttt{compress\_threshold} parameter. In the principal experiments, this threshold is set to \texttt{0.5}. Conceptually, the threshold governs how willing the representation is to store a slice in compressed form rather than verbatim form. Although the active CUDA path does not rely on the CPU compression routines at runtime, the threshold remains part of the BSI semantics and of the experimental configuration.
+
+\subsection{Fixed Slice Counts}
+A major methodological choice in the CUDA path is the use of fixed query and key slice counts. Rather than letting the builder choose a variable number of slices for every tensor, the stable same-bit regime fixes the number of slices in advance. The principal setting used in the baseline is:
+
+\begin{itemize}[leftmargin=2em]
+\item query slices: \(S_a = 7\)
+\item key slices: \(S_b = 6\)
+\end{itemize}
+
+This fixed design makes kernel specialization possible, which is essential for a stable GPU implementation. At the same time, it introduces a clear arithmetic cost: every chunk requires \(S_a \times S_b = 42\) slice-pair interactions in the stable same-bit path.
+
+\section{Static Key Construction}
+The weight side of the pipeline is handled by a one-time CUDA key builder. The builder reads the dense linear-layer weights, applies decimal scaling and fixed-bit conversion, and writes the resulting BSI slices into a device-side structure that can be reused across every forward pass. This weight-side build stage is methodologically important for two reasons.
+
+First, it isolates static work from dynamic work. Any layout preparation that is expensive but performed only once per layer belongs naturally on the key side. Second, it enables weight memory accounting. Because the BSI weight structures are not stored as ordinary trainable PyTorch parameters, the implementation must measure their contribution to model size explicitly.
+
+\section{Runtime Query Construction}
+The activation side of the pipeline is dynamic and must be handled per forward pass. The implementation therefore uses a batched CUDA query builder that converts an entire two-dimensional activation batch into BSI query slices in one call. This design avoids per-row Python loops and allows the runtime cost of query construction to be measured separately from the cost of the dot kernel.
+
+The query builder produces three kinds of outputs.
+
+\begin{enumerate}[leftmargin=2em]
+\item the BSI query words,
+\item slice-weight tensors associated with the fixed-bit representation,
+\item optional chunk-scale tensors when chunk scaling is enabled.
+\end{enumerate}
+
+This builder is one of the critical parts of the methodology because later experiments showed that a design that improves isolated kernel timing can still be unacceptable end to end if it makes query construction too expensive.
+
+\section{Stable Same-Bit CUDA Configuration}
+The stable baseline used throughout the main study is defined by the following runtime configuration:
+
 \begin{verbatim}
 BSI_TC_DOT=1
 BSI_TC_FIXED_INT=1
@@ -21,23 +54,79 @@ BSI_FIXED_CHUNK_SCALE=1
 BSI_TC_R_SWEEP=4
 BSI_TC_TMA=1
 \end{verbatim}
-The optional debug flag
+
+An optional debug flag,
+
 \begin{verbatim}
 BSI_DOT_DEBUG=1
 \end{verbatim}
-prints the selected kernel path and relevant shape metadata.
 
-\section{Tile Shape and Kernel Geometry}
-The most defensible tile shape for this design is a logical $32 \times 128 \times 256$-bit CTA, corresponding to:
+prints the selected kernel family and shape metadata during execution. These settings define the actual operating point studied in the thesis and should not be treated as incidental environment choices.
+
+\section{Kernel Geometry}
+The most stable CUDA tile geometry reached in the work corresponds to a logical \(32 \times 128 \times 256\)-bit CTA. In GEMM-style terms, this means:
+
 \begin{itemize}[leftmargin=2em]
-\item query tile height $M=32$,
-\item output width $N=32 \times 4 = 128$,
-\item chunk depth $K=256$ bits.
+\item \(M=32\) query rows,
+\item \(N=128\) output columns per cooperative tile,
+\item \(K=256\) bits per chunk.
 \end{itemize}
-This tile is defensible because it aligns with the BMMA \texttt{m16n8k256} granularity, remained stable across the principal OPT sizes in the study, and provides a concrete hardware-aware design point that can be defended in a thesis setting.
+
+This geometry is built from:
+
+\begin{itemize}[leftmargin=2em]
+\item a total query tile height of 32,
+\item a four-way sweep across the output dimension,
+\item 256 threads per CTA,
+\item a two-stage data-movement pipeline.
+\end{itemize}
+
+This tile is defensible because it aligns with the Boolean matrix multiply granularity used by the kernel family, remains stable across the tested OPT sizes, and provides a concrete hardware-aware design point for discussion.
 
 \section{Weighted Popcount Formulation}
-The dot product is computed from slice pairs. For each query bitplane and key bitplane pair, the kernel computes bitwise overlaps using Boolean tensor-core style operations and then weights those overlaps by the corresponding slice weights. Those weighted overlaps are accumulated across all slice pairs and across all chunks. For the stable same-bit setting, the arithmetic cost grows with $S_a \times S_b = 7 \times 6 = 42$ slice interactions per chunk. This interaction count is one of the reasons native BSI execution remains substantially more expensive than dense FP16 GEMM.
+The core arithmetic of the CUDA dot kernel mirrors the earlier CPU-side bit-sliced dot product, but it is implemented in a batched tensor-core-oriented form.
 
-\section{Instrumentation Strategy}
-The evaluation records multiple timing counters inside the BSI linear wrapper, including total build time, total dot time, and finer-grained build subcomponents. This instrumentation made it possible to distinguish improvements that truly reduced dot time from experiments that merely shifted cost into preprocessing or query construction.
+For each query slice and key slice pair, the kernel computes bitwise overlap information for a chunk of 256 bits. The overlap count determines how many vector positions contribute at that significance pair. That count is then multiplied by the weight implied by the query and key slice indices, along with any chunk scale required by the fixed-bit representation. The kernel accumulates those weighted counts across all slice pairs and all chunks until the scalar output value for a query/output-column pair is complete.
+
+The methodology matters here because it explains why the kernel is expensive even when the data is compact. The representation is compressed, but the arithmetic is not free. The stable same-bit path still has to process 42 slice-pair interactions per chunk.
+
+\section{Scope Policies}
+The methodology includes multiple scope policies because the effect of BSI replacement is not uniform across the transformer.
+
+\begin{itemize}[leftmargin=2em]
+\item \texttt{scope=all} replaces all eligible linear layers and therefore maximizes compression.
+\item \texttt{scope=attention} replaces only attention projections and is used to measure a higher-accuracy, lower-coverage regime.
+\item \texttt{scope=mlp} isolates feed-forward layers and is used mainly in sensitivity analysis.
+\end{itemize}
+
+The 30B experiments later show why this methodological choice is necessary: different subgraphs of the same transformer can react very differently to the identical BSI bit policy.
+
+\section{Measurement Strategy}
+The implementation records several timing counters inside the BSI linear wrapper so that build cost and dot cost can be separated. The most important counters are:
+
+\begin{itemize}[leftmargin=2em]
+\item total build time,
+\item total dot time,
+\item query-quantization time,
+\item packing time,
+\item builder-kernel time,
+\item total number of query vectors processed,
+\item total number of output elements produced.
+\end{itemize}
+
+This instrumentation is methodologically important because it prevents false optimization claims. If a change makes the kernel itself look faster but increases the cost of preprocessing or query building, the full timing breakdown exposes that shift immediately.
+
+\section{Benchmark Modes}
+Three benchmark modes are used to keep the measurements interpretable.
+
+\subsection{Kernel-Only Mode}
+This mode measures only the BSI dot kernel after keys and queries have already been constructed. It is the correct way to study the raw arithmetic and memory behavior of the kernel itself.
+
+\subsection{Linear End-to-End Mode}
+This mode includes per-call query construction and therefore approximates a single BSI linear layer in use. It is valuable when the kernel and builder interact strongly.
+
+\subsection{Model End-to-End Mode}
+This mode measures the effect of BSI replacement inside a real model evaluation on LAMBADA. It is the final acceptance mode for any design change because it captures the combined cost of representation, construction, arithmetic, and model integration.
+
+\section{Methodological Limits}
+The methodology deliberately prioritizes inference and the dot-product bottleneck. It does not attempt to redesign training, it does not yet include a broad suite of downstream tasks, and it does not treat every comparison to dense quantization baselines as backend-identical. Those limits are acceptable for the current thesis because the goal is to establish and analyze a BSI-native inference system rather than to claim final production superiority over every dense alternative.

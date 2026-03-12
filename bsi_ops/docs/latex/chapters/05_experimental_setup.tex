@@ -1,54 +1,126 @@
 \chapter{Experimental Setup}
-\section{Hardware and Measurement Conventions}
-The implementation targets CUDA-capable GPUs and is specifically optimized for SM90/H100 systems in the stable tensor-core path. Two measurement regimes are used:
-\begin{enumerate}[leftmargin=2em]
-\item \texttt{BSI\_PROFILE=1} for build/dot attribution,
-\item \texttt{BSI\_PROFILE=0} for fairer runtime timing.
-\end{enumerate}
-Because dot time is the primary optimization target in this thesis, the main kernel-attribution results use \texttt{BSI\_PROFILE=1}. Those numbers should be interpreted as internal timing breakdowns rather than fully asynchronous throughput measurements.
 
-\section{Primary Evaluation Configuration}
-Unless otherwise noted, the principal results use:
+\section{Execution Environment}
+The experiments are designed for CUDA-capable GPUs and the stable tensor-core path is specifically tuned for SM90/H100-class hardware. The practical execution workflow on the cluster begins with network and GPU environment setup, followed by environment activation and a local rebuild of the extension. The operational sequence used throughout the study is:
+
+\begin{enumerate}[leftmargin=2em]
+\item source the cluster proxy helper if outbound network access requires it,
+\item load the CUDA compiler and communication stack,
+\item source any cluster-specific GPU helper,
+\item source the CUDA environment setup script,
+\item activate the Python environment,
+\item rebuild the \texttt{bsi\_ops} extension.
+\end{enumerate}
+
+These steps are collected in Appendix~A together with the benchmark commands.
+
+\section{Software Stack}
+The implementation is built as a PyTorch extension with C++ and CUDA components. The key software dependencies are:
+
 \begin{itemize}[leftmargin=2em]
-\item \texttt{decimal\_places = 2}
-\item \texttt{compress\_threshold = 0.5}
-\item \texttt{num\_samples = 1000}
-\item \texttt{max\_seq\_len = 512}
-\item \texttt{base\_dtype = fp16}
+\item PyTorch with CUDA support,
+\item HuggingFace Transformers and Datasets,
+\item the local \texttt{bsi\_ops} extension built through \texttt{pip install . -v},
+\item the sibling bitmap and BSI code used to define the CPU-side representation.
 \end{itemize}
+
+The cluster execution model assumes a Python environment dedicated to the project so that the CUDA extension can be rebuilt and reinstalled repeatedly while kernel changes are tested.
 
 \section{Models}
-The primary model family is OPT with the following checkpoints:
+The primary models used in the study are:
+
 \begin{itemize}[leftmargin=2em]
-\item \texttt{facebook/opt-125m}
-\item \texttt{facebook/opt-1.3b}
-\item \texttt{facebook/opt-6.7b}
+\item \texttt{facebook/opt-125m},
+\item \texttt{facebook/opt-1.3b},
+\item \texttt{facebook/opt-6.7b}.
 \end{itemize}
-The 30B model is used as a stress test to study scope sensitivity rather than as the primary optimization target.
+
+These three checkpoints provide the main scaling study. A 30B model is used separately to probe layer sensitivity and failure modes under aggressive BSI replacement, but it is not treated as the primary optimization target in the thesis narrative.
+
+\section{Dataset and Metric}
+The end-to-end evaluation uses the LAMBADA validation split \cite{lambada}. Each input is tokenized, right-padded or truncated to a maximum sequence length of 512, and the label is taken as the last token in the sequence. The evaluator measures:
+
+\begin{itemize}[leftmargin=2em]
+\item top-1 next-token accuracy,
+\item top-5 next-token accuracy,
+\item average forward time,
+\item BSI build time,
+\item BSI dot time,
+\item model static size.
+\end{itemize}
+
+This metric is not intended to replace a broader evaluation suite, but it is sufficient to measure whether BSI replacement preserves usable next-token behavior under real model execution.
+
+\section{Primary Evaluation Configuration}
+Unless otherwise noted, the principal evaluation setting is:
+
+\begin{itemize}[leftmargin=2em]
+\item \texttt{decimal\_places = 2},
+\item \texttt{compress\_threshold = 0.5},
+\item \texttt{num\_samples = 1000},
+\item \texttt{max\_seq\_len = 512},
+\item \texttt{base\_dtype = fp16}.
+\end{itemize}
+
+This configuration was used to produce the main cross-model results reported in the thesis. Smaller sample counts are used only for debugging or targeted attribution experiments.
+
+\section{Stable Same-Bit Runtime Configuration}
+The stable same-bit configuration used in the main experiments is:
+
+\begin{verbatim}
+BSI_TC_DOT=1
+BSI_TC_FIXED_INT=1
+BSI_TC_CPASYNC=1
+BSI_TC_TM=32
+BSI_FIXED_BITS_KEYS=6
+BSI_FIXED_BITS_QUERIES=7
+BSI_FIXED_CHUNK_SCALE=1
+BSI_TC_R_SWEEP=4
+BSI_TC_TMA=1
+\end{verbatim}
+
+An optional debug flag,
+
+\begin{verbatim}
+BSI_DOT_DEBUG=1
+\end{verbatim}
+
+prints the active kernel path and the effective problem shape. This configuration is the baseline referred to throughout the results section.
 
 \section{Representative Kernel Shapes}
-Kernel-only studies emphasize two shapes for the stable baseline:
+Two kernel-only shapes are emphasized for the stable baseline.
+
 \begin{itemize}[leftmargin=2em]
-\item $Q=512, R=16384, D=4096$, corresponding to an FC1-like layer in \texttt{opt-6.7b}
-\item $Q=512, R=50272, D=4096$, corresponding to a very wide output or vocabulary-scale projection
+\item \(Q=512, R=16384, D=4096\), which corresponds to an FC1-like layer in \texttt{opt-6.7b},
+\item \(Q=512, R=50272, D=4096\), which corresponds to a very wide output projection.
 \end{itemize}
-These shapes are also used as the primary Nsight Compute profiling targets.
+
+These shapes are useful because they isolate the kernel under realistic transformer dimensions while also stressing two different output-width regimes.
+
+\section{Benchmark Modes}
+The apples-to-apples benchmark harness supports three modes.
+
+\begin{description}[leftmargin=2em,style=nextline]
+\item[\texttt{kernel\_only}] Keys and queries are built once, and only the BSI dot kernel is timed against dense \texttt{torch.matmul}.
+\item[\texttt{linear\_e2e}] Query construction is included in the timed region so that a single BSI linear layer can be compared against a dense linear layer.
+\item[\texttt{model\_e2e}] The full LAMBADA evaluator is invoked so that model accuracy, model size, build cost, and dot cost can be measured together.
+\end{description}
+
+This separation is essential for correct interpretation. A kernel change that looks favorable in \texttt{kernel\_only} mode can still regress in \texttt{model\_e2e} mode if it increases runtime query construction or static storage cost.
 
 \section{Scope Policies}
-Three scope policies are implemented:
-\begin{itemize}[leftmargin=2em]
-\item \texttt{scope=all}: replace all eligible linear layers,
-\item \texttt{scope=attention}: replace only attention projections,
-\item \texttt{scope=mlp}: replace only feed-forward layers.
-\end{itemize}
-The accuracy results show that these scope choices correspond to meaningfully different performance and quality regimes.
+The evaluation uses multiple replacement scopes.
 
-\section{Documentation and Reproducibility Workflow}
-The operational workflow used throughout the study consists of four steps:
-\begin{enumerate}[leftmargin=2em]
-\item initialize network and cluster-specific GPU environment helpers,
-\item activate the Python environment and rebuild the extension,
-\item run kernel-only and model-level experiments,
-\item profile the stable kernel with Nsight Compute.
-\end{enumerate}
-The exact commands are collected in Appendix~A and are mirrored in the project README so that the operational documentation stays aligned across the written report and the project documentation.
+\begin{itemize}[leftmargin=2em]
+\item \texttt{scope=all}: all eligible linear layers are replaced,
+\item \texttt{scope=attention}: only attention-related projections are replaced,
+\item \texttt{scope=mlp}: only feed-forward layers are replaced.
+\end{itemize}
+
+The \texttt{scope=all} and \texttt{scope=attention} settings are the main points reported in the core results tables because they represent the broadest compression regime and the most stable high-accuracy regime, respectively.
+
+\section{Dense and Quantized Comparison Points}
+The BSI path is always compared against a dense FP16 baseline measured through the same harness. In addition, the project includes SmoothQuant benchmark scripts to provide contextual comparison against a dense, calibrated low-precision alternative \cite{smoothquant}. These SmoothQuant scripts are useful for context, but the thesis results are framed primarily against the dense FP16 baseline because that is the cleanest backend comparison available inside the same evaluation stack.
+
+\section{Static Model Size Accounting}
+Static model size is measured for both dense and BSI representations. The dense baseline counts all parameters and buffers in their FP16 form. The BSI static size includes the bit-sliced weight structures and the remaining dense model state that was not replaced. This distinction is important because BSI weights live outside the normal parameter tensors and must be counted explicitly. The static-size measurement therefore reflects the full in-memory representation used by the inference path rather than only the trainable parameters visible to PyTorch.

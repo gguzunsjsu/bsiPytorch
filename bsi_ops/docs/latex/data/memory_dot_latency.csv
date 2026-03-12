@@ -1,0 +1,4 @@
+model,dense_mb,bsi_all_mb,bsi_attention_mb,bsi_all_dot_ms,torch_all_dot_ms,bsi_attention_dot_ms,torch_attention_dot_ms
+opt-125m,238.875,137.783,205.195,1.913,3.044,0.890,2.158
+opt-1.3b,2509.609,1070.453,2029.984,13.859,6.955,5.158,4.210
+opt-6.7b,12700.031,5022.281,10141.031,66.452,15.493,23.003,5.357

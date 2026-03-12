@@ -1,47 +1,82 @@
-\chapter{BSI and Bitmap Construction}
-\section{CPU-Side Foundation in \texttt{bsiCPP}}
-The semantic basis of the implementation comes from the CPU-side BSI library in \texttt{../bsiCPP}. The most important classes are \texttt{HybridBitmap}, \texttt{BsiVector}, \texttt{BsiSigned}, and \texttt{BsiUnsigned}. These classes define what a BSI object means before it is lowered into CUDA tensors.
+\chapter{From CPU BSI Algebra to GPU LLM Inference}
 
-\section{HybridBitmap}
-\texttt{HybridBitmap} stores an individual bitmap slice and supports two modes: compressed bitmap mode and verbatim bitmap mode. Each bitmap stores a word buffer, a density estimate, and a flag indicating whether it is stored verbatim. This detail matters because BSI storage depends not only on slice count but also on slice density.
+\section{Why the Work Moved to GPU}
+The CPU-side study made the next step clear. Bit-sliced vectors offered a flexible representation, exposed control over precision through the number of processed slices, and often reduced memory usage. At the same time, the CPU implementations of dot product and multiplication were slower than optimized dense baselines, especially when the vectors were large and the value range widened. For a thesis centered on modern language models, that result was not an endpoint. It was a systems diagnosis. If BSI was to become useful for transformer inference, the computation needed to move to a massively parallel platform that could exploit bitwise parallelism directly.
 
-\begin{figure}[H]
-\centering
-\IfFileExists{hybridbitmap_structure.png}{\includegraphics[width=0.9\textwidth]{hybridbitmap_structure.png}}{\fbox{\parbox{0.9\textwidth}{\centering Placeholder for a figure illustrating the \texttt{HybridBitmap} structure, including compressed and verbatim slice modes, the word buffer, and density metadata.}}}
-\caption{Hybrid bitmap representation used for BSI slices.}
-\label{fig:hybridbitmap}
-\end{figure}
+The GPU phase therefore did not abandon the earlier representation. Instead, it preserved the BSI semantics defined by the CPU bitmap library and redesigned the execution layer. The later implementation retains decimal scaling, fixed slice counts, sign handling, and chunk-based processing, but performs the heavy arithmetic through CUDA kernels integrated into PyTorch.
 
-\section{BsiVector, Signedness, and Existence Bitmaps}
-\texttt{BsiVector} stores the slice vector along with the number of slices, the existence bitmap, the sign slice, the row count, decimal scaling metadata, first-slice and last-slice flags, and two's-complement state. For nonnegative values the builder uses \texttt{BsiUnsigned}; for signed values it uses \texttt{BsiSigned} and marks the representation as two's complement. For dense transformer weights and activations, the existence bitmap is typically all ones.
+\section{Integration into Transformer Inference}
+The scaled implementation focuses on decoder-only transformer inference, specifically the OPT model family \cite{opt}. In OPT, the computational bottleneck is concentrated in the repeated linear layers used in self-attention and in the feed-forward network. The implementation replaces selected dense linear layers with BSI-native linear layers while keeping the rest of the model structure intact. The layer replacement policy is controlled by a scope setting:
 
-\section{Building BSI from Dense Numeric Values}
-The \texttt{buildBsiVector} routines in \texttt{BsiVector.hpp} implement the core conversion from dense numeric vectors to slices:
+\begin{itemize}[leftmargin=2em]
+\item \texttt{scope=all}: replace all eligible linear layers except the language-model head,
+\item \texttt{scope=attention}: replace only attention-related projections,
+\item \texttt{scope=mlp}: replace only feed-forward layers.
+\end{itemize}
+
+This scope control proved essential when the experiments later showed that attention layers and MLP layers respond very differently to the same fixed-bit BSI policy.
+
+\section{Static Weights and Dynamic Activations}
+The GPU implementation treats weights and activations differently because their roles in inference differ.
+
+\subsection{Static Weight Construction}
+Weights are static once the model is loaded for inference. That makes them the natural target for one-time BSI construction. Each dense weight matrix is converted into a BSI key structure that stores the bit-sliced weight information needed by the dot kernel. Because this happens once at model-quantization time, the implementation can afford a more expensive build step or a more specialized memory layout on the weight side.
+
+\subsection{Dynamic Query Construction}
+Activations are dynamic. Every forward pass produces a new activation tensor, which must be converted into BSI form quickly enough that the conversion cost does not dominate the kernel itself. The implementation therefore uses a batched CUDA query builder rather than constructing one BSI vector at a time in Python. This was one of the practical design requirements that emerged from the engineering process: without batched query construction, the runtime overhead of building queries would overshadow any later kernel improvement.
+
+\section{PyTorch-Side BSI Linear Replacement}
+At the PyTorch level, dense \texttt{torch.nn.Linear} modules are replaced by BSI-based linear modules. The replacement layer performs the following sequence during inference:
+
 \begin{enumerate}[leftmargin=2em]
-\item scale each value by $10^{\texttt{decimalPlaces}}$,
-\item round to an integer,
-\item determine the required slice count from the maximum absolute value,
-\item transpose values into slice-major bitmaps using \texttt{bringTheBits}.
+\item flatten the incoming activation tensor into a two-dimensional batch of query rows,
+\item build the BSI query representation for that batch,
+\item execute the fused CUDA dot-product path against the prebuilt BSI key structure,
+\item restore the original tensor shape and dtype,
+\item add bias if the original dense layer had a bias term.
 \end{enumerate}
-The \texttt{bringTheBits} routine tests whether the relevant bit is set in each input value and writes that result into the appropriate bitmap slice. Each slice also tracks the number of set bits so that the builder can later decide whether compressed or verbatim storage is more appropriate.
 
-\section{Compression Heuristic}
-For each slice, the CPU builder computes
-\[
-\texttt{bitDensity} = \frac{\texttt{ones}}{\texttt{numberOfElements}}
-\]
-and then applies the heuristic
-\[
-\texttt{compressRatio} = 1 - (1 - \texttt{bitDensity})^{2b} - (\texttt{bitDensity})^{2b},
-\]
-where $b$ is the bitmap word size in bits. If the estimated compression ratio is below the configured threshold and nonzero, the slice is stored in compressed form; otherwise it is stored verbatim. This per-slice decision is one reason BSI memory footprint changes nontrivially across models and scopes.
+This replacement strategy matters for the thesis because it demonstrates that the work is not limited to isolated kernels. The BSI execution path is integrated into actual model inference, and its behavior can be measured under real sequence lengths and model checkpoints.
 
-\begin{figure}[H]
-\centering
-\IfFileExists{bsi_build_pipeline.png}{\includegraphics[width=0.9\textwidth]{bsi_build_pipeline.png}}{\fbox{\parbox{0.9\textwidth}{\centering Placeholder for a figure showing dense values being scaled, converted to integers, transposed into slice-major bitmaps, and then classified into compressed or verbatim storage.}}}
-\caption{CPU-side BSI construction pipeline from dense values to slices.}
-\label{fig:bsi-build}
-\end{figure}
+\section{System Components}
+The implementation is organized around three layers.
 
-\section{Why This Matters for CUDA}
-The CUDA implementation inherits these semantics even when it no longer uses the CPU builder directly for the active inference path. The GPU code must preserve the meaning of slice weights, sign handling, existence masks, and decimal scaling. In that sense, the CPU-side code defines the algebra and the CUDA path defines the execution strategy.
+\subsection{Bitmap and BSI Foundation}
+The semantic definition of the representation comes from the bitmap and BSI code in the sibling \texttt{bsiCPP} area. That code defines the structure of slices, sign handling, existence tracking, compression decisions, and the CPU-side algebra.
+
+\subsection{CUDA Extension}
+The execution path is implemented in the C++/CUDA extension. This layer contains the CUDA entry points for building BSI keys and BSI queries, the data structures that hold those tensors on device, and the fused dot-product kernels that consume them.
+
+\subsection{Benchmark and Evaluation Layer}
+The evaluation layer drives the experiments. It includes kernel-only timing, layer-level timing, end-to-end LAMBADA evaluation, and comparison scripts for dense quantization baselines such as SmoothQuant. This separation between execution and evaluation was important because the work repeatedly showed that a microbenchmark improvement is not sufficient evidence of a full-system improvement.
+
+\section{Operational Modes Used in the Study}
+The measurement framework supports three distinct operational modes.
+
+\subsection{Kernel-Only Mode}
+Kernel-only mode constructs keys and queries once and then measures only the dot kernel against dense \texttt{torch.matmul}. This mode answers the narrow question: how expensive is the BSI arithmetic when preprocessing is factored out?
+
+\subsection{Single-Layer End-to-End Mode}
+The linear end-to-end mode includes runtime query construction in addition to the dot kernel. This mode approximates the cost of one BSI linear layer and is therefore useful when a kernel change shifts work between preprocessing and arithmetic.
+
+\subsection{Model End-to-End Mode}
+The model end-to-end mode runs full next-token evaluation on LAMBADA. This is the mode that matters most for thesis-grade results, because it captures the combined effect of representation cost, query build cost, kernel cost, and model integration.
+
+\section{Evolution of the Stable CUDA Design}
+The GPU design matured through several identifiable stages.
+
+The first stage was functional replacement: weights were converted into BSI form, activations were converted at runtime, and the model produced numerically meaningful outputs. The second stage was stabilization of the same-bit CUDA path. That stage converged on a fixed configuration with a query tile size of 32, a four-way sweep across the output dimension, chunk scaling, and tensor-core-oriented bitwise accumulation. The third stage was a sequence of layout and staging experiments intended to reduce dot time without changing the underlying BSI semantics. Some of those experiments helped, while others introduced excessive preprocessing cost, duplicate storage, or correctness problems and were removed.
+
+This progression is important in thesis form because it demonstrates that the implementation moved systematically from a representation prototype to a measured GPU inference system, rather than jumping directly to a final kernel claim.
+
+\section{What Changed Between the CPU and GPU Stages}
+The CPU and GPU stages share the same conceptual arithmetic, but they differ in execution strategy.
+
+\begin{itemize}[leftmargin=2em]
+\item The CPU stage emphasized correctness of the BSI algebra and explored the memory and runtime implications of bit-sliced dot product, summation, and multiplication.
+\item The GPU stage retained the BSI semantics but narrowed the focus to the one operation that dominates transformer inference: the dot product.
+\item The CPU stage handled slices through general-purpose bitmap operations.
+\item The GPU stage reorganized the problem into batched builders and fused dot kernels designed around the hardware execution model.
+\end{itemize}
+
+This is the point where the thesis moves from data structure research into systems research. The key question is no longer whether bit-sliced vectors are a valid representation. The key question is whether that representation can be mapped onto GPU execution well enough to become practically interesting for LLM inference.

@@ -1,23 +1,31 @@
 \chapter{Reproducibility Commands}
+
 \section{Cluster and Environment Setup}
-The following commands assume that the repository has already been cloned and that execution starts from the repository root.
+The following commands assume that execution begins from the repository root after cloning.
 
 \begin{verbatim}
 source bsi_ops/network_connection.sh
 module load nvhpc-hpcx-cuda12/24.11
 source gpu_connection.sh          # if your cluster provides this helper
 source gpu_env_setup.sh
-git submodule update --init --recursive
-source /home/017510883/miniconda3/bin/activate bsiPytorch
-cd bsi_ops
-bash rebuild_local.sh
 \end{verbatim}
 
 \section{Repository Setup}
 \begin{verbatim}
 git clone https://github.com/gguzunsjsu/bsiPytorch.git
 cd bsiPytorch
+git submodule update --init --recursive
 \end{verbatim}
+
+Create and activate a Python environment with a CUDA-enabled PyTorch build that matches the system.
+
+\section{Build and Rebuild}
+\begin{verbatim}
+cd bsi_ops
+bash rebuild_local.sh
+\end{verbatim}
+
+This rebuild step uninstalls any existing \texttt{bsi\_ops} installation, cleans previous build artifacts, and reinstalls the extension through \texttt{pip install . -v}.
 
 \section{Stable Same-Bit Environment}
 \begin{verbatim}
@@ -33,6 +41,15 @@ export BSI_TC_TMA=1
 export BSI_DOT_DEBUG=1   # optional
 \end{verbatim}
 
+\section{Apples-to-Apples Modes}
+The benchmark harness \texttt{benchmarks/benchmark\_apples\_to\_apples\_bsi.py} supports three modes.
+
+\begin{itemize}[leftmargin=2em]
+\item \texttt{kernel\_only}: builds keys and queries once and measures only the BSI dot kernel against dense \texttt{torch.matmul}
+\item \texttt{linear\_e2e}: includes per-call query construction and approximates a single BSI linear layer end to end
+\item \texttt{model\_e2e}: invokes the full LAMBADA evaluator and measures end-to-end model behavior
+\end{itemize}
+
 \section{Kernel-Only Commands}
 \begin{verbatim}
 python benchmarks/benchmark_apples_to_apples_bsi.py --modes kernel_only \
@@ -46,6 +63,14 @@ python benchmarks/benchmark_apples_to_apples_bsi.py --modes kernel_only \
   --torch_dtype fp16 --bsi_profile 0 --base_dtype fp16
 \end{verbatim}
 
+\section{Single-Layer End-to-End Command}
+\begin{verbatim}
+python benchmarks/benchmark_apples_to_apples_bsi.py --modes linear_e2e \
+  --Q 512 --R 16384 --D 4096 \
+  --decimal_places 2 --compress_threshold 0.5 \
+  --torch_dtype fp16 --bsi_profile 0 --base_dtype fp16
+\end{verbatim}
+
 \section{Model End-to-End Command}
 \begin{verbatim}
 python benchmarks/benchmark_apples_to_apples_bsi.py --modes model_e2e \
@@ -55,35 +80,5 @@ python benchmarks/benchmark_apples_to_apples_bsi.py --modes model_e2e \
   --scope all --bsi_device cuda --bsi_profile 1 --base_dtype fp16
 \end{verbatim}
 
-\section{Nsight Compute Commands}
-\begin{verbatim}
-ncu --set full --target-processes all -f -o ncu_rsweep4_tma_fc1 \
-  -k popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_tma_tensorB \
-  --launch-count 1 \
-  python benchmarks/benchmark_apples_to_apples_bsi.py --modes kernel_only \
-    --Q 512 --R 16384 --D 4096 \
-    --decimal_places 2 --compress_threshold 0.5 \
-    --warmup 0 --iters 1 --torch_dtype fp16 --bsi_profile 0 --base_dtype fp16
-
-ncu --set full --target-processes all -f -o ncu_rsweep4_tma_vocab \
-  -k popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_tma_tensorB \
-  --launch-count 1 \
-  python benchmarks/benchmark_apples_to_apples_bsi.py --modes kernel_only \
-    --Q 512 --R 50272 --D 4096 \
-    --decimal_places 2 --compress_threshold 0.5 \
-    --warmup 0 --iters 1 --torch_dtype fp16 --bsi_profile 0 --base_dtype fp16
-
-BSI_TC_TMA=0 ncu --set full --target-processes all -f -o ncu_rsweep4_no_tma \
-  -k popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4 \
-  --launch-count 1 \
-  python benchmarks/benchmark_apples_to_apples_bsi.py --modes kernel_only \
-    --Q 512 --R 16384 --D 4096 \
-    --decimal_places 2 --compress_threshold 0.5 \
-    --warmup 0 --iters 1 --torch_dtype fp16 --bsi_profile 0 --base_dtype fp16
-\end{verbatim}
-
-\section{Figure Generation Commands}
-\begin{verbatim}
-python docs/latex/scripts/generate_benchmark_plots.py
-bash docs/latex/scripts/stage_ncu_screenshots.sh docs/latex/figures/raw docs/latex/figures/manual
-\end{verbatim}
+\section{Interpretation Notes}
+Use \texttt{kernel\_only} to study the pure dot kernel, \texttt{linear\_e2e} to include runtime query construction, and \texttt{model\_e2e} to evaluate real model behavior. Use \texttt{scope=all} and \texttt{scope=attention} separately when comparing the speed and accuracy tradeoffs of broad versus selective BSI replacement.
