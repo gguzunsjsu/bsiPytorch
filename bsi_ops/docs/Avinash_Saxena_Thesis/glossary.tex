@@ -1,133 +1,54 @@
-%%%%%
-%% Glossary
-%%%%%
-
-\section*{Glossary}
-
 \begin{description}
     \setlength{\itemsep}{0.5cm}
-    
-    \item[\textbf{ASR (Automatic Speech Recognition)}] 
-    Technology that converts spoken audio into text without human intervention. Used in deepfake detection to extract linguistic content and verify semantic consistency between audio and expected transcriptions.
-    
-    \item[\textbf{Attention Mechanism}] 
-    A neural network component that learns to weight different input elements based on their relevance to the task. In RADAD, attention-based projection weights retrieved neighbors according to their similarity to the query, enabling adaptive contextual fusion.
-    
-    \item[\textbf{AUC (Area Under the Receiver Operating Characteristic Curve)}] 
-    A scalar metric measuring classifier performance across all threshold values. AUC ranges from 0 to 1, where 1 indicates perfect discrimination between bonafide and spoof classes.
-    
-    \item[\textbf{Bonafide Audio}] 
-    Authentic, naturally recorded human speech without synthesis or manipulation. Serves as the positive class label in deepfake detection tasks.
-    
-    \item[\textbf{Class Imbalance}] 
-    Scenario where training data contains unequal numbers of samples from different classes. In deepfake detection, datasets often contain more spoof than bonafide samples.
-    
-    \item[\textbf{CNN (Convolutional Neural Network)}] 
-    Deep learning architecture using convolutional layers to extract local feature patterns. CNNs are effective for processing spectrograms in audio processing tasks.
-    
-    \item[\textbf{Cosine Similarity}] 
-    Distance metric measuring the angle between two vectors in embedding space, ranging from 0 to 1. Used for k-NN retrieval in RADAD.
-    
-    \item[\textbf{Cross-Dataset Generalization}] 
-    Model's ability to maintain performance when testing on datasets with different characteristics than training data. Critical for deepfake detection systems deployed across diverse environments.
-    
-    \item[\textbf{Deepfake Audio}] 
-    Synthetic speech generated through voice conversion or text-to-speech synthesis to impersonate a specific speaker. Serves as the negative class in detection tasks.
-    
-    \item[\textbf{EER (Equal Error Rate)}] 
-    Threshold-independent metric where false positive rate equals false negative rate. Lower EER indicates better detection performance.
-    
-    \item[\textbf{Embedding Space}] 
-    High-dimensional vector representation learned by neural networks where similar samples cluster in proximity. Organization of embedding space determines retrieval quality.
-    
-    \item[\textbf{FAISS (Facebook AI Similarity Search)}] 
-    Efficient indexing library for large-scale similarity search and clustering. Enables sub-linear k-NN retrieval in vector databases.
-    
-    \item[\textbf{F1-Score}] 
-    Harmonic mean of precision and recall, balancing both metrics. Preferred when class distribution is imbalanced.
-    
-    \item[\textbf{Feature Extraction}] 
-    Process of converting raw audio waveforms into meaningful representations (embeddings) suitable for downstream tasks.
-    
-    \item[\textbf{Fusion}] 
-    Combination of multiple information sources (query embedding + context embedding) to make informed decisions. In RADAD, fusion combines instance-level query information with population-level retrieved context.
-    
-    \item[\textbf{Generalization}] 
-    Model's ability to perform well on unseen test data, particularly data from different distributions than training.
-    
-    \item[\textbf{k-NN (k-Nearest Neighbors)}] 
-    Non-parametric retrieval method finding k most similar samples to a query in embedding space. Retrieved neighbors provide contextual evidence for decision-making.
-    
-    \item[\textbf{LFCC (Linear-Frequency Cepstral Coefficient)}] 
-    Handcrafted audio feature representing spectral characteristics on linear frequency scale. Predecessor to modern learned representations.
-    
-    \item[\textbf{MFCC (Mel-Frequency Cepstral Coefficient)}] 
-    Handcrafted audio feature mimicking human auditory perception by mapping frequencies to mel scale. Traditional feature used in speech processing.
-    
-    \item[\textbf{MLP (Multilayer Perceptron)}] 
-    Fully connected neural network with multiple layers. In RADAD, lightweight MLPs serve as detection heads.
-    
-    \item[\textbf{Neural Voice Cloning}] 
-    Synthesis technique that learns speaker characteristics from limited speaker data, enabling convincing voice impersonation.
-    
-    \item[\textbf{Non-Parametric}] 
-    Methods that make decisions based on data-driven evidence (e.g., nearest neighbors) rather than fixed learned parameters.
-    
-    \item[\textbf{Parametric}] 
-    Models that learn fixed parameters (weights) during training and rely on these frozen parameters for inference.
-    
-    \item[\textbf{Precision}] 
-    Proportion of positive predictions that are actually correct. Important for minimizing false alarms.
-    
-    \item[\textbf{Prosody}] 
-    Suprasegmental features of speech including intonation, stress, and rhythm. Synthesis artifacts often manifest as unnatural prosody.
-    
-    \item[\textbf{Recall}] 
-    Proportion of actual positive samples correctly identified. Critical for deepfake detection where missing malicious samples carries risk.
-    
-    \item[\textbf{Representation Learning}] 
-    Process of learning meaningful feature encodings from data. Modern approaches use self-supervised learning.
-    
-    \item[\textbf{Retrieval-Augmented}] 
-    Framework combining parametric models with non-parametric retrieval. Queries ground predictions in evidence from similar training samples.
-    
-    \item[\textbf{Self-Supervised Learning}] 
-    Training paradigm where models learn representations from unlabeled data using pretext tasks like masked prediction or contrastive learning.
-    
-    \item[\textbf{Spectrogram}] 
-    Time-frequency representation of audio showing energy distribution across frequencies and time. Standard input for CNNs in audio processing.
-    
-    \item[\textbf{Speech Synthesis}] 
-    Artificial generation of speech from text (TTS) or voice conversion between speakers. Creates synthetic speech but typically exhibits detectable artifacts.
-    
-    \item[\textbf{Temporal Pooling}] 
-    Aggregation of temporal information into fixed-dimensional representations. Preserves multi-scale temporal patterns.
-    
-    \item[\textbf{Temporal Pyramid Pooling (TPP)}] 
-    Hierarchical pooling across multiple temporal scales, capturing both coarse and fine information. Enables fixed-dimensional embeddings from variable-length audio.
-    
-    \item[\textbf{Text-to-Speech (TTS)}] 
-    Speech synthesis technology converting text into spoken audio. Modern neural TTS systems produce high-quality synthetic speech.
-    
-    \item[\textbf{TNR (True Negative Rate) / Specificity}] 
-    Proportion of actual negative samples (spoof) correctly identified.
-    
-    \item[\textbf{TPR (True Positive Rate) / Recall}] 
-    Proportion of actual positive samples (bonafide) correctly identified.
-    
-    \item[\textbf{Vector Database}] 
-    Indexed collection of embedding vectors enabling efficient similarity search. Stores training sample embeddings.
-    
-    \item[\textbf{Voice Conversion}] 
-    Speech synthesis technique transforming one speaker's voice characteristics to another speaker while preserving linguistic content.
-    
-    \item[\textbf{Wav2Vec 2.0}] 
-    Self-supervised speech representation model learning contextualized acoustic embeddings through masked prediction on unlabeled speech.
-    
-    \item[\textbf{WavLM}] 
-    Multilingual self-supervised speech model trained with dual objectives: masked prediction and speaker identification. Learns speaker-discriminative embeddings.
-    
-    \item[\textbf{Whisper}] 
-    Large-scale multilingual speech recognition model pretrained on 680,000 hours of multilingual audio. Produces robust audio embeddings.
-    
+
+    \item[\textbf{Bit-Sliced Indexing (BSI)}]
+    A representation in which numeric values are decomposed into aligned bit slices so that computation can be expressed through bitwise overlap and weighted accumulation.
+
+    \item[\textbf{Bit-Sliced Vector (BSV)}]
+    A vector encoded as a stack of bitmap slices together with sign and existence metadata.
+
+    \item[\textbf{HybridBitmap}]
+    The bitmap container used in the CPU-side implementation. A slice may be stored either in compressed form or verbatim depending on its density.
+
+    \item[\textbf{Existence Bitmap}]
+    A bitmap that records whether a value is present at each position in a bit-sliced vector.
+
+    \item[\textbf{Sign Bitmap}]
+    A bitmap that records whether the corresponding vector value is negative.
+
+    \item[\textbf{Chunk Scaling}]
+    A fixed-bit mechanism that rescales bit-sliced values at chunk granularity so that limited slice counts can still represent a useful numeric range.
+
+    \item[\textbf{Query Slices}]
+    The runtime bit-sliced representation of activation rows supplied to the CUDA dot kernel.
+
+    \item[\textbf{Key Slices}]
+    The static bit-sliced representation of linear-layer weights stored on device and reused across forward passes.
+
+    \item[\textbf{Weighted Popcount}]
+    The accumulation rule used in BSI dot product, where overlap counts between slices are multiplied by slice-dependent significance weights.
+
+    \item[\textbf{Scope = all}]
+    The policy that replaces all eligible transformer linear layers with BSI-based linear operators.
+
+    \item[\textbf{Scope = attention}]
+    The policy that replaces only the attention-related linear projections and leaves feed-forward layers dense.
+
+    \item[\textbf{LAMBADA}]
+    A next-token benchmark in which the target token depends on broad discourse context. It is used here for end-to-end evaluation.
+
+    \item[\textbf{SmoothQuant}]
+    A dense post-training quantization method that redistributes activation outliers into the weights to enable efficient W8A8 inference.
+
+    \item[\textbf{Tensor Core}]
+    Specialized GPU execution hardware used for matrix-style operations. In this work, the kernels use tensor-core-oriented Boolean accumulation rather than dense FP16 GEMM.
+
+    \item[\textbf{Tensor Memory Accelerator (TMA)}]
+    Hopper hardware support for efficient multidimensional tensor movement between global and shared memory.
+
+    \item[\textbf{Eligible Warp}]
+    A warp that is ready to issue work on a scheduler cycle. Low eligible-warp count indicates scheduling and dependency inefficiency.
+
+    \item[\textbf{Same-Bit Configuration}]
+    The stable fixed-slice operating point used in the thesis, centered on seven query slices, six key slices, chunk scaling, and tensor-core-oriented dot kernels.
 \end{description}

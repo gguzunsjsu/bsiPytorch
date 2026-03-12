@@ -15,6 +15,7 @@
 \usepackage{tocloft}
 \usepackage{etoolbox}
 \usepackage{amsmath}
+\usepackage{titlesec}
 \hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
 \doublespacing
 \pagestyle{plain}
@@ -22,18 +23,29 @@
 \setlength{\parskip}{0pt}
 \graphicspath{{latex/figures/generated/}{latex/figures/manual/}}
 \captionsetup{font=small}
+\titleformat{\chapter}[display]{\normalfont\bfseries\centering}{\chaptertitlename\ \thechapter}{12pt}{\Large}
 
-% SJSU-style metadata placeholders
+% Replace the metadata fields below with the final submission information.
 \newcommand{\ThesisTitle}{BSI-Native Tensor-Core Kernels for Compressed LLM Inference}
 \newcommand{\ThesisAuthor}{Student Name}
 \newcommand{\DegreeName}{Master of Science}
 \newcommand{\ProgramName}{Computer Engineering}
-\newcommand{\InstitutionName}{San Jose State University}
+\newcommand{\DepartmentName}{Department of Computer Engineering}
+\newcommand{\CollegeName}{Charles W. Davidson College of Engineering}
+\newcommand{\InstitutionName}{San Jos\'e State University}
+\newcommand{\InstitutionLocation}{San Jos\'e, California}
 \newcommand{\GraduationMonth}{May}
 \newcommand{\GraduationYear}{2026}
-\newcommand{\CommitteeA}{Advisor Name, Ph.D.}
-\newcommand{\CommitteeB}{Committee Member Name, Ph.D.}
-\newcommand{\CommitteeC}{Committee Member Name, Ph.D.}
+\newcommand{\AdvisorName}{Advisor Name, Ph.D.}
+\newcommand{\CommitteeBName}{Committee Member Name, Ph.D.}
+\newcommand{\CommitteeCName}{Committee Member Name, Ph.D.}
+% Benchmark figures already generated in latex/figures/generated/.
+% Additional manual figures can be dropped into latex/figures/manual/
+% and bound here through the same macro pattern when they are ready.
+\newcommand{\FigureMemoryComparison}{memory_comparison.png}
+\newcommand{\FigureDotLatencyComparison}{dot_latency_comparison.png}
+\newcommand{\FigureAccuracyScopeAll}{accuracy_scope_all.png}
+\newcommand{\FigureAccuracyScopeAttention}{accuracy_scope_attention.png}
 
 \newcommand{\MakeSJSUTitlePage}{%
   \thispagestyle{empty}%
@@ -42,8 +54,10 @@
   \vfill
   A Thesis\par
   Presented to\par
-  The Faculty of the Department of \ProgramName\par
+  The Faculty of the \DepartmentName\par
+  \CollegeName\par
   \InstitutionName\par
+  \InstitutionLocation\par
   \vfill
   In Partial Fulfillment\par
   of the Requirements for the Degree\par
@@ -75,17 +89,17 @@
   \vspace{1.5in}
   \ThesisAuthor\par
   \vspace{1in}
-  APPROVED FOR THE DEPARTMENT OF \MakeUppercase{\ProgramName}\par
+  APPROVED FOR THE \MakeUppercase{\DepartmentName}\par
   \vspace{0.75in}
   \end{center}
   \noindent
-  \CommitteeA\par
+  \AdvisorName\par
   \vspace{0.75in}
   \noindent
-  \CommitteeB\par
+  \CommitteeBName\par
   \vspace{0.75in}
   \noindent
-  \CommitteeC\par
+  \CommitteeCName\par
   \vfill
   \begin{center}
   APPROVED FOR THE UNIVERSITY
@@ -96,7 +110,10 @@
 \newcommand{\MakeSJSUAbstractPage}{%
   \thispagestyle{empty}%
   \begin{center}
+  \MakeUppercase{ABSTRACT}\par
+  \vspace{0.5in}
   \MakeUppercase{\ThesisTitle}\par
+  \vspace{0.25in}
   by \ThesisAuthor
   \end{center}
   \vspace{0.5in}
@@ -115,7 +132,8 @@
 \setcounter{page}{5}
 
 \chapter*{Acknowledgments}
-The author gratefully acknowledges the guidance of the thesis advisor and committee, the support of the Department of Computer Engineering, and the computing resources that made the implementation and evaluation possible. The work also benefited from the prior CPU-side BSI and bitmap algebra foundation developed before the GPU implementation was scaled to transformer inference.
+\addcontentsline{toc}{chapter}{Acknowledgments}
+The author gratefully acknowledges the guidance of the thesis advisor and committee, the support of the Department of Computer Engineering and the Charles W. Davidson College of Engineering, and the computing resources that made the implementation and evaluation possible. The work also benefited from the earlier bitmap and BSI algebra foundation that made the later GPU implementation possible.
 \clearpage
 
 \tableofcontents

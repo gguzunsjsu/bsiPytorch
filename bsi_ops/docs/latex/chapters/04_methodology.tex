@@ -1,16 +1,16 @@
 \chapter{Methodology}
 
 \section{Overview of the Inference Pipeline}
-The methodology centers on a single requirement: the weights remain stored in BSI form and the dot product is computed from BSI slices rather than by converting the representation back into a dense low-precision matrix. Every design decision in the pipeline follows from that constraint.
+The methodology centers on a single requirement: the weights remain stored in BSI form and the dot product is computed from BSI slices rather than by converting the representation back into a dense low-precision matrix. Every design decision in the pipeline follows from that constraint. This requirement distinguishes the present work from dense low-bit inference systems and is the reason the methodology must treat representation and execution as a coupled design problem.
 
-At a high level, the inference path works as follows. A dense weight matrix is converted once into a BSI key structure. At runtime, the input activation tensor for a linear layer is flattened into a batch of query rows and converted into BSI query slices on the GPU. A fused dot-product kernel consumes the BSI queries and BSI keys and produces dense output rows. Bias and reshape operations then restore the interface expected by the surrounding transformer layers. The methodology therefore combines representation construction and execution rather than treating them as independent problems.
+At a high level, the inference path works as follows. A dense weight matrix is converted once into a BSI key structure. At runtime, the input activation tensor for a linear layer is flattened into a batch of query rows and converted into BSI query slices on the GPU. A fused dot-product kernel consumes the BSI queries and BSI keys and produces dense output rows. Bias and reshape operations then restore the interface expected by the surrounding transformer layers. The methodology therefore combines representation construction and execution rather than treating them as independent problems, because the cost of one stage directly changes the value of the other.
 
 \section{Numeric Conversion into BSI Form}
 \subsection{Decimal Scaling}
 Floating-point weights and activations are first scaled by a decimal factor before conversion into bit-sliced form. The implementation exposes this through the \texttt{decimal\_places} parameter. In the primary study, the standard operating point is \texttt{decimal\_places=2}. A value such as \(x=0.1234\) is therefore scaled to approximately \(12\) before fixed-bit conversion. This step controls the tradeoff between preserving fractional detail and limiting the size of the integer range that must be represented through slices.
 
 \subsection{Compression Threshold}
-The implementation also exposes a \texttt{compress\_threshold} parameter. In the principal experiments, this threshold is set to \texttt{0.5}. Conceptually, the threshold governs how willing the representation is to store a slice in compressed form rather than verbatim form. Although the active CUDA path does not rely on the CPU compression routines at runtime, the threshold remains part of the BSI semantics and of the experimental configuration.
+The implementation also exposes a \texttt{compress\_threshold} parameter. In the principal experiments, this threshold is set to \texttt{0.5}. Conceptually, the threshold governs how willing the representation is to store a slice in compressed form rather than verbatim form. Although the active CUDA path does not rely on the CPU compression routines at runtime, the threshold remains part of the BSI semantics and of the experimental configuration, and it therefore remains part of the methodological definition of the representation.
 
 \subsection{Fixed Slice Counts}
 A major methodological choice in the CUDA path is the use of fixed query and key slice counts. Rather than letting the builder choose a variable number of slices for every tensor, the stable same-bit regime fixes the number of slices in advance. The principal setting used in the baseline is:
@@ -81,7 +81,7 @@ This geometry is built from:
 \item a two-stage data-movement pipeline.
 \end{itemize}
 
-This tile is defensible because it aligns with the Boolean matrix multiply granularity used by the kernel family, remains stable across the tested OPT sizes, and provides a concrete hardware-aware design point for discussion.
+This tile is defensible because it aligns with the Boolean matrix multiply granularity used by the kernel family, remains stable across the tested OPT sizes, and provides a concrete hardware-aware design point for discussion. It is not presented as an arbitrary tuning result, but as the most stable point reached after multiple kernel-design iterations.
 
 \section{Weighted Popcount Formulation}
 The core arithmetic of the CUDA dot kernel mirrors the earlier CPU-side bit-sliced dot product, but it is implemented in a batched tensor-core-oriented form.
@@ -114,7 +114,7 @@ The implementation records several timing counters inside the BSI linear wrapper
 \item total number of output elements produced.
 \end{itemize}
 
-This instrumentation is methodologically important because it prevents false optimization claims. If a change makes the kernel itself look faster but increases the cost of preprocessing or query building, the full timing breakdown exposes that shift immediately.
+This instrumentation is methodologically important because it prevents false optimization claims. If a change makes the kernel itself look faster but increases the cost of preprocessing or query building, the full timing breakdown exposes that shift immediately. This was not a hypothetical concern in the project; several plausible layout changes appeared favorable in isolated timing and then failed under full-system measurement.
 
 \section{Benchmark Modes}
 Three benchmark modes are used to keep the measurements interpretable.

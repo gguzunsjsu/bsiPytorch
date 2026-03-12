@@ -3,7 +3,7 @@
 \section{Why the GPU Results Should Be Read Together with the Earlier CPU Study}
 The current GPU results make the most sense when they are read together with the earlier CPU observations. The CPU work established that BSI could represent vectors compactly and support dot product, summation, and multiplication directly on slices, but that those operations were not yet competitive in execution time on a CPU. The GPU work therefore should not be read as an isolated kernel study. It is the second stage of a longer argument. The first stage showed that the data structure was expressive and memory-conscious; the second stage asks whether the same representation can be executed materially better on massively parallel hardware.
 
-That framing matters because it clarifies what success means. Success in the present study does not require BSI to beat dense FP16 in every case. Success means that the system provides a working end-to-end transformer inference path, preserves meaningful compression, and improves same-bit execution enough to make the remaining bottlenecks explicit and analyzable.
+That framing matters because it clarifies what success means. Success in the present study does not require BSI to outperform dense FP16 in every regime. Success means that the system provides a working end-to-end transformer inference path, preserves meaningful compression, and improves same-bit execution enough to expose the remaining bottlenecks clearly and quantitatively.
 
 \section{Cross-Model Memory Footprint and Dot Latency}
 Table~\ref{tab:crossmodel-latency} summarizes the main cross-model results under the stable same-bit configuration. All numbers correspond to the principal evaluation setting with decimal scaling at two decimal places, compression threshold 0.5, sequence length 512, and FP16 as the dense baseline dtype.
@@ -25,7 +25,7 @@ OPT-6.7B & 12700.031 & 5022.281 & 10141.031 & 66.452 & 15.493 & 23.003 & 5.357 \
 
 Several patterns are immediately visible.
 
-First, BSI produces substantial compression under \texttt{scope=all}. The reduction is modest in absolute terms for \texttt{opt-125m}, but becomes much more significant as model size grows. By \texttt{opt-6.7b}, the static representation is reduced from roughly 12.7~GB to just above 5.0~GB.
+First, BSI produces substantial compression under \texttt{scope=all}. The reduction is modest in absolute terms for \texttt{opt-125m}, but becomes much more significant as model size grows. By \texttt{opt-6.7b}, the static representation is reduced from roughly 12.7~GB to just above 5.0~GB while preserving a functioning end-to-end inference path.
 
 Second, \texttt{scope=attention} preserves a much larger fraction of the dense model footprint because fewer layers are replaced. This is expected, but it is important because the attention-only regime later emerges as the better quality-preserving operating point.
 
@@ -33,14 +33,14 @@ Third, the BSI dot path scales less favorably than dense Torch as the model widt
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.92\textwidth]{memory_comparison.png}
+\includegraphics[width=0.92\textwidth]{\FigureMemoryComparison}
 \caption{Static model size comparison across dense FP16, BSI \texttt{scope=all}, and BSI \texttt{scope=attention}.}
 \label{fig:memory-comparison}
 \end{figure}
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.92\textwidth]{dot_latency_comparison.png}
+\includegraphics[width=0.92\textwidth]{\FigureDotLatencyComparison}
 \caption{Per-sample dot latency comparison across dense Torch and BSI under \texttt{scope=all} and \texttt{scope=attention}.}
 \label{fig:dot-latency-comparison}
 \end{figure}
@@ -63,7 +63,7 @@ OPT-6.7B & 0.798 & 0.741 & 0.929 & 0.896 \\
 \end{tabular}
 \end{table}
 
-The smallest model is relatively forgiving. In that regime, the fixed-bit BSI replacement is close enough to the dense baseline that the memory savings are compelling. The gap widens at \texttt{opt-1.3b} and widens further at \texttt{opt-6.7b}. This behavior is consistent with a uniform fixed-bit policy that becomes too blunt as the model grows in width and depth. The result does not invalidate BSI as a representation. It shows that the fixed same-bit regime is usable but not yet universally robust.
+The smallest model is relatively forgiving. In that regime, the fixed-bit BSI replacement remains close enough to the dense baseline that the memory savings are compelling. The gap widens at \texttt{opt-1.3b} and widens further at \texttt{opt-6.7b}. This behavior is consistent with a uniform fixed-bit policy that becomes too coarse as the model grows in width and depth. The result does not invalidate BSI as a representation; rather, it shows that the fixed same-bit regime is usable but not yet universally robust.
 
 \section{Accuracy under \texttt{scope=attention}}
 Table~\ref{tab:scope-attn-acc} reports the same metric when only attention-related linear layers are replaced.
@@ -87,14 +87,14 @@ Attention-only replacement preserves quality much better than \texttt{scope=all}
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.92\textwidth]{accuracy_scope_all.png}
+\includegraphics[width=0.92\textwidth]{\FigureAccuracyScopeAll}
 \caption{Accuracy comparison between dense FP16 and BSI under \texttt{scope=all}.}
 \label{fig:accuracy-scope-all}
 \end{figure}
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.92\textwidth]{accuracy_scope_attention.png}
+\includegraphics[width=0.92\textwidth]{\FigureAccuracyScopeAttention}
 \caption{Accuracy comparison between dense FP16 and BSI under \texttt{scope=attention}.}
 \label{fig:accuracy-scope-attention}
 \end{figure}
@@ -104,12 +104,12 @@ The \texttt{opt-6.7b} model is the most informative single checkpoint in the stu
 
 Under the primary evaluation setting, the dense FP16 baseline produces top-1 accuracy of 0.798, top-5 accuracy of 0.929, and per-sample dot latency of 15.493~ms. Under the BSI same-bit baseline with \texttt{scope=all}, the model size drops to 5022.281~MB, top-1 accuracy becomes 0.741, top-5 accuracy becomes 0.896, and per-sample dot latency rises to 66.452~ms. Under \texttt{scope=attention}, the static size is 10141.031~MB, top-1 accuracy is 0.779, top-5 accuracy is 0.921, and dot latency is 23.003~ms.
 
-This single case captures the main tradeoff of the thesis. The more aggressively BSI is applied, the more compression it yields. At the same time, that broader replacement increases the cost of BSI dot execution and exposes more of the model to quantization error. Attention-only replacement gives up a portion of the compression benefit, but it preserves far more of the dense baseline behavior. This is not a nuisance result; it is a systems result that reveals where the present BSI operating point is strongest.
+This single case captures the central tradeoff of the work. The more aggressively BSI is applied, the more compression it yields. At the same time, broader replacement increases the cost of BSI dot execution and exposes more of the model to quantization error. Attention-only replacement gives up a portion of the compression benefit, but it preserves far more of the dense baseline behavior. This is not a marginal observation. It is the clearest empirical demonstration of where the present BSI operating point is strongest and where it remains too costly.
 
 \section{Kernel-Only Interpretation}
 Kernel-only experiments were used to study the pure dot kernel without full-model overhead. The most important shapes were the FC1-like \(Q=512, R=16384, D=4096\) case and the very-wide \(Q=512, R=50272, D=4096\) case. These measurements showed that kernel changes can materially alter dot latency even when they do not change the numerical representation. However, they also showed that kernel-only wins are not automatically end-to-end wins. Any design that improves the raw kernel but increases runtime query construction or duplicates storage may still regress in full model execution.
 
-The thesis therefore treats kernel-only results as necessary but not sufficient evidence. The final acceptance criterion for the design remains the end-to-end model run.
+Kernel-only results are therefore treated as necessary but not sufficient evidence. The final acceptance criterion for the design remains the end-to-end model run.
 
 \section{What the Results Prove}
 Taken together, the measured results support four concrete statements.
