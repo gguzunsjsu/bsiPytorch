@@ -1,0 +1,276 @@
+% %%%%%
+% %% Use \section{Title of appendix} to start a new appendix. Appendices are optional. 
+% %% If none are present, comment out "" in main.tex
+% %%%%%
+
+
+% \section{What Should Be Included in Appendices}\label{apx:appendix1}
+
+% Appendices should contain information that is too lengthy to be included in the thesis chapters but further support the conclusions of the thesis. For example, one could include additional experimental results in the form of tables or additional figures. Each appendix should start with a paragraph introducing the items being presented. Additionally, each table or figure should be preceded by a paragraph that explains the data being presented and the conclusions that can be drawn from them. Please note that data already presented in the main thesis should not be repeated in an appendix. One cannot, for example, include the results of an experiment as a figure in the thesis and again as a table in the appendix. One can, however, include detailed results in tables in the appendix and a summary figure in the thesis portraying only the ``best" results.
+
+% \subsection{Subsections in Appendices}\label{apx:appendix1:subsections}
+
+% It is possible, and advisable, to use (multiple levels of) subsections in an Appendix. The main Appendix sections may be optionally titled. They will automatically be assigned Appendix A, Appendix B, etc. If a title is present, it will appear on the next line in the appendix and on the same line in the TOC. Sub-sections will be listed in the TOC as A.1, A.2, etc.
+
+% Figures, such as \figurename~\ref{fig:nonzero-distr}, should only be referenced in the appendix. The thesis content can point to an appendix but not specifically reference a table or figure in the appendix.
+
+% \begin{figure}[tbh]
+%   \centering
+%   \includegraphics[width=0.6\textwidth]{figures/hist-rows.pdf}
+%   \caption{Distribution of sample non-zeros.}
+%   \label{fig:nonzero-distr}
+% \end{figure}
+
+
+% \section{Title of Another Appendix}\label{apx:appendix2}
+
+% Different appendices should cover unrelated topics. If the appendices are on the same topic, they should just be sub-sections within the same appendix. 
+
+% \begin{figure}[tbh]
+%   \centering
+%   \includegraphics[width=0.85\textwidth]{figures/speedup2-nbase.pdf}
+%   \caption{Speedup comparison of our method against baselines.}
+%   \label{fig:speedup}
+% \end{figure}
+%%%%%
+%% Appendix A: Source Code Repository
+%% Contains information about accessing the RADAD implementation and experimental code
+%%%%%
+%%%%%
+%% Glossary
+%%%%%
+
+\addcontentsline{toc}{section}{Glossary}
+\section*{Glossary}
+
+\vspace{12pt}
+
+\begin{description}
+    \setlength{\itemsep}{6pt}
+    \setlength{\parsep}{0pt}
+    
+    \item[\textbf{ASR (Automatic Speech Recognition)}] 
+    Technology that converts spoken audio into text without human intervention. Used in deepfake detection to extract linguistic content and verify semantic consistency between audio and expected transcriptions.
+    
+    \item[\textbf{Attention Mechanism}] 
+    A neural network component that learns to weight different input elements based on their relevance to the task. In RADAD, attention-based projection weights retrieved neighbors according to their similarity to the query, enabling adaptive contextual fusion.
+    
+    \item[\textbf{AUC (Area Under the Receiver Operating Characteristic Curve)}] 
+    A scalar metric measuring classifier performance across all threshold values. AUC ranges from 0 to 1, where 1 indicates perfect discrimination between bonafide and spoof classes.
+    
+    \item[\textbf{Bonafide Audio}] 
+    Authentic, naturally recorded human speech without synthesis or manipulation. Serves as the positive class label in deepfake detection tasks.
+    
+    
+    \item[\textbf{CNN (Convolutional Neural Network)}] 
+    Deep learning architecture using convolutional layers to extract local feature patterns. CNNs are effective for processing spectrograms in audio processing tasks.
+    
+    \item[\textbf{Cosine Similarity}] 
+    Distance metric measuring the angle between two vectors in embedding space, ranging from 0 to 1. Used for k-NN retrieval in RADAD.
+    
+    \item[\textbf{Cross-Dataset Generalization}] 
+    Model's ability to maintain performance when testing on datasets with different characteristics than training data. Critical for deepfake detection systems deployed across diverse environments.
+    
+    \item[\textbf{Deepfake Audio}] 
+    Synthetic speech generated through voice conversion or text-to-speech synthesis to impersonate a specific speaker. Serves as the negative class in detection tasks.
+    
+    \item[\textbf{EER (Equal Error Rate)}] 
+    Threshold-independent metric where false positive rate equals false negative rate. Lower EER indicates better detection performance.
+    
+    \item[\textbf{Embedding Space}] 
+    High-dimensional vector representation learned by neural networks where similar samples cluster in proximity. Organization of embedding space determines retrieval quality.
+    
+    \item[\textbf{FAISS (Facebook AI Similarity Search)}] 
+    Efficient indexing library for large-scale similarity search and clustering. Enables sub-linear k-NN retrieval in vector databases.
+    
+    \item[\textbf{F1-Score}] 
+    Harmonic mean of precision and recall, balancing both metrics. Preferred when class distribution is imbalanced.
+    
+    \item[\textbf{Feature Extraction}] 
+    Process of converting raw audio waveforms into meaningful representations (embeddings) suitable for downstream tasks.
+    
+    \item[\textbf{Fusion}] 
+    Combination of multiple information sources (query embedding + context embedding) to make informed decisions. In RADAD, fusion combines instance-level query information with population-level retrieved context.
+    
+    \item[\textbf{Generalization}] 
+    Model's ability to perform well on unseen test data, particularly data from different distributions than training.
+    
+    \item[\textbf{k-NN (k-Nearest Neighbors)}] 
+    Non-parametric retrieval method finding k most similar samples to a query in embedding space. Retrieved neighbors provide contextual evidence for decision-making.
+    
+    \item[\textbf{LFCC (Linear-Frequency Cepstral Coefficient)}] 
+    Handcrafted audio feature representing spectral characteristics on linear frequency scale. Predecessor to modern learned representations.
+    
+    \item[\textbf{MFCC (Mel-Frequency Cepstral Coefficient)}] 
+    Handcrafted audio feature mimicking human auditory perception by mapping frequencies to mel scale. Traditional feature used in speech processing.
+    
+    \item[\textbf{MLP (Multilayer Perceptron)}] 
+    Fully connected neural network with multiple layers. In RADAD, lightweight MLPs serve as detection heads.
+    
+    \item[\textbf{Neural Voice Cloning}] 
+    Synthesis technique that learns speaker characteristics from limited speaker data, enabling convincing voice impersonation.
+    
+    \item[\textbf{Non-Parametric}] 
+    Methods that make decisions based on data-driven evidence (e.g., nearest neighbors) rather than fixed learned parameters.
+    
+    \item[\textbf{Parametric}] 
+    Models that learn fixed parameters (weights) during training and rely on these frozen parameters for inference.
+    
+    \item[\textbf{Precision}] 
+    Proportion of positive predictions that are actually correct. Important for minimizing false alarms.
+    
+    \item[\textbf{Prosody}] 
+    Suprasegmental features of speech including intonation, stress, and rhythm. Synthesis artifacts often manifest as unnatural prosody.
+    
+    \item[\textbf{Recall}] 
+    Proportion of actual positive samples correctly identified. Critical for deepfake detection where missing malicious samples carries risk.
+    
+    \item[\textbf{Representation Learning}] 
+    Process of learning meaningful feature encodings from data. Modern approaches use self-supervised learning.
+    
+    \item[\textbf{Retrieval-Augmented}] 
+    Framework combining parametric models with non-parametric retrieval. Queries ground predictions in evidence from similar training samples.
+    
+    \item[\textbf{Self-Supervised Learning}] 
+    Training paradigm where models learn representations from unlabeled data using pretext tasks like masked prediction or contrastive learning.
+    
+    \item[\textbf{Spectrogram}] 
+    Time-frequency representation of audio showing energy distribution across frequencies and time. Standard input for CNNs in audio processing.
+    
+    
+    \item[\textbf{Temporal Pooling}] 
+    Aggregation of temporal information into fixed-dimensional representations. Preserves multi-scale temporal patterns.
+    
+    \item[\textbf{Temporal Pyramid Pooling (TPP)}] 
+    Hierarchical pooling across multiple temporal scales, capturing both coarse and fine information. Enables fixed-dimensional embeddings from variable-length audio.
+    
+    \item[\textbf{Text-to-Speech (TTS)}] 
+    Speech synthesis technology converting text into spoken audio. Modern neural TTS systems produce high-quality synthetic speech.
+    
+    \item[\textbf{TNR (True Negative Rate) / Specificity}] 
+    Proportion of actual negative samples (spoof) correctly identified.
+    
+    \item[\textbf{TPR (True Positive Rate) / Recall}] 
+    Proportion of actual positive samples (bonafide) correctly identified.
+    
+    \item[\textbf{Vector Database}] 
+    Indexed collection of embedding vectors enabling efficient similarity search. Stores training sample embeddings.
+    
+    \item[\textbf{Voice Conversion}] 
+    Speech synthesis technique transforming one speaker's voice characteristics to another speaker while preserving linguistic content.
+    
+    \item[\textbf{Wav2Vec 2.0}] 
+    Self-supervised speech representation model learning contextualized acoustic embeddings through masked prediction on unlabeled speech.
+    
+    \item[\textbf{WavLM}] 
+    Multilingual self-supervised speech model trained with dual objectives: masked prediction and speaker identification. Learns speaker-discriminative embeddings.
+    
+    \item[\textbf{Whisper}] 
+    Large-scale multilingual speech recognition model pretrained on 680,000 hours of multilingual audio. Produces robust audio embeddings.
+    
+\end{description}
+
+% Add page break before appendix
+\newpage
+
+% Now include your existing Appendix A content below
+% (everything that was already in appendices.tex)
+
+
+\section{Source Code Repository}\label{apx:github_repo}
+
+The complete implementation of the Retrieval-Augmented Deepfake Audio Detection (RADAD) framework, including model architecture, training scripts, evaluation protocols, and experimental configurations, is publicly available on GitHub. This appendix provides information on accessing the repository and understanding the code organization.
+
+\subsection{Repository Access and Citation}\label{apx:github_repo:access}
+
+The source code is maintained in the following GitHub repository:
+
+\textbf{Repository URL:} \url{https://github.com/AvinashSaxena777/RADAD-RetrievalAugmentedDeepfakeAudioDetection}
+
+
+The repository is organized to facilitate reproduction of all experimental results presented in this thesis. All code is written in Python with supporting Jupyter notebooks for exploratory analysis and visualization. The implementation leverages standard deep learning frameworks including PyTorch for model development and FAISS for efficient vector retrieval operations.
+
+\subsection{Repository Contents and Organization}\label{apx:github_repo:contents}
+
+The repository includes the following key components:
+
+\begin{itemize}
+    \item \textbf{Feature Extraction Modules:} Implementations of Wav2Vec 2.0, WavLM, and Whisper front-ends adapted for deepfake detection tasks.
+    
+    \item \textbf{Temporal Pyramid Pooling:} Multi-scale temporal aggregation module that converts variable-length audio sequences to fixed-dimensional embeddings.
+    
+    \item \textbf{Retrieval-Augmented Architecture:} FAISS-based vector database implementation with projection layers and fusion mechanisms for combining query and context embeddings.
+    
+    \item \textbf{Training and Evaluation Scripts:} Complete scripts for model training with mixed precision, gradient clipping, and weighted loss functions. Evaluation scripts compute standard detection metrics (Accuracy, AUC, EER) and retrieval quality metrics (Top-1 Accuracy@k, Precision@k, Recall@k, MRR).
+    
+    \item \textbf{Experimental Configurations:} Hyperparameter files and configuration scripts for reproducing results on Release In The Wild and FakeAVCeleb datasets.
+    
+    \item \textbf{Pre-trained Model Checkpoints:} Saved model weights for WavLM, Wav2Vec 2.0, and Whisper configurations allowing direct evaluation without retraining.
+    
+    \item \textbf{Data Preprocessing Utilities:} Audio preprocessing, segmentation, and dataset preparation scripts for both benchmark and custom datasets.
+\end{itemize}
+
+\subsection{Setup and Execution Instructions}\label{apx:github_repo:setup}
+
+The following steps enable complete reproduction of the experimental results:
+
+\textbf{1. Environment Setup}
+
+\begin{verbatim}
+# Clone repository
+git clone https://github.com/AvinashSaxena777/RADAD-RetrievalAugmentedDeepfakeAudioDetection.git
+cd RADAD-RetrievalAugmentedDeepfakeAudioDetection
+
+# Install required dependencies
+pip install -r requirements.txt
+\end{verbatim}
+
+\textbf{2. Dataset Preparation}
+
+\begin{verbatim}
+# Download Release In The Wild dataset
+wget https://owncloud.fraunhofer.de/index.php/s/JZgXh0JEAF0elxa/download
+
+# Extract and organize dataset
+unzip dataset.zip
+python scripts/prepare_data.py --dataset path/to/dataset
+\end{verbatim}
+
+\textbf{3. Model Training}
+
+\begin{verbatim}
+# Train RADAD with WavLM feature extractor
+python deepfake_detection.py --mode train \
+    --feature_extractor wavlm \
+    --dataset Release_in_the_Wild \
+    --epochs 10 \
+    --batch_size 32
+\end{verbatim}
+
+\textbf{4. Model Evaluation}
+
+\begin{verbatim}
+# Evaluate trained model on test set
+python deepfake_detection.py --mode evaluate \
+    --model_prefix best_model \
+    --dataset Release_in_the_Wild
+\end{verbatim}
+
+
+\textbf{5. Inference on Custom Audio}
+
+\begin{verbatim}
+# Perform detection on custom audio samples
+python deepfake_detection.py --mode predict \
+    --audio_path /path/to/audio.wav \
+    --model_prefix best_model
+\end{verbatim}
+
+
+Detailed setup instructions, dependency specifications, and troubleshooting guidance are provided in the repository's \texttt{README.md} file. For questions regarding implementation or reproduction, issues can be submitted through the GitHub repository interface.
+
+\subsection{Reproducibility and Availability}\label{apx:github_repo:reproducibility}
+
+The code repository is maintained as a public resource to support reproducibility and facilitate future research building upon this work. All scripts include detailed comments explaining key functionality, and configuration files document hyperparameter choices. The repository will be maintained through the academic year and is archived on GitHub ensuring long-term availability.
+
+By providing comprehensive source code and experimental configurations, this work adheres to principles of open science and reproducible research. Researchers, practitioners, and students can independently verify the reported results, adapt the methodology to new datasets, and extend the framework with novel components.
