@@ -63,6 +63,8 @@ BSI_DOT_DEBUG=1
 
 prints the selected kernel family and shape metadata during execution. These settings define the actual operating point studied in the thesis and should not be treated as incidental environment choices.
 
+The implementation targets Hopper-class GPUs and relies on CUDA features documented in the NVIDIA Hopper tuning guide, the CUDA C++ Programming Guide, and the PTX ISA reference, particularly for asynchronous copy, tensor-memory movement, and the tensor-core-oriented instruction model used by the same-bit kernel family \cite{nvidia_hopper_tuning,nvidia_cuda_guide,nvidia_ptx_isa}.
+
 \section{Kernel Geometry}
 The most stable CUDA tile geometry reached in the work corresponds to a logical \(32 \times 128 \times 256\)-bit CTA. In GEMM-style terms, this means:
 

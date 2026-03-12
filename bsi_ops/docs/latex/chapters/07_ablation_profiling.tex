@@ -3,7 +3,7 @@
 \section{Scope Ablation}
 The contrast between \texttt{scope=all} and \texttt{scope=attention} is one of the most important ablations in the entire study. It shows that the present BSI regime is not uniformly compatible with all linear subgraphs of a transformer. When all eligible layers are replaced, the model achieves the largest memory reduction but also suffers the largest accuracy and latency penalties. When only attention projections are replaced, the model retains much more of the dense baseline behavior while still reducing static size and dot cost relative to full-scope BSI replacement.
 
-This ablation matters because it establishes that the problem cannot be framed purely as a global bitwidth problem. The same bit policy has different consequences in different layer groups.
+This ablation matters because it establishes that the problem cannot be framed purely as a global bitwidth problem. The same bit policy has different consequences in different layer groups. That behavior is consistent with the broader low-bit inference literature, where compression quality depends strongly on outlier structure, salient channels, and the placement of quantization error within the network \cite{gupta2015limitedprecision,llmint8,awq,smoothquant}.
 
 \section{Larger-Model Sensitivity}
 The 30B model was used as a stress test rather than as a primary target. Its value lies in revealing how the current fixed-bit BSI policy fails.
