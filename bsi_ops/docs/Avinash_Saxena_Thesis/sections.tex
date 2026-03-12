@@ -3,7 +3,7 @@ Large language model inference is dominated by repeated linear projections. In d
 
 This work addresses that question through Bit-Sliced Indexing (BSI). The objective is not simply to compress transformer weights, and it is not simply to lower numeric precision. The objective is to determine whether BSI can serve as a native representation for large language model inference on GPUs while preserving an execution path that operates directly on bit-sliced weights and bit-sliced activations. Meeting that objective requires more than a representation. It requires a complete inference pipeline: CPU-side BSI construction, GPU-side builders for static weights and dynamic activations, CUDA kernels that compute dot products directly from bit slices, and an evaluation framework capable of measuring both accuracy and runtime cost at kernel, layer, and model scales.
 
-The work began from a bitmap-oriented algebra implemented in the sibling \texttt{bsiCPP} directory. That earlier implementation used hybrid bitmaps and Bit-Sliced Vectors to express dot product, summation, multiplication, and ranking operations directly in bit-sliced form. The earlier results showed that BSI was expressive, that it could reduce storage cost, and that it preserved a useful algebraic structure. At the same time, those CPU experiments showed that representation alone was not enough. Dot product and multiplication remained too slow on conventional CPUs, especially when the vectors were large and the value range widened. That result motivated the transition to CUDA. The GPU work therefore preserved the BSI semantics defined by the bitmap library, but redesigned the execution layer around batched query construction, prebuilt BSI weights, and same-bit tensor-core-oriented kernels.
+The work began from a bitmap-oriented algebra implemented in the sibling \texttt{bsiCPP} directory. That earlier implementation used hybrid bitmaps and Bit-Sliced Vectors to express dot product, summation, and multiplication directly in bit-sliced form. The earlier results showed that BSI was expressive, that it could reduce storage cost, and that it preserved a useful algebraic structure. At the same time, those CPU experiments showed that representation alone was not enough. Dot product and multiplication remained too slow on conventional CPUs, especially when the vectors were large and the value range widened. That result motivated the transition to CUDA. The GPU work therefore preserved the BSI semantics defined by the bitmap library, but redesigned the execution layer around batched query construction, prebuilt BSI weights, and same-bit tensor-core-oriented kernels.
 
 The thesis is organized around four research questions. First, can transformer linear layers be replaced by BSI-native operators while preserving end-to-end autoregressive inference on real OPT checkpoints? Second, which parts of the BSI inference pipeline dominate runtime on GPU: static weight construction, runtime query construction, memory layout, or the dot kernel itself? Third, how does the effect of BSI replacement vary across layer groups, especially between attention layers and feed-forward layers? Fourth, what do the measurements reveal about why BSI still trails dense Torch FP16 execution even after multiple engineering bottlenecks have been removed?
 
@@ -31,14 +31,16 @@ The semantic definition of a BSI object comes from the CPU-side implementation i
 The actual slice construction occurs through builder routines such as \texttt{buildBsiVector} and \texttt{bringTheBits}. Floating-point values are scaled by a decimal factor, rounded into integers, and then transposed into slice-major bitmaps. The \texttt{bringTheBits} routine effectively converts a list of integers into a stack of aligned bitplanes by testing each bit position and writing the result into the corresponding slice. At that point the builder can estimate slice density and decide whether a given slice should remain verbatim or be stored in compressed form. The result is a representation with two crucial properties: it preserves explicit control over precision, and it exposes the storage cost of each slice to the implementation.
 
 \subsection{Bit-Sliced Vector Algebra}
-Earlier CPU-side work on BSI vector algebra extended the representation beyond storage and demonstrated that the same bit-sliced structure could support a broader class of operations \\cite{bsi_vector_algebra,cmpe298report}. Dot product was expressed through bitwise overlap between slices followed by weighted bit counts. Summation used the count of set bits in each slice to recover weighted totals. Element-wise multiplication combined slice interactions with sign logic. Top-k queries processed slices from the most significant bit downward in order to refine candidate sets. These early results established that BSI was more than a storage format. It was a representation with a usable arithmetic.
+Earlier CPU-side work on BSI vector algebra extended the representation beyond storage and demonstrated that the same bit-sliced structure could support a broader class of operations \cite{bsi_vector_algebra,cmpe298report}. Dot product was expressed through bitwise overlap between slices followed by weighted bit counts. Summation used the count of set bits in each slice to recover weighted totals. Element-wise multiplication combined slice interactions with sign logic. These early results established that BSI was more than a storage format. It was a representation with a usable arithmetic.
 
 The importance of that result for the present work is direct. The CUDA dot-product kernel is not performing a conventional dense multiply-add over scalar lanes. It is computing bitplane overlap and converting those overlaps into weighted scalar contributions. The GPU implementation is therefore a scaled execution of the same semantic idea, not a separate representation invented later.
 
 \subsection{Lessons from Earlier CPU Evaluation}
-The earlier CPU evaluation used both randomly generated vectors and extracted BERT weights \cite{bert,cmpe298report}. Random-data experiments reached up to ten million elements across several numeric ranges. BERT experiments flattened trained model weights into one-dimensional arrays and compared BSI-based operations against dense PyTorch and C++ baselines. Those measurements established two facts that shaped the rest of the project.
+The earlier CPU evaluation used both randomly generated vectors and extracted BERT weights \cite{bert,cmpe298report}. The random-data experiments used vectors of up to ten million elements and examined several value ranges, including $[0,100]$, $[0,1000]$, and $[0,2^{16}]$. Additional synthetic studies used Zipf-distributed inputs to understand how skew and sparsity changed the cost of slice-wise arithmetic \cite{bsi_vector_algebra}. The BERT experiments flattened weights from a model trained on the IMDB dataset into one-dimensional arrays and compared BSI-based operations against dense PyTorch and C++ baselines on the same CPU platform.
 
-First, BSI often reduced memory consumption. Second, CPU execution time remained poor for the heavy arithmetic operations, especially dot product and multiplication. The representation was expressive and often compact, but the arithmetic overhead was too large on general-purpose CPU code. This became the turning point of the project. If BSI was to become useful for transformer inference, the computation had to move to massively parallel hardware that could exploit bitwise structure directly.
+Those measurements established a more detailed picture than a simple statement that BSI was slower on CPU. For randomly generated ten-million-element vectors, BSI dot product and BSI multiplication were consistently slower than the corresponding dense baselines, and the gap widened as the value range increased. BSI vector summation was more favorable: it was slower at smaller value ranges but became competitive, and in one regime slightly favorable, at the widest tested range. Memory behavior moved in the opposite direction. For dot product and summation, the BSI representation consumed less memory than the standard vector implementation across the tested ranges. Multiplication showed mixed memory behavior, with some ranges slightly favorable to BSI and others not. When actual BERT weights were used, the BSI-based dot product remained markedly slower than an optimized C++ vector baseline, particularly in the widest tested range.
+
+This became the turning point of the project. The representation was expressive and often memory-efficient, but the overhead of slice management and bitwise bookkeeping on a CPU outweighed those storage advantages for the heavy arithmetic path. If BSI was to become useful for transformer inference, the computation had to move to massively parallel hardware that could exploit bitwise structure directly. The GPU phase of the work should therefore be read as a continuation of the earlier report rather than as a separate project.
 
 \subsection{Related Work in LLM Quantization}
 The broader LLM inference literature provides strong dense low-precision baselines. \texttt{LLM.int8()} isolates outlier feature dimensions to preserve accuracy in 8-bit execution \cite{llmint8}. ZeroQuant combines post-training quantization with hardware-friendly execution and distillation \cite{zeroquant}. GPTQ shows that aggressive post-training weight quantization can preserve quality with careful error control \cite{gptq}. AWQ protects salient channels determined by activation statistics \cite{awq}. SmoothQuant redistributes activation outliers into the weights so that W8A8 inference becomes practical on modern hardware \cite{smoothquant}. These methods demonstrate that low-bit inference can work well when the execution substrate remains dense.
@@ -264,10 +266,46 @@ This single case captures the central tradeoff of the work. The more aggressivel
 
 \section{Ablation Studies}\label{sec:ablation}
 \subsection{Scope Ablation}
-The contrast between \texttt{scope=all} and \texttt{scope=attention} is one of the most important ablations in the entire study. It shows that the present BSI regime is not uniformly compatible with all linear subgraphs of a transformer. When all eligible layers are replaced, the model achieves the largest memory reduction but also suffers the largest accuracy and latency penalties. When only attention projections are replaced, the model retains much more of the dense baseline behavior while still reducing static size and dot cost relative to full-scope BSI replacement.
+The contrast between \texttt{scope=all} and \texttt{scope=attention} is one of the most important ablations in the entire study. It shows that the present BSI regime is not uniformly compatible with all linear subgraphs of a transformer. When all eligible layers are replaced, the model achieves the largest memory reduction but also suffers the largest accuracy and latency penalties. When only attention projections are replaced, the model retains much more of the dense baseline behavior while still reducing static size and dot cost relative to full-scope BSI replacement. This structured sensitivity is consistent with the broader low-bit inference literature, where post-training compression quality is known to depend strongly on which parts of the model carry the dominant outliers and saliency structure \cite{llmint8,awq,smoothquant}.
 
 \subsection{Larger-Model Sensitivity}
 The 30B model was used as a stress test rather than as a primary target. Its value lies in revealing how the current fixed-bit BSI policy fails. In that model, attention-only replacement remained relatively close to the dense baseline, while MLP-only replacement degraded much more strongly. When all eligible layers were replaced, the model accuracy dropped sharply. The conclusion is direct: under the current same-bit regime, MLP layers are the dominant quality bottleneck at larger scale.
+
+\begin{table}[H]
+\centering
+\caption{Layer-group sensitivity study on \texttt{facebook/opt-30b} with 200 LAMBADA validation samples.}
+\label{tab:30b-sensitivity}
+\begin{tabular}{lrrrrr}
+\toprule
+Scope & Top-1 & Top-5 & Avg Fwd (ms) & Build (ms) & Static Size (MB) \\
+\midrule
+Attention & 0.820 & 0.945 & 198.878 & 27.960 & 45414.523 \\
+MLP & 0.740 & 0.850 & 304.767 & 7.006 & 33655.180 \\
+All & 0.470 & 0.620 & 404.781 & 29.826 & 21897.805 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+This table makes the structured failure mode explicit. Attention-only replacement still preserves most of the dense model behavior, even though it roughly halves the attention-side storage. MLP-only replacement remains usable, but the accuracy loss is larger and the average forward time is much worse because the feed-forward layers dominate the linear workload at this scale. Full-scope replacement combines the two error sources and falls to an unacceptable operating point. This is an important thesis result because it rules out a uniform interpretation of BSI quality loss. The error is not distributed evenly across the architecture.
+
+\subsection{Bit-Allocation Frontier}
+The work also examined whether the same kernel family could be accelerated by reducing the fixed slice counts. This experiment is important because it clarifies what the thesis is and is not claiming. Lowering the bit budget does improve speed and compression, but it does so by moving the system to a different numerical operating point rather than by improving the same-bit kernel itself.
+
+\begin{table}[H]
+\centering
+\caption{Lower-bit frontier study on \texttt{facebook/opt-6.7b} using 200 LAMBADA validation samples.}
+\label{tab:67b-frontier}
+\begin{tabular}{lrrrrr}
+\toprule
+Configuration & Top-1 & Top-5 & Dot (ms) & Avg Fwd (ms) & Static Size (MB) \\
+\midrule
+\(S_a,S_b=(7,6)\) & 0.745 & 0.920 & 67.952 & 123.237 & 5049.281 \\
+\(S_a,S_b=(6,5)\) & 0.680 & 0.840 & 54.226 & 109.031 & 4276.781 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The lower-bit point reduces dot latency by roughly 20\% and further reduces static model size, but it also causes a clear drop in next-token accuracy. This is precisely why the thesis should not be framed as ``reduce the number of slices until the kernel is fast enough.'' The more meaningful claim is that same-bit performance can be improved through layout and kernel design, while slice-count reduction defines a separate speed/accuracy frontier that must be reported honestly.
 
 \subsection{Earlier CPU-to-GPU Ablation}
 The thesis also includes a broader architectural ablation that spans the two development stages of the work. On CPU, the earlier BSI vector algebra study demonstrated that bit-sliced dot product, multiplication, and summation could be implemented correctly and could offer memory savings. However, the CPU execution cost remained too high, especially for dot product. Moving to GPU therefore was not a simple implementation convenience. It was an ablation of the execution substrate itself.
