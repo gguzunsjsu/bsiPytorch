@@ -55,6 +55,9 @@ __device__ __forceinline__ void bsi_cp_async_wait_all() {
 #endif
 }
 
+// Forward declaration for the fixed76 shared-memory swizzle helper.
+__device__ __forceinline__ int bsi_fixed76_bank_swizzle8(int logical_row);
+
 extern "C" __global__
 void popcount_weighted_keys_literal_fused_multiq_kernel(
     const unsigned long long* __restrict__ A,    // [Q, Sa, W]
@@ -314,6 +317,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
     const int col1 = col0 + 1;                // odd
     const int m0 = q_tile_id * TM + row0;     // 0..31
     const int m1 = q_tile_id * TM + row1;     // 0..31
+    const int m0_swz = bsi_fixed76_bank_swizzle8(m0);
+    const int m1_swz = bsi_fixed76_bank_swizzle8(m1);
 
     float acc00 = 0.0f, acc01 = 0.0f, acc10 = 0.0f, acc11 = 0.0f;
 
