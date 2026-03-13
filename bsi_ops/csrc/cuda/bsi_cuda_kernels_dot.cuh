@@ -2815,14 +2815,30 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                         };
 
                         int r_sweep = cached_tc_r_sweep;
+                        const bool large_shape = (W >= 32) || (R >= 2048) || ((long long)Q * (long long)R >= (1ll << 18));
+                        const bool medium_shape = (W >= 24) || (R >= 1024) || ((long long)Q * (long long)R >= (1ll << 16));
                         if (r_sweep == 0) {
-                            // Prefer the smaller sweep on large models to cut dynamic shared memory
-                            // from ~80KB (rsweep4+tma) to ~47KB (rsweep2+tma) at W64=64, restoring occupancy.
-                            const bool large_shape = (W >= 32) || (R >= 4096) || ((long long)Q * (long long)R >= (1ll << 20));
-                            r_sweep = large_shape ? 2 : 4;
+                            // Stronger large-shape bias: prefer the lower-footprint rsweep2 path much earlier.
+                            // The optimized profiles still landed on rsweep4_tma for large models, so make the auto
+                            // policy conservative and favor occupancy over per-block reuse.
+                            r_sweep = (large_shape || medium_shape) ? 2 : 4;
                             if ((R % (TN * r_sweep)) != 0) {
-                                r_sweep = ((R % (TN * 4)) == 0 && !large_shape) ? 4 : 2;
+                                r_sweep = ((R % (TN * 4)) == 0 && !(large_shape || medium_shape)) ? 4 : 2;
                             }
+                        }
+
+                        // Optional hard safety valve for experiments: set BSI_TC_FORCE_RS2=1 to pin large fixed76 runs
+                        // to rsweep2 even if another launcher path would otherwise be chosen.
+                        static int cached_force_rs2 = -1;
+                        if (cached_force_rs2 < 0) {
+                            int v = 0;
+                            if (const char* s = getenv("BSI_TC_FORCE_RS2")) {
+                                v = (atoi(s) != 0) ? 1 : 0;
+                            }
+                            cached_force_rs2 = v;
+                        }
+                        if (cached_force_rs2 && (large_shape || medium_shape)) {
+                            r_sweep = 2;
                         }
 
                         int use_tma = 0;
@@ -2832,8 +2848,22 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                         if (cached_tc_tma == 1) {
                             want_tma = true;
                         } else if (cached_tc_tma == 2) {
-                            // Auto: only enable TMA on larger shapes, and avoid the high-footprint rsweep4+tma regime.
-                            want_tma = (r_sweep == 2) && (W >= 32) && (R >= 4096);
+                            // Be much more conservative with TMA in auto mode. The latest profiles still show the hot
+                            // path as rsweep4_tma with 80KB shared memory and poor occupancy, so only enable TMA when
+                            // the shape is clearly large *and* rsweep2 has already been selected.
+                            want_tma = (r_sweep == 2) && (W >= 48) && (R >= 8192) && (((long long)Q * (long long)R) >= (1ll << 20));
+                        }
+                        // Optional safety valve to completely suppress TMA for fixed76 tuning experiments.
+                        static int cached_disable_tma_large = -1;
+                        if (cached_disable_tma_large < 0) {
+                            int v = 1;
+                            if (const char* s = getenv("BSI_TC_DISABLE_TMA_LARGE")) {
+                                v = (atoi(s) != 0) ? 1 : 0;
+                            }
+                            cached_disable_tma_large = v;
+                        }
+                        if (cached_disable_tma_large && (large_shape || medium_shape)) {
+                            want_tma = false;
                         }
                         if (want_tma) {
                             B_tensor_map = bsi_tma::bsi_get_or_create_b_fixed76_rsweep_tensor_map(
