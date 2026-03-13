@@ -189,7 +189,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
 }
 
 // ----------------------------- DISPATCHER / LAUNCHER ---------------------------
-static inline void launch_popcount_weighted_keys_literal_fused_multiq_dispatch(
+static inline void launch_popcount_weighted_keys_literal_fused_multiq(
     const unsigned long long* B_words,
     const float* slice_weights,
     const unsigned long long* A_words,
