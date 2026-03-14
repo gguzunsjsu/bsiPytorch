@@ -1642,45 +1642,6 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
 
     float bscale0[R_SWEEP];
     float bscale1[R_SWEEP];
-#if defined(__CUDA_ARCH__)
-#if __CUDA_ARCH__ >= 900
-    if constexpr (R_SWEEP == 2) {
-#pragma unroll 1
-        for (int t = 0; t < R_SWEEP; ++t) {
-            const int r0 = r_base + t * TN;
-            bscale0[t] = __ldg(&Bw[((size_t)(r0 + col0) * (size_t)SB) + 0]);
-            bscale1[t] = __ldg(&Bw[((size_t)(r0 + col1) * (size_t)SB) + 0]);
-        }
-    } else
-#endif
-#endif
-#if defined(__CUDA_ARCH__)
-#if __CUDA_ARCH__ >= 900
-    if constexpr (R_SWEEP == 2) {
-#pragma unroll 1
-        for (int t = 0; t < R_SWEEP; ++t) {
-            acc0[(size_t)t * (size_t)blockDim.x + (size_t)threadIdx.x] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
-        }
-    } else
-#endif
-#endif
-#if defined(__CUDA_ARCH__)
-#if __CUDA_ARCH__ >= 900
-    if constexpr (R_SWEEP == 2) {
-#pragma unroll 1
-        for (int t = 0; t < R_SWEEP; ++t) {
-            const int r0 = r_base + t * TN;
-            const int r_out0 = r0 + col0;
-            const int r_out1 = r0 + col1;
-            const float4 acc = acc0[(size_t)t * (size_t)blockDim.x + (size_t)threadIdx.x];
-            out_global[(size_t)q_out0 * (size_t)R_total + (size_t)r_out0] = acc.x * scale_inv;
-            out_global[(size_t)q_out0 * (size_t)R_total + (size_t)r_out1] = acc.y * scale_inv;
-            out_global[(size_t)q_out1 * (size_t)R_total + (size_t)r_out0] = acc.z * scale_inv;
-            out_global[(size_t)q_out1 * (size_t)R_total + (size_t)r_out1] = acc.w * scale_inv;
-        }
-    } else
-#endif
-#endif
 #pragma unroll
     for (int t = 0; t < R_SWEEP; ++t) {
         const int r0 = r_base + t * TN;
@@ -1713,29 +1674,6 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
             bsi_cp_async_cg_16B(A_bits + base, &a_slice[(size_t)0 * (size_t)K_WORDS64 + (size_t)w64_i]);
         }
         constexpr int B_CHUNK_ELEMS = TN * SB * K_WORDS64_16B;
-#if defined(__CUDA_ARCH__)
-#if __CUDA_ARCH__ >= 900
-        if constexpr (R_SWEEP == 2) {
-#pragma unroll 1
-            for (int t = 0; t < R_SWEEP; ++t) {
-                const size_t t_base = (size_t)t * B_words;
-                for (int idx = threadIdx.x; idx < B_CHUNK_ELEMS; idx += blockDim.x) {
-                    int u = idx;
-                    const int w64_pair = u & (K_WORDS64_16B - 1);
-                    u >>= 1;
-                    const int n = u & (TN - 1);
-                    const int j = u >> 5;
-                    const int r = r_base + t * TN + n;
-                    const size_t b_row_base = ((size_t)r * (size_t)SB + (size_t)j) * (size_t)W64;
-                    const int w64_i = w64_pair << 1;
-                    const int n_swz = bsi_fixed76_bank_swizzle8(n);
-                    const size_t base = t_base + ((size_t)j * (size_t)TN + (size_t)n_swz) * (size_t)K_STRIDE32 + (size_t)(w64_i << 1);
-                    bsi_cp_async_cg_16B(B_bits + base, B + b_row_base + (size_t)w64_i);
-                }
-            }
-        } else
-#endif
-#endif
 #pragma unroll
         for (int t = 0; t < R_SWEEP; ++t) {
             for (int idx = threadIdx.x; idx < B_CHUNK_ELEMS; idx += blockDim.x) {
@@ -1784,32 +1722,6 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
                     &a_slice[(size_t)next_chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
             }
             constexpr int B_CHUNK_ELEMS = TN * SB * K_WORDS64_16B;
-#if defined(__CUDA_ARCH__)
-#if __CUDA_ARCH__ >= 900
-            if constexpr (R_SWEEP == 2) {
-#pragma unroll 1
-                for (int t = 0; t < R_SWEEP; ++t) {
-                    const size_t t_base = (size_t)t * B_words;
-                    const size_t chunk_off = (size_t)next_chunk * (size_t)K_WORDS64;
-                    for (int idx = threadIdx.x; idx < B_CHUNK_ELEMS; idx += blockDim.x) {
-                        int u = idx;
-                        const int w64_pair = u & (K_WORDS64_16B - 1);
-                        u >>= 1;
-                        const int n = u & (TN - 1);
-                        const int j = u >> 5;
-                        const int r = r_base + t * TN + n;
-                        const size_t b_row_base = ((size_t)r * (size_t)SB + (size_t)j) * (size_t)W64;
-                        const int w64_i = w64_pair << 1;
-                        const int n_swz = bsi_fixed76_bank_swizzle8(n);
-                        const size_t base = t_base + ((size_t)j * (size_t)TN + (size_t)n_swz) * (size_t)K_STRIDE32 + (size_t)(w64_i << 1);
-                        bsi_cp_async_cg_16B(
-                            B_bits_next + base,
-                            B + b_row_base + chunk_off + (size_t)w64_i);
-                    }
-                }
-            } else
-#endif
-#endif
 #pragma unroll
             for (int t = 0; t < R_SWEEP; ++t) {
                 for (int idx = threadIdx.x; idx < B_CHUNK_ELEMS; idx += blockDim.x) {
@@ -1842,81 +1754,6 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
         qscale_m0 = __shfl_sync(0xffffffff, qscale_m0, lane & ~3);
         qscale_m1 = __shfl_sync(0xffffffff, qscale_m1, lane & ~3);
 
-#if defined(__CUDA_ARCH__)
-#if __CUDA_ARCH__ >= 900
-        if constexpr (R_SWEEP == 2) {
-#pragma unroll 1
-            for (int t_pair = 0; t_pair < R_SWEEP; t_pair += 2) {
-                const int t0 = t_pair;
-                const int t1 = t_pair + 1;
-                const uint32_t* B0 = B_bits + (size_t)t0 * B_words;
-                const uint32_t* B1 = B_bits + (size_t)t1 * B_words;
-
-                const int b_slice_stride = TN * K_STRIDE32;
-                const int n_swz = bsi_fixed76_bank_swizzle8(col_base + groupID);
-                const uint32_t* b_col_base0 = B0 + n_swz * K_STRIDE32;
-                const uint32_t* b_col_base1 = B1 + n_swz * K_STRIDE32;
-
-                int chunk00_0 = 0, chunk01_0 = 0, chunk10_0 = 0, chunk11_0 = 0;
-                int chunk00_1 = 0, chunk01_1 = 0, chunk10_1 = 0, chunk11_1 = 0;
-#pragma unroll 1
-                for (int i = 0; i < SA; ++i) {
-                    const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
-                    const size_t arow0 = (size_t)m0_swz * (size_t)K_STRIDE32;
-                    const size_t arow1 = (size_t)m1_swz * (size_t)K_STRIDE32;
-                    const uint32_t a0 = A_i[arow0 + (size_t)threadID];
-                    const uint32_t a1 = A_i[arow1 + (size_t)threadID];
-                    const uint32_t a2 = A_i[arow0 + (size_t)(threadID + 4)];
-                    const uint32_t a3 = A_i[arow1 + (size_t)(threadID + 4)];
-
-#pragma unroll 1
-                    for (int j = 0; j < SB; ++j) {
-                        const uint32_t* b_col0 = b_col_base0 + j * b_slice_stride;
-                        const uint32_t* b_col1 = b_col_base1 + j * b_slice_stride;
-                        const uint32_t b00 = b_col0[threadID];
-                        const uint32_t b01 = b_col0[threadID + 4];
-                        const uint32_t b10 = b_col1[threadID];
-                        const uint32_t b11 = b_col1[threadID + 4];
-
-                        const int shift = i + j;
-                        const bool neg = ((i == (SA - 1)) ^ (j == (SB - 1)));
-
-                        int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
-                        asm volatile(
-                            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
-                            "{%0, %1, %2, %3}, "
-                            "{%4, %5, %6, %7}, "
-                            "{%8, %9}, "
-                            "{%0, %1, %2, %3};\n"
-                            : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
-                            : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
-                              "r"(b00), "r"(b01));
-
-                        int d0 = 0, d1 = 0, d2 = 0, d3 = 0;
-                        asm volatile(
-                            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
-                            "{%0, %1, %2, %3}, "
-                            "{%4, %5, %6, %7}, "
-                            "{%8, %9}, "
-                            "{%0, %1, %2, %3};\n"
-                            : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
-                            : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
-                              "r"(b10), "r"(b11));
-
-                        const int sign = neg ? -1 : 1;
-                        chunk00_0 += sign * (c0 << shift);
-                        chunk01_0 += sign * (c1 << shift);
-                        chunk10_0 += sign * (c2 << shift);
-                        chunk11_0 += sign * (c3 << shift);
-                        chunk00_1 += sign * (d0 << shift);
-                        chunk01_1 += sign * (d1 << shift);
-                        chunk10_1 += sign * (d2 << shift);
-                        chunk11_1 += sign * (d3 << shift);
-                    }
-                }
-        } else
-#endif
-#endif
 #pragma unroll
         for (int t_pair = 0; t_pair < R_SWEEP; t_pair += 2) {
             const int t0 = t_pair;
