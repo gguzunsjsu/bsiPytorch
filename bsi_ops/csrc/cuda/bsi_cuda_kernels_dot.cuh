@@ -1917,13 +1917,14 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
             uint32_t b1_1[SB];
 
             const int n = col_base + groupID;
-            const uint32_t* b_n_base0 = B0 + n * K_STRIDE32_B;
-            const uint32_t* b_n_base1 = B1 + n * K_STRIDE32_B;
+            const int b_slice_stride = TN * K_STRIDE32_B;
+            const uint32_t* b_col_base0 = B0 + n * K_STRIDE32_B;
+            const uint32_t* b_col_base1 = B1 + n * K_STRIDE32_B;
             
 #pragma unroll
             for (int j = 0; j < SB; ++j) {
-                const uint32_t* b_col0 = b_n_base0 + j * SLICE_STRIDE_B;
-                const uint32_t* b_col1 = b_n_base1 + j * SLICE_STRIDE_B;
+                const uint32_t* b_col0 = b_col_base0 + j * b_slice_stride;
+                const uint32_t* b_col1 = b_col_base1 + j * b_slice_stride;
                 
                 uint32_t b0_0_raw = b_col0[idx_0];
                 uint32_t b1_0_raw = b_col0[idx_1];
@@ -1941,12 +1942,12 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
             
 #pragma unroll
             for (int i = 0; i < SA; ++i) {
-                const uint32_t* A_i = A_bits + i * SLICE_STRIDE_A;
+                const uint32_t* A_i = A_bits + (size_t)i * (size_t)SLICE_STRIDE_A;
                 
-                const uint32_t a0 = A_i[m0 * K_STRIDE32_A + threadID];
-                const uint32_t a1 = A_i[m1 * K_STRIDE32_A + threadID];
-                const uint32_t a2 = A_i[m0 * K_STRIDE32_A + threadID + 4];
-                const uint32_t a3 = A_i[m1 * K_STRIDE32_A + threadID + 4];
+                const uint32_t a0 = A_i[(size_t)m0 * (size_t)K_STRIDE32_A + threadID];
+                const uint32_t a1 = A_i[(size_t)m1 * (size_t)K_STRIDE32_A + threadID];
+                const uint32_t a2 = A_i[(size_t)m0 * (size_t)K_STRIDE32_A + threadID + 4];
+                const uint32_t a3 = A_i[(size_t)m1 * (size_t)K_STRIDE32_A + threadID + 4];
 
 #pragma unroll
                 for (int j = 0; j < SB; ++j) {
@@ -2040,6 +2041,46 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
     (void)R_total;
     (void)out_global;
 #endif
+}
+
+extern "C" __global__ __launch_bounds__(256, 2)
+void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep2_tma_tensorB(
+    const unsigned long long* __restrict__ A,
+    const float* __restrict__ A_chunk_scales,
+    int A_scale_stride,
+    int W64,
+    const unsigned long long* __restrict__ B,
+    const float* __restrict__ Bw,
+    const void* __restrict__ B_tensor_map,
+    int R,
+    int Q,
+    float scale_inv,
+    int R_total,
+    float* __restrict__ out_global)
+{
+    extern __shared__ unsigned char smem_raw[];
+    bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tensorB<2>(
+        smem_raw, A, A_chunk_scales, A_scale_stride, W64, B, Bw, B_tensor_map, R, Q, scale_inv, R_total, out_global);
+}
+
+extern "C" __global__ __launch_bounds__(256, 2)
+void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_tma_tensorB(
+    const unsigned long long* __restrict__ A,
+    const float* __restrict__ A_chunk_scales,
+    int A_scale_stride,
+    int W64,
+    const unsigned long long* __restrict__ B,
+    const float* __restrict__ Bw,
+    const void* __restrict__ B_tensor_map,
+    int R,
+    int Q,
+    float scale_inv,
+    int R_total,
+    float* __restrict__ out_global)
+{
+    extern __shared__ unsigned char smem_raw[];
+    bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tensorB<4>(
+        smem_raw, A, A_chunk_scales, A_scale_stride, W64, B, Bw, B_tensor_map, R, Q, scale_inv, R_total, out_global);
 }
 
 template <int SB, int SLICE_STRIDE_A, int K_STRIDE_A, int SLICE_STRIDE_B, int K_STRIDE_B>
