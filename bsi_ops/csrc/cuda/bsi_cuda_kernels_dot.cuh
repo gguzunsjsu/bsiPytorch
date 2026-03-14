@@ -2021,7 +2021,7 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
     __syncthreads();
 
     const bool is_leader = (threadIdx.x == 0);
-    uint32_t parity[stages] = {0u, 0u};
+    uint32_t parity[stages] = {0u};
 
     constexpr uint32_t ROW_BYTES = (uint32_t)(K_WORDS64 * sizeof(unsigned long long)); // 32B
     constexpr uint32_t TX_B_BYTES = (uint32_t)((size_t)R_SWEEP * (size_t)TN * (size_t)SB * (size_t)ROW_BYTES);
