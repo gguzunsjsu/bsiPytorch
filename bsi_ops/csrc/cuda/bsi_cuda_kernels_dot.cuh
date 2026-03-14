@@ -1575,6 +1575,12 @@ __device__ __forceinline__ int bsi_fixed76_bank_swizzle8(int logical_row) {
     return (logical_row & ~7) | ((logical_row * 5) & 7);
 }
 
+__device__ __forceinline__ int bsi_fixed76_b_stage_row_linear(int logical_row) {
+    // Keep the B staging tile in linear row order so warp lanes read consecutive
+    // logical rows from shared memory in the active rsweep2 path.
+    return logical_row;
+}
+
 template <int R_SWEEP>
 __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
     unsigned char* __restrict__ smem_raw,
@@ -1685,8 +1691,8 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
                 const int r = r_base + t * TN + n;
                 const unsigned long long* b_slice = B + ((size_t)r * (size_t)SB + (size_t)j) * (size_t)W64;
                 const int w64_i = w64_pair << 1;
-                const int n_swz = bsi_fixed76_bank_swizzle8(n);
-                const size_t base = (size_t)t * B_words + ((size_t)j * (size_t)TN + (size_t)n_swz) * (size_t)K_STRIDE32 + (size_t)(w64_i << 1);
+                const int n_row = (R_SWEEP == 2) ? bsi_fixed76_b_stage_row_linear(n) : bsi_fixed76_bank_swizzle8(n);
+                const size_t base = (size_t)t * B_words + ((size_t)j * (size_t)TN + (size_t)n_row) * (size_t)K_STRIDE32 + (size_t)(w64_i << 1);
                 bsi_cp_async_cg_16B(B_bits + base, &b_slice[(size_t)0 * (size_t)K_WORDS64 + (size_t)w64_i]);
             }
         }
@@ -1733,8 +1739,8 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
                     const int r = r_base + t * TN + n;
                     const unsigned long long* b_slice = B + ((size_t)r * (size_t)SB + (size_t)j) * (size_t)W64;
                     const int w64_i = w64_pair << 1;
-                    const int n_swz = bsi_fixed76_bank_swizzle8(n);
-                const size_t base = (size_t)t * B_words + ((size_t)j * (size_t)TN + (size_t)n_swz) * (size_t)K_STRIDE32 + (size_t)(w64_i << 1);
+                    const int n_row = (R_SWEEP == 2) ? bsi_fixed76_b_stage_row_linear(n) : bsi_fixed76_bank_swizzle8(n);
+                const size_t base = (size_t)t * B_words + ((size_t)j * (size_t)TN + (size_t)n_row) * (size_t)K_STRIDE32 + (size_t)(w64_i << 1);
                     bsi_cp_async_cg_16B(
                         B_bits_next + base,
                         &b_slice[(size_t)next_chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
@@ -1767,9 +1773,9 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
             uint32_t b1_1[SB];
 
             const int b_slice_stride = TN * K_STRIDE32;
-            const int n_swz = bsi_fixed76_bank_swizzle8(col_base + groupID);
-            const uint32_t* b_col_base0 = B0 + n_swz * K_STRIDE32;
-            const uint32_t* b_col_base1 = B1 + n_swz * K_STRIDE32;
+            const int n_row = (R_SWEEP == 2) ? bsi_fixed76_b_stage_row_linear(col_base + groupID) : bsi_fixed76_bank_swizzle8(col_base + groupID);
+            const uint32_t* b_col_base0 = B0 + n_row * K_STRIDE32;
+            const uint32_t* b_col_base1 = B1 + n_row * K_STRIDE32;
 #pragma unroll
             for (int j = 0; j < SB; ++j) {
                 const uint32_t* b_col0 = b_col_base0 + j * b_slice_stride;
