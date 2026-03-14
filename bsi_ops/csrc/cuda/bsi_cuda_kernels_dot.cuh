@@ -1569,10 +1569,17 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
 }
 
 __device__ __forceinline__ int bsi_fixed76_bank_swizzle8(int logical_row) {
-    // Permute rows/columns within 8-element groups to reduce shared-memory bank
-    // conflicts for the fixed76 BMMA path without increasing the shared-memory
-    // footprint. 5 is coprime with 8, so this is a bijection on [0, 7].
+    // A-tile swizzle: stable bijection on [0, 7] to spread row accesses.
     return (logical_row & ~7) | ((logical_row * 5) & 7);
+}
+
+__device__ __forceinline__ int bsi_fixed76_bank_swizzle8_b(int logical_row, int slice_id) {
+    // B-tile swizzle: vary the 8-row permutation by slice parity to reduce
+    // repeated bank aliasing across the SB slices in the active rsweep2 path.
+    const int local = logical_row & 7;
+    const int group = logical_row & ~7;
+    const int mul = (slice_id & 1) ? 3 : 5; // both are coprime with 8
+    return group | ((local * mul) & 7);
 }
 
 template <int R_SWEEP>
@@ -1602,7 +1609,7 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
     constexpr int K_BITS = 256;
     constexpr int K_WORDS64 = K_BITS / 64;
     constexpr int K_WORDS32 = K_BITS / 32;
-    constexpr int K_STRIDE32 = K_WORDS32 + 4;
+    constexpr int K_STRIDE32 = K_WORDS32 + ((R_SWEEP == 2) ? 5 : 4);
 
     if (blockDim.x != (WARPS_PER_QTILE * QTILES * 32)) return;
     const int lane = threadIdx.x & 31;
@@ -1685,7 +1692,7 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
                 const int r = r_base + t * TN + n;
                 const unsigned long long* b_slice = B + ((size_t)r * (size_t)SB + (size_t)j) * (size_t)W64;
                 const int w64_i = w64_pair << 1;
-                const int n_swz = bsi_fixed76_bank_swizzle8(n);
+                const int n_swz = bsi_fixed76_bank_swizzle8_b(n, j);
                 const size_t base = (size_t)t * B_words + ((size_t)j * (size_t)TN + (size_t)n_swz) * (size_t)K_STRIDE32 + (size_t)(w64_i << 1);
                 bsi_cp_async_cg_16B(B_bits + base, &b_slice[(size_t)0 * (size_t)K_WORDS64 + (size_t)w64_i]);
             }
@@ -1733,7 +1740,7 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
                     const int r = r_base + t * TN + n;
                     const unsigned long long* b_slice = B + ((size_t)r * (size_t)SB + (size_t)j) * (size_t)W64;
                     const int w64_i = w64_pair << 1;
-                    const int n_swz = bsi_fixed76_bank_swizzle8(n);
+                    const int n_swz = bsi_fixed76_bank_swizzle8_b(n, j);
                 const size_t base = (size_t)t * B_words + ((size_t)j * (size_t)TN + (size_t)n_swz) * (size_t)K_STRIDE32 + (size_t)(w64_i << 1);
                     bsi_cp_async_cg_16B(
                         B_bits_next + base,
@@ -1767,11 +1774,12 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
             uint32_t b1_1[SB];
 
             const int b_slice_stride = TN * K_STRIDE32;
-            const int n_swz = bsi_fixed76_bank_swizzle8(col_base + groupID);
-            const uint32_t* b_col_base0 = B0 + n_swz * K_STRIDE32;
-            const uint32_t* b_col_base1 = B1 + n_swz * K_STRIDE32;
-#pragma unroll
+            const int n_logical = col_base + groupID;
+#pragma unroll 1
             for (int j = 0; j < SB; ++j) {
+                const int n_swz = bsi_fixed76_bank_swizzle8_b(n_logical, j);
+                const uint32_t* b_col_base0 = B0 + n_swz * K_STRIDE32;
+                const uint32_t* b_col_base1 = B1 + n_swz * K_STRIDE32;
                 const uint32_t* b_col0 = b_col_base0 + j * b_slice_stride;
                 const uint32_t* b_col1 = b_col_base1 + j * b_slice_stride;
                 b0_0[j] = b_col0[threadID];
@@ -1782,7 +1790,7 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
 
             int chunk00_0 = 0, chunk01_0 = 0, chunk10_0 = 0, chunk11_0 = 0;
             int chunk00_1 = 0, chunk01_1 = 0, chunk10_1 = 0, chunk11_1 = 0;
-#pragma unroll
+#pragma unroll 1
             for (int i = 0; i < SA; ++i) {
                 const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
                 const uint32_t a0 = A_i[(size_t)m0_swz * (size_t)K_STRIDE32 + (size_t)threadID];
@@ -1790,7 +1798,7 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
                 const uint32_t a2 = A_i[(size_t)m0_swz * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
                 const uint32_t a3 = A_i[(size_t)m1_swz * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
 
-#pragma unroll
+#pragma unroll 1
                 for (int j = 0; j < SB; ++j) {
                     const int shift = i + j;
                     const bool neg = ((i == (SA - 1)) ^ (j == (SB - 1)));
@@ -2799,10 +2807,10 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                 dim3 grid_tc((R + TN - 1) / TN, (Q + TM_TOTAL - 1) / TM_TOTAL, 1);
 	                if (cached_fixed_int && use_cpasync_requested && fixed76 && identity && full_tiles_tm32 && chunk_scale) {
                         constexpr int K_WORDS32 = 8;
-                        constexpr int K_STRIDE32 = K_WORDS32 + 4;
                         constexpr int stages = 2;
 
                         auto fixed76_shared_bytes = [&](int r_sweep, bool use_tma_layout) -> size_t {
+                            const int K_STRIDE32 = K_WORDS32 + ((r_sweep == 2) ? 5 : 4);
                             const size_t B_words = (size_t)6 * (size_t)TN * (size_t)K_STRIDE32;
                             const size_t B_words_sweep = (size_t)r_sweep * B_words;
                             constexpr int K_STRIDE32_TMA = K_WORDS32;
