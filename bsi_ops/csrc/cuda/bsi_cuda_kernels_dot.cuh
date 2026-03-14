@@ -1950,7 +1950,8 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
     constexpr int K_BITS = 256;
     constexpr int K_WORDS64 = K_BITS / 64;
     constexpr int K_WORDS32 = K_BITS / 32;
-    constexpr int K_STRIDE32 = K_WORDS32; // TMA path stores tight 32B rows (no padding)
+    // Use padded stride to reduce shared-memory bank conflicts.
+    constexpr int K_STRIDE32 = K_WORDS32 + 4;
 
     if (blockDim.x != (WARPS_PER_QTILE * QTILES * 32)) return;
     const int lane = threadIdx.x & 31;
@@ -1967,7 +1968,9 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
     // buffers 128B-aligned to avoid misaligned-address faults.
     p = (p + 127u) & ~uintptr_t(127u);
 
-    constexpr int stages = 2;
+    // Single-stage buffering is sufficient here and lowers shared-memory usage,
+    // which improves occupancy on large GPUs.
+    constexpr int stages = 1;
     constexpr size_t A_words = (size_t)SA * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
     constexpr size_t B_words = (size_t)SB * (size_t)TN * (size_t)K_STRIDE32;
     constexpr size_t B_words_sweep = (size_t)R_SWEEP * B_words;
@@ -2701,14 +2704,16 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                 cached_fixed_int = v;
             }
 
-	            static int cached_tc_r_sweep = -1;
-	            if (cached_tc_r_sweep < 0) {
-	                int v = 1;
-	                if (const char* s = getenv("BSI_TC_R_SWEEP")) {
-	                    v = atoi(s);
-	                }
-	                cached_tc_r_sweep = (v == 2 || v == 4) ? v : 1;
-	            }
+            static int cached_tc_r_sweep = -1;
+            if (cached_tc_r_sweep < 0) {
+                int v = 0;
+                if (const char* s = getenv("BSI_TC_R_SWEEP")) {
+                    v = atoi(s);
+                }
+                // 2 or 4 explicitly force a sweep; any other value (including unset)
+                // means "auto-select" based on R_total.
+                cached_tc_r_sweep = (v == 2 || v == 4) ? v : 0;
+            }
 
 	            // Optional TMA-based B staging for fixed76 rsweep TM32 kernels (H100+).
 	            // 0 (default): baseline cp.async staging
@@ -2761,11 +2766,18 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                 constexpr int TN = 32;
                 dim3 block_tc(256, 1, 1);
                 dim3 grid_tc((R + TN - 1) / TN, (Q + TM_TOTAL - 1) / TM_TOTAL, 1);
-	                if (cached_fixed_int && use_cpasync_requested && fixed76 && identity && full_tiles_tm32 && chunk_scale) {
-	                    constexpr int K_WORDS32 = 8;
-	                    constexpr int K_STRIDE32 = K_WORDS32 + 4;
-	                    constexpr int stages = 2;
-	                    const int r_sweep = cached_tc_r_sweep;
+                if (cached_fixed_int && use_cpasync_requested && fixed76 && identity && full_tiles_tm32 && chunk_scale) {
+                    constexpr int K_WORDS32 = 8;
+                    // Match the padded stride used in the TMA body to reduce bank conflicts.
+                    constexpr int K_STRIDE32 = K_WORDS32 + 4;
+                    // Single-stage buffering for the TM32 fixed-76 path to lower shared-memory usage.
+                    constexpr int stages = 1;
+                    int r_sweep = cached_tc_r_sweep;
+                    if (r_sweep != 2 && r_sweep != 4) {
+                        // Auto policy: prefer rsweep=2 for vocab-sized R, keep rsweep=4
+                        // only for very large R to amortize staging work.
+                        r_sweep = (R_total >= 16384) ? 4 : 2;
+                    }
 	                    int use_tma = 0;
 	                    void* B_tensor_map = nullptr;
 #if defined(__cccl_lib_local_barrier_arrive_tx)
