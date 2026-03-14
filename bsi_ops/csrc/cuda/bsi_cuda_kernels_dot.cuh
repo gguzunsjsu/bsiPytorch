@@ -184,11 +184,12 @@ void popcount_weighted_keys_literal_fused_multiq_kernel(
     }
 }
 
-template <int SB>
+template <int SB, int SLICE_STRIDE_A, int K_STRIDE_A, int SLICE_STRIDE_B, int K_STRIDE_B>
 __device__ __forceinline__ void bsi_bmma_tm32_accum_sa7_sb_hot(
     const uint32_t* __restrict__ A_bits,
     const float* __restrict__ Aw_tile,
-    const uint32_t* __restrict__ b_col_base,
+    const uint32_t* __restrict__ B_bits,
+    int n_col,
     const float* __restrict__ bw_col0,
     const float* __restrict__ bw_col1,
     int threadID,
@@ -232,7 +233,9 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
     constexpr int K_BITS = 256;
     constexpr int K_WORDS64 = K_BITS / 64;   
     constexpr int K_WORDS32 = K_BITS / 32;   
-    constexpr int K_STRIDE32 = K_WORDS32 + 4; 
+    constexpr int K_STRIDE32 = 12; // 8 words + 4 pad
+    constexpr int SLICE_STRIDE_A = TM_TOTAL * K_STRIDE32 + 4; // Add 4 to break write bank conflicts across slices
+    constexpr int SLICE_STRIDE_B = TN * K_STRIDE32 + 4;
 
     if (blockDim.x != (WARPS_PER_QTILE * QTILES * 32)) return; 
     const int lane = threadIdx.x & 31;
@@ -247,16 +250,18 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
 
     extern __shared__ unsigned char smem_raw[];
     uintptr_t p = reinterpret_cast<uintptr_t>(smem_raw);
-    p = (p + 15u) & ~uintptr_t(15u);
+    p = (p + 127u) & ~uintptr_t(127u);
 
     const int stages = (use_cpasync != 0) ? 2 : 1;
-    const size_t A_words = (size_t)Sa * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
-    const size_t B_words = (size_t)Sb * (size_t)TN * (size_t)K_STRIDE32;
+    const size_t A_words = (size_t)Sa * (size_t)SLICE_STRIDE_A;
+    const size_t B_words = (size_t)Sb * (size_t)SLICE_STRIDE_B;
 
     auto* A_bits0 = reinterpret_cast<uint32_t*>(p); 
     p += (size_t)stages * A_words * sizeof(uint32_t);
+    p = (p + 127u) & ~uintptr_t(127u);
     auto* B_bits0 = reinterpret_cast<uint32_t*>(p); 
     p += (size_t)stages * B_words * sizeof(uint32_t);
+    p = (p + 127u) & ~uintptr_t(127u);
     auto* Aw_tile = reinterpret_cast<float*>(p);   
     p += (size_t)TM_TOTAL * (size_t)Sa * sizeof(float);
     auto* Bw_tile = reinterpret_cast<float*>(p);   
@@ -322,28 +327,24 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
         constexpr int K_WORDS64_16B = K_WORDS64 / 2;
         for (int idx = threadIdx.x; idx < TM_TOTAL * Sa * K_WORDS64_16B; idx += blockDim.x) {
             int t = idx;
-            const int w64_pair = t & (K_WORDS64_16B - 1);
-            t >>= 1;
-            const int m = t & (TM_TOTAL - 1);
-            const int i = t >> 5; 
+            const int w64_pair = t % K_WORDS64_16B; t /= K_WORDS64_16B;
+            const int i = t % Sa; const int m = t / Sa;
 
             const int q = q0 + m;
             const unsigned long long* a_slice = A + ((size_t)q * (size_t)Sa + (size_t)i) * (size_t)W64;
             const int w64_i = w64_pair << 1;
-            const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + (w64_i << 1);
+            const int base = (i * SLICE_STRIDE_A + m * K_STRIDE32) + (w64_i << 1);
             bsi_cp_async_cg_16B(A_bits + base, &a_slice[(size_t)0 * (size_t)K_WORDS64 + (size_t)w64_i]);
         }
         for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS64_16B; idx += blockDim.x) {
             int t = idx;
-            const int w64_pair = t & (K_WORDS64_16B - 1);
-            t >>= 1;
-            const int n = t & (TN - 1);
-            const int j = t >> 5; 
+            const int w64_pair = t % K_WORDS64_16B; t /= K_WORDS64_16B;
+            const int j = t % Sb; const int n = t / Sb;
 
             const int r = r0 + n;
             const unsigned long long* b_slice = B + ((size_t)r * (size_t)Sb + (size_t)j) * (size_t)W64;
             const int w64_i = w64_pair << 1; 
-            const int base = ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
+            const int base = (j * SLICE_STRIDE_B + n * K_STRIDE32) + (w64_i << 1);
             bsi_cp_async_cg_16B(B_bits + base, &b_slice[(size_t)0 * (size_t)K_WORDS64 + (size_t)w64_i]);
         }
         bsi_cp_async_commit_group();
@@ -360,10 +361,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
             if (full_q_tile) {
                 for (int idx = threadIdx.x; idx < TM_TOTAL * Sa * K_WORDS64; idx += blockDim.x) {
                     int t = idx;
-                    const int w64_i = t & (K_WORDS64 - 1);
-                    t >>= 2;
-                    const int m = t & (TM_TOTAL - 1);
-                    const int i = t >> 5; 
+                    const int w64_i = t % K_WORDS64; t /= K_WORDS64;
+                    const int i = t % Sa; const int m = t / Sa;
 
                     const int q = q0 + m;
                     const unsigned long long* a_slice = A + ((size_t)q * (size_t)Sa + (size_t)i) * (size_t)W64;
@@ -371,17 +370,15 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                         __ldg(&a_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
                     const uint32_t lo = static_cast<uint32_t>(w64);
                     const uint32_t hi = static_cast<uint32_t>(w64 >> 32);
-                    const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + (w64_i << 1);
+                    const int base = (i * SLICE_STRIDE_A + m * K_STRIDE32) + (w64_i << 1);
                     A_bits[base] = lo;
                     A_bits[base + 1] = hi;
                 }
             } else {
                 for (int idx = threadIdx.x; idx < TM_TOTAL * Sa * K_WORDS64; idx += blockDim.x) {
                     int t = idx;
-                    const int w64_i = t & (K_WORDS64 - 1);
-                    t >>= 2;
-                    const int m = t & (TM_TOTAL - 1);
-                    const int i = t >> 5; 
+                    const int w64_i = t % K_WORDS64; t /= K_WORDS64;
+                    const int i = t % Sa; const int m = t / Sa;
 
                     uint32_t lo = 0u, hi = 0u;
                     const int q = q0 + m;
@@ -392,7 +389,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                         lo = static_cast<uint32_t>(w64);
                         hi = static_cast<uint32_t>(w64 >> 32);
                     }
-                    const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + (w64_i << 1);
+                    const int base = (i * SLICE_STRIDE_A + m * K_STRIDE32) + (w64_i << 1);
                     A_bits[base] = lo;
                     A_bits[base + 1] = hi;
                 }
@@ -401,10 +398,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
             if (full_r_tile) {
                 for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS64; idx += blockDim.x) {
                     int t = idx;
-                    const int w64_i = t & (K_WORDS64 - 1);
-                    t >>= 2;
-                    const int n = t & (TN - 1);
-                    const int j = t >> 5; 
+                    const int w64_i = t % K_WORDS64; t /= K_WORDS64;
+                    const int j = t % Sb; const int n = t / Sb;
 
                     const int r = r0 + n;
                     const unsigned long long* b_slice = B + ((size_t)r * (size_t)Sb + (size_t)j) * (size_t)W64;
@@ -412,17 +407,15 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                         __ldg(&b_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
                     const uint32_t lo = static_cast<uint32_t>(w64);
                     const uint32_t hi = static_cast<uint32_t>(w64 >> 32);
-                    const int base = ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
+                    const int base = (j * SLICE_STRIDE_B + n * K_STRIDE32) + (w64_i << 1);
                     B_bits[base] = lo;
                     B_bits[base + 1] = hi;
                 }
             } else {
                 for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS64; idx += blockDim.x) {
                     int t = idx;
-                    const int w64_i = t & (K_WORDS64 - 1);
-                    t >>= 2;
-                    const int n = t & (TN - 1);
-                    const int j = t >> 5;
+                    const int w64_i = t % K_WORDS64; t /= K_WORDS64;
+                    const int j = t % Sb; const int n = t / Sb;
 
                     uint32_t lo = 0u, hi = 0u;
                     const int r = r0 + n;
@@ -433,7 +426,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                         lo = static_cast<uint32_t>(w64);
                         hi = static_cast<uint32_t>(w64 >> 32);
                     }
-                    const int base = ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
+                    const int base = (j * SLICE_STRIDE_B + n * K_STRIDE32) + (w64_i << 1);
                     B_bits[base] = lo;
                     B_bits[base + 1] = hi;
                 }
@@ -449,30 +442,26 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                 constexpr int K_WORDS64_16B = K_WORDS64 / 2;
                 for (int idx = threadIdx.x; idx < TM_TOTAL * Sa * K_WORDS64_16B; idx += blockDim.x) {
                     int t = idx;
-                    const int w64_pair = t & (K_WORDS64_16B - 1); 
-                    t >>= 1;
-                    const int m = t & (TM_TOTAL - 1);
-                    const int i = t >> 5; 
+                    const int w64_pair = t % K_WORDS64_16B; t /= K_WORDS64_16B;
+                    const int i = t % Sa; const int m = t / Sa;
 
                     const int q = q0 + m;
                     const unsigned long long* a_slice = A + ((size_t)q * (size_t)Sa + (size_t)i) * (size_t)W64;
                     const int w64_i = w64_pair << 1;
-                    const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + (w64_i << 1);
+                    const int base = (i * SLICE_STRIDE_A + m * K_STRIDE32) + (w64_i << 1);
                     bsi_cp_async_cg_16B(
                         A_bits_next + base,
                         &a_slice[(size_t)next_chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
                 }
                 for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS64_16B; idx += blockDim.x) {
                     int t = idx;
-                    const int w64_pair = t & (K_WORDS64_16B - 1); 
-                    t >>= 1;
-                    const int n = t & (TN - 1);
-                    const int j = t >> 5; 
+                    const int w64_pair = t % K_WORDS64_16B; t /= K_WORDS64_16B;
+                    const int j = t % Sb; const int n = t / Sb;
 
                     const int r = r0 + n;
                     const unsigned long long* b_slice = B + ((size_t)r * (size_t)Sb + (size_t)j) * (size_t)W64;
                     const int w64_i = w64_pair << 1; 
-                    const int base = ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
+                    const int base = (j * SLICE_STRIDE_B + n * K_STRIDE32) + (w64_i << 1);
                     bsi_cp_async_cg_16B(
                         B_bits_next + base,
                         &b_slice[(size_t)next_chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
@@ -505,19 +494,17 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
         }
 
         if (cache_sb) {
-            constexpr int JBLOCK = 4;
-            const int b_slice_stride = TN * K_STRIDE32;
-            const uint32_t* b_col_base = B_bits + (col_base + groupID) * K_STRIDE32;
-            
             if (Sa == 7 && Sb == 7) {
-                bsi_bmma_tm32_accum_sa7_sb_hot<7>(
-                    A_bits, Aw_tile, b_col_base, bw_col0, bw_col1, threadID, m0, m1,
+                bsi_bmma_tm32_accum_sa7_sb_hot<7, SLICE_STRIDE_A, K_STRIDE32, SLICE_STRIDE_B, K_STRIDE32>(
+                    A_bits, Aw_tile, B_bits, col_base + groupID, bw_col0, bw_col1, threadID, m0, m1,
                     use_chunk_scale, qscale_m0, qscale_m1, acc00, acc01, acc10, acc11);
             } else if (Sa == 7 && Sb == 6) {
-                bsi_bmma_tm32_accum_sa7_sb_hot<6>(
-                    A_bits, Aw_tile, b_col_base, bw_col0, bw_col1, threadID, m0, m1,
+                bsi_bmma_tm32_accum_sa7_sb_hot<6, SLICE_STRIDE_A, K_STRIDE32, SLICE_STRIDE_B, K_STRIDE32>(
+                    A_bits, Aw_tile, B_bits, col_base + groupID, bw_col0, bw_col1, threadID, m0, m1,
                     use_chunk_scale, qscale_m0, qscale_m1, acc00, acc01, acc10, acc11);
             } else if (Sb == 7) {
+                constexpr int JBLOCK = 4;
+                const uint32_t* b_n_base = B_bits + (col_base + groupID) * K_STRIDE32;
                 {
                     uint32_t b0_cache[JBLOCK];
                     uint32_t b1_cache[JBLOCK];
@@ -526,7 +513,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
 
 #pragma unroll
                     for (int jj = 0; jj < JBLOCK; ++jj) {
-                        const uint32_t* b_col = b_col_base + jj * b_slice_stride;
+                        const uint32_t* b_col = b_n_base + jj * SLICE_STRIDE_B;
                         b0_cache[jj] = b_col[threadID];
                         b1_cache[jj] = b_col[threadID + 4];
                         bw0_cache[jj] = bw_col0[jj];
@@ -537,11 +524,11 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                         const float aw0 = Aw_tile[(size_t)m0 * (size_t)Sa + (size_t)i] * qscale_m0;
                         const float aw1 = Aw_tile[(size_t)m1 * (size_t)Sa + (size_t)i] * qscale_m1;
 
-                        const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
-                        const uint32_t a0 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)threadID];
-                        const uint32_t a1 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)threadID];
-                        const uint32_t a2 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
-                        const uint32_t a3 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+                        const uint32_t* A_i = A_bits + i * SLICE_STRIDE_A;
+                        const uint32_t a0 = A_i[m0 * K_STRIDE32 + threadID];
+                        const uint32_t a1 = A_i[m1 * K_STRIDE32 + threadID];
+                        const uint32_t a2 = A_i[m0 * K_STRIDE32 + threadID + 4];
+                        const uint32_t a3 = A_i[m1 * K_STRIDE32 + threadID + 4];
 
                         float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
                         {
@@ -602,7 +589,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
 
 #pragma unroll
                     for (int jj = 0; jj < 3; ++jj) {
-                        const uint32_t* b_col = b_col_base + (4 + jj) * b_slice_stride;
+                        const uint32_t* b_col = b_n_base + (4 + jj) * SLICE_STRIDE_B;
                         b0_cache[jj] = b_col[threadID];
                         b1_cache[jj] = b_col[threadID + 4];
                         bw0_cache[jj] = bw_col0[4 + jj];
@@ -613,11 +600,11 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                         const float aw0 = Aw_tile[(size_t)m0 * (size_t)Sa + (size_t)i] * qscale_m0;
                         const float aw1 = Aw_tile[(size_t)m1 * (size_t)Sa + (size_t)i] * qscale_m1;
 
-                        const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
-                        const uint32_t a0 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)threadID];
-                        const uint32_t a1 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)threadID];
-                        const uint32_t a2 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
-                        const uint32_t a3 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+                        const uint32_t* A_i = A_bits + i * SLICE_STRIDE_A;
+                        const uint32_t a0 = A_i[m0 * K_STRIDE32 + threadID];
+                        const uint32_t a1 = A_i[m1 * K_STRIDE32 + threadID];
+                        const uint32_t a2 = A_i[m0 * K_STRIDE32 + threadID + 4];
+                        const uint32_t a3 = A_i[m1 * K_STRIDE32 + threadID + 4];
 
                         float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
                         {
@@ -661,13 +648,16 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                     }
                 }
             } else if (Sb == 6) {
+                constexpr int JBLOCK = 4;
+                const uint32_t* b_n_base = B_bits + (col_base + groupID) * K_STRIDE32;
+                
                 uint32_t b0_cache0[JBLOCK];
                 uint32_t b1_cache0[JBLOCK];
                 float bw0_cache0[JBLOCK];
                 float bw1_cache0[JBLOCK];
 #pragma unroll
                 for (int jj = 0; jj < JBLOCK; ++jj) {
-                    const uint32_t* b_col = b_col_base + jj * b_slice_stride;
+                    const uint32_t* b_col = b_n_base + jj * SLICE_STRIDE_B;
                     b0_cache0[jj] = b_col[threadID];
                     b1_cache0[jj] = b_col[threadID + 4];
                     bw0_cache0[jj] = bw_col0[jj];
@@ -680,7 +670,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                 float bw1_cache1[2];
 #pragma unroll
                 for (int jj = 0; jj < 2; ++jj) {
-                    const uint32_t* b_col = b_col_base + (4 + jj) * b_slice_stride;
+                    const uint32_t* b_col = b_n_base + (4 + jj) * SLICE_STRIDE_B;
                     b0_cache1[jj] = b_col[threadID];
                     b1_cache1[jj] = b_col[threadID + 4];
                     bw0_cache1[jj] = bw_col0[4 + jj];
@@ -691,11 +681,11 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                     const float aw0 = Aw_tile[(size_t)m0 * (size_t)Sa + (size_t)i] * qscale_m0;
                     const float aw1 = Aw_tile[(size_t)m1 * (size_t)Sa + (size_t)i] * qscale_m1;
 
-                    const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
-                    const uint32_t a0 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)threadID];
-                    const uint32_t a1 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)threadID];
-                    const uint32_t a2 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
-                    const uint32_t a3 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+                    const uint32_t* A_i = A_bits + i * SLICE_STRIDE_A;
+                    const uint32_t a0 = A_i[m0 * K_STRIDE32 + threadID];
+                    const uint32_t a1 = A_i[m1 * K_STRIDE32 + threadID];
+                    const uint32_t a2 = A_i[m0 * K_STRIDE32 + threadID + 4];
+                    const uint32_t a3 = A_i[m1 * K_STRIDE32 + threadID + 4];
 
                     float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
                     {
@@ -774,6 +764,8 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                 }
             } else {
                 const int Sb_full = Sb & ~(JBLOCK - 1);
+                const uint32_t* b_n_base = B_bits + (col_base + groupID) * K_STRIDE32;
+                
                 for (int j0 = 0; j0 < Sb_full; j0 += JBLOCK) {
                     uint32_t b0_cache[JBLOCK];
                     uint32_t b1_cache[JBLOCK];
@@ -782,7 +774,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
 
 #pragma unroll
                     for (int jj = 0; jj < JBLOCK; ++jj) {
-                        const uint32_t* b_col = b_col_base + (j0 + jj) * b_slice_stride;
+                        const uint32_t* b_col = b_n_base + (j0 + jj) * SLICE_STRIDE_B;
                         b0_cache[jj] = b_col[threadID];
                         b1_cache[jj] = b_col[threadID + 4];
                         bw0_cache[jj] = bw_col0[j0 + jj];
@@ -793,11 +785,11 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                         const float aw0 = Aw_tile[(size_t)m0 * (size_t)Sa + (size_t)i] * qscale_m0;
                         const float aw1 = Aw_tile[(size_t)m1 * (size_t)Sa + (size_t)i] * qscale_m1;
 
-                        const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
-                        const uint32_t a0 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)threadID];
-                        const uint32_t a1 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)threadID];
-                        const uint32_t a2 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
-                        const uint32_t a3 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+                        const uint32_t* A_i = A_bits + i * SLICE_STRIDE_A;
+                        const uint32_t a0 = A_i[m0 * K_STRIDE32 + threadID];
+                        const uint32_t a1 = A_i[m1 * K_STRIDE32 + threadID];
+                        const uint32_t a2 = A_i[m0 * K_STRIDE32 + threadID + 4];
+                        const uint32_t a3 = A_i[m1 * K_STRIDE32 + threadID + 4];
 
                         float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
                         {
@@ -864,7 +856,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                     for (int t = 0; t < 3; ++t) {
                         if (t < tail) {
                             const int j = j0 + t;
-                            const uint32_t* b_col = b_col_base + j * b_slice_stride;
+                            const uint32_t* b_col = b_n_base + j * SLICE_STRIDE_B;
                             b0_tail[t] = b_col[threadID];
                             b1_tail[t] = b_col[threadID + 4];
                             bw0_tail[t] = bw_col0[j];
@@ -877,11 +869,11 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                             const float aw0 = Aw_tile[(size_t)m0 * (size_t)Sa + (size_t)i] * qscale_m0;
                             const float aw1 = Aw_tile[(size_t)m1 * (size_t)Sa + (size_t)i] * qscale_m1;
 
-                            const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
-                            const uint32_t a0 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)threadID];
-                            const uint32_t a1 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)threadID];
-                            const uint32_t a2 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
-                            const uint32_t a3 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+                            const uint32_t* A_i = A_bits + i * SLICE_STRIDE_A;
+                            const uint32_t a0 = A_i[m0 * K_STRIDE32 + threadID];
+                            const uint32_t a1 = A_i[m1 * K_STRIDE32 + threadID];
+                            const uint32_t a2 = A_i[m0 * K_STRIDE32 + threadID + 4];
+                            const uint32_t a3 = A_i[m1 * K_STRIDE32 + threadID + 4];
 
                             int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
                             asm volatile(
@@ -900,11 +892,11 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                             const float aw0 = Aw_tile[(size_t)m0 * (size_t)Sa + (size_t)i] * qscale_m0;
                             const float aw1 = Aw_tile[(size_t)m1 * (size_t)Sa + (size_t)i] * qscale_m1;
 
-                            const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
-                            const uint32_t a0 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)threadID];
-                            const uint32_t a1 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)threadID];
-                            const uint32_t a2 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
-                            const uint32_t a3 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+                            const uint32_t* A_i = A_bits + i * SLICE_STRIDE_A;
+                            const uint32_t a0 = A_i[m0 * K_STRIDE32 + threadID];
+                            const uint32_t a1 = A_i[m1 * K_STRIDE32 + threadID];
+                            const uint32_t a2 = A_i[m0 * K_STRIDE32 + threadID + 4];
+                            const uint32_t a3 = A_i[m1 * K_STRIDE32 + threadID + 4];
 
                             int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
                             int d0 = 0, d1 = 0, d2 = 0, d3 = 0;
@@ -929,11 +921,11 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                             const float aw0 = Aw_tile[(size_t)m0 * (size_t)Sa + (size_t)i] * qscale_m0;
                             const float aw1 = Aw_tile[(size_t)m1 * (size_t)Sa + (size_t)i] * qscale_m1;
 
-                            const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
-                            const uint32_t a0 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)threadID];
-                            const uint32_t a1 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)threadID];
-                            const uint32_t a2 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
-                            const uint32_t a3 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+                            const uint32_t* A_i = A_bits + i * SLICE_STRIDE_A;
+                            const uint32_t a0 = A_i[m0 * K_STRIDE32 + threadID];
+                            const uint32_t a1 = A_i[m1 * K_STRIDE32 + threadID];
+                            const uint32_t a2 = A_i[m0 * K_STRIDE32 + threadID + 4];
+                            const uint32_t a3 = A_i[m1 * K_STRIDE32 + threadID + 4];
 
                             float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
                             {
@@ -986,21 +978,22 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                 const float aw0 = Aw_tile[(size_t)m0 * (size_t)Sa + (size_t)i] * qscale_m0;
                 const float aw1 = Aw_tile[(size_t)m1 * (size_t)Sa + (size_t)i] * qscale_m1;
 
-                const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
-                const uint32_t a0 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)threadID];
-                const uint32_t a1 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)threadID];
-                const uint32_t a2 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
-                const uint32_t a3 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+                const uint32_t* A_i = A_bits + i * SLICE_STRIDE_A;
+                const uint32_t a0 = A_i[m0 * K_STRIDE32 + threadID];
+                const uint32_t a1 = A_i[m1 * K_STRIDE32 + threadID];
+                const uint32_t a2 = A_i[m0 * K_STRIDE32 + threadID + 4];
+                const uint32_t a3 = A_i[m1 * K_STRIDE32 + threadID + 4];
 
                 float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
+                const uint32_t* b_n_base = B_bits + (col_base + groupID) * K_STRIDE32;
+                
                 for (int j = 0; j < Sb; ++j) {
                     const float bw0 = Bw_tile[(size_t)col0 * (size_t)Sb + (size_t)j];
                     const float bw1 = Bw_tile[(size_t)col1 * (size_t)Sb + (size_t)j];
 
-                    const uint32_t* B_j = B_bits + (size_t)j * (size_t)TN * (size_t)K_STRIDE32;
-                    const uint32_t* B_col = B_j + (size_t)(col_base + groupID) * (size_t)K_STRIDE32;
-                    const uint32_t b0 = B_col[(size_t)threadID];
-                    const uint32_t b1 = B_col[(size_t)(threadID + 4)];
+                    const uint32_t* B_col = b_n_base + j * SLICE_STRIDE_B;
+                    const uint32_t b0 = B_col[threadID];
+                    const uint32_t b1 = B_col[threadID + 4];
 
                     int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
                     asm volatile(
@@ -1148,7 +1141,9 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
     constexpr int K_BITS = 256;
     constexpr int K_WORDS64 = K_BITS / 64;
     constexpr int K_WORDS32 = K_BITS / 32;
-    constexpr int K_STRIDE32 = K_WORDS32 + 4;
+    constexpr int K_STRIDE32 = 12;
+    constexpr int SLICE_STRIDE_A = TM_TOTAL * K_STRIDE32 + 4;
+    constexpr int SLICE_STRIDE_B = TN * K_STRIDE32 + 4;
 
     if (blockDim.x != (WARPS_PER_QTILE * QTILES * 32)) return;
     const int lane = threadIdx.x & 31;
@@ -1161,13 +1156,14 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
 
     extern __shared__ unsigned char smem_raw[];
     uintptr_t p = reinterpret_cast<uintptr_t>(smem_raw);
-    p = (p + 15u) & ~uintptr_t(15u);
+    p = (p + 127u) & ~uintptr_t(127u);
 
     constexpr int stages = 2;
-    constexpr size_t A_words = (size_t)SA * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
-    constexpr size_t B_words = (size_t)SB * (size_t)TN * (size_t)K_STRIDE32;
+    constexpr size_t A_words = (size_t)SA * (size_t)SLICE_STRIDE_A;
+    constexpr size_t B_words = (size_t)SB * (size_t)SLICE_STRIDE_B;
     auto* A_bits0 = reinterpret_cast<uint32_t*>(p);
     p += (size_t)stages * A_words * sizeof(uint32_t);
+    p = (p + 127u) & ~uintptr_t(127u);
     auto* B_bits0 = reinterpret_cast<uint32_t*>(p);
     p += (size_t)stages * B_words * sizeof(uint32_t);
     (void)p;
@@ -1193,26 +1189,26 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
         constexpr int K_WORDS64_16B = K_WORDS64 / 2;
         for (int idx = threadIdx.x; idx < TM_TOTAL * SA * K_WORDS64_16B; idx += blockDim.x) {
             int t = idx;
-            const int w64_pair = t & (K_WORDS64_16B - 1);
-            t >>= 1;
-            const int m = t & (TM_TOTAL - 1);
-            const int i = t >> 5;
+            const int w64_pair = t % K_WORDS64_16B;
+            t /= K_WORDS64_16B;
+            const int i = t % SA;
+            const int m = t / SA;
             const int q = q0 + m;
             const unsigned long long* a_slice = A + ((size_t)q * (size_t)SA + (size_t)i) * (size_t)W64;
             const int w64_i = w64_pair << 1;
-            const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + (w64_i << 1);
+            const int base = (i * SLICE_STRIDE_A + m * K_STRIDE32) + (w64_i << 1);
             bsi_cp_async_cg_16B(A_bits + base, &a_slice[(size_t)0 * (size_t)K_WORDS64 + (size_t)w64_i]);
         }
         for (int idx = threadIdx.x; idx < TN * SB * K_WORDS64_16B; idx += blockDim.x) {
             int t = idx;
-            const int w64_pair = t & (K_WORDS64_16B - 1);
-            t >>= 1;
-            const int n = t & (TN - 1);
-            const int j = t >> 5;
+            const int w64_pair = t % K_WORDS64_16B;
+            t /= K_WORDS64_16B;
+            const int j = t % SB;
+            const int n = t / SB;
             const int r = r0 + n;
             const unsigned long long* b_slice = B + ((size_t)r * (size_t)SB + (size_t)j) * (size_t)W64;
             const int w64_i = w64_pair << 1;
-            const int base = ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
+            const int base = (j * SLICE_STRIDE_B + n * K_STRIDE32) + (w64_i << 1);
             bsi_cp_async_cg_16B(B_bits + base, &b_slice[(size_t)0 * (size_t)K_WORDS64 + (size_t)w64_i]);
         }
         bsi_cp_async_commit_group();
@@ -1234,28 +1230,28 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
             constexpr int K_WORDS64_16B = K_WORDS64 / 2;
             for (int idx = threadIdx.x; idx < TM_TOTAL * SA * K_WORDS64_16B; idx += blockDim.x) {
                 int t = idx;
-                const int w64_pair = t & (K_WORDS64_16B - 1);
-                t >>= 1;
-                const int m = t & (TM_TOTAL - 1);
-                const int i = t >> 5;
+                const int w64_pair = t % K_WORDS64_16B;
+                t /= K_WORDS64_16B;
+                const int i = t % SA;
+                const int m = t / SA;
                 const int q = q0 + m;
                 const unsigned long long* a_slice = A + ((size_t)q * (size_t)SA + (size_t)i) * (size_t)W64;
                 const int w64_i = w64_pair << 1;
-                const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + (w64_i << 1);
+                const int base = (i * SLICE_STRIDE_A + m * K_STRIDE32) + (w64_i << 1);
                 bsi_cp_async_cg_16B(
                     A_bits_next + base,
                     &a_slice[(size_t)next_chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
             }
             for (int idx = threadIdx.x; idx < TN * SB * K_WORDS64_16B; idx += blockDim.x) {
                 int t = idx;
-                const int w64_pair = t & (K_WORDS64_16B - 1);
-                t >>= 1;
-                const int n = t & (TN - 1);
-                const int j = t >> 5;
+                const int w64_pair = t % K_WORDS64_16B;
+                t /= K_WORDS64_16B;
+                const int j = t % SB;
+                const int n = t / SB;
                 const int r = r0 + n;
                 const unsigned long long* b_slice = B + ((size_t)r * (size_t)SB + (size_t)j) * (size_t)W64;
                 const int w64_i = w64_pair << 1;
-                const int base = ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
+                const int base = (j * SLICE_STRIDE_B + n * K_STRIDE32) + (w64_i << 1);
                 bsi_cp_async_cg_16B(
                     B_bits_next + base,
                     &b_slice[(size_t)next_chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
@@ -1276,11 +1272,10 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
 
         uint32_t b0_cache[SB];
         uint32_t b1_cache[SB];
-        const int b_slice_stride = TN * K_STRIDE32;
-        const uint32_t* b_col_base = B_bits + (col_base + groupID) * K_STRIDE32;
+        const uint32_t* b_n_base = B_bits + (col_base + groupID) * K_STRIDE32;
 #pragma unroll
         for (int j = 0; j < SB; ++j) {
-            const uint32_t* b_col = b_col_base + j * b_slice_stride;
+            const uint32_t* b_col = b_n_base + j * SLICE_STRIDE_B;
             b0_cache[j] = b_col[threadID];
             b1_cache[j] = b_col[threadID + 4];
         }
@@ -1288,11 +1283,11 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
         int chunk00 = 0, chunk01 = 0, chunk10 = 0, chunk11 = 0;
 #pragma unroll
         for (int i = 0; i < SA; ++i) {
-            const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
-            const uint32_t a0 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)threadID];
-            const uint32_t a1 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)threadID];
-            const uint32_t a2 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
-            const uint32_t a3 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+            const uint32_t* A_i = A_bits + i * SLICE_STRIDE_A;
+            const uint32_t a0 = A_i[m0 * K_STRIDE32 + threadID];
+            const uint32_t a1 = A_i[m1 * K_STRIDE32 + threadID];
+            const uint32_t a2 = A_i[m0 * K_STRIDE32 + threadID + 4];
+            const uint32_t a3 = A_i[m1 * K_STRIDE32 + threadID + 4];
 
 #pragma unroll
             for (int j = 0; j < SB; j += 2) {
@@ -1403,7 +1398,9 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
     constexpr int K_BITS = 256;
     constexpr int K_WORDS64 = K_BITS / 64;
     constexpr int K_WORDS32 = K_BITS / 32;
-    constexpr int K_STRIDE32 = K_WORDS32 + 4;
+    constexpr int K_STRIDE32 = 12;
+    constexpr int SLICE_STRIDE_A = TM_TOTAL * K_STRIDE32 + 4;
+    constexpr int SLICE_STRIDE_B = TN * K_STRIDE32 + 4;
 
     if (blockDim.x != (WARPS_PER_QTILE * QTILES * 32)) return;
     const int lane = threadIdx.x & 31;
@@ -1415,16 +1412,18 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
     const int r_base = blockIdx.x * (TN * R_SWEEP);
 
     uintptr_t p = reinterpret_cast<uintptr_t>(smem_raw);
-    p = (p + 15u) & ~uintptr_t(15u);
+    p = (p + 127u) & ~uintptr_t(127u);
 
     constexpr int stages = 2;
-    constexpr size_t A_words = (size_t)SA * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
-    constexpr size_t B_words = (size_t)SB * (size_t)TN * (size_t)K_STRIDE32;
+    constexpr size_t A_words = (size_t)SA * (size_t)SLICE_STRIDE_A;
+    constexpr size_t B_words = (size_t)SB * (size_t)SLICE_STRIDE_B;
     constexpr size_t B_words_sweep = (size_t)R_SWEEP * B_words;
     auto* A_bits0 = reinterpret_cast<uint32_t*>(p);
     p += (size_t)stages * A_words * sizeof(uint32_t);
+    p = (p + 127u) & ~uintptr_t(127u);
     auto* B_bits0 = reinterpret_cast<uint32_t*>(p);
     p += (size_t)stages * B_words_sweep * sizeof(uint32_t);
+    p = (p + 127u) & ~uintptr_t(127u);
     auto* acc0 = reinterpret_cast<float4*>(p);
     p += (size_t)R_SWEEP * (size_t)blockDim.x * sizeof(float4);
     (void)p;
@@ -1461,14 +1460,14 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
         constexpr int K_WORDS64_16B = K_WORDS64 / 2;
         for (int idx = threadIdx.x; idx < TM_TOTAL * SA * K_WORDS64_16B; idx += blockDim.x) {
             int t = idx;
-            const int w64_pair = t & (K_WORDS64_16B - 1);
-            t >>= 1;
-            const int m = t & (TM_TOTAL - 1);
-            const int i = t >> 5;
+            const int w64_pair = t % K_WORDS64_16B;
+            t /= K_WORDS64_16B;
+            const int i = t % SA;
+            const int m = t / SA;
             const int q = q0 + m;
             const unsigned long long* a_slice = A + ((size_t)q * (size_t)SA + (size_t)i) * (size_t)W64;
             const int w64_i = w64_pair << 1;
-            const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + (w64_i << 1);
+            const int base = (i * SLICE_STRIDE_A + m * K_STRIDE32) + (w64_i << 1);
             bsi_cp_async_cg_16B(A_bits + base, &a_slice[(size_t)0 * (size_t)K_WORDS64 + (size_t)w64_i]);
         }
         constexpr int B_CHUNK_ELEMS = TN * SB * K_WORDS64_16B;
@@ -1476,14 +1475,14 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
         for (int t = 0; t < R_SWEEP; ++t) {
             for (int idx = threadIdx.x; idx < B_CHUNK_ELEMS; idx += blockDim.x) {
                 int u = idx;
-                const int w64_pair = u & (K_WORDS64_16B - 1);
-                u >>= 1;
-                const int n = u & (TN - 1);
-                const int j = u >> 5;
+                const int w64_pair = u % K_WORDS64_16B;
+                u /= K_WORDS64_16B;
+                const int j = u % SB;
+                const int n = u / SB;
                 const int r = r_base + t * TN + n;
                 const unsigned long long* b_slice = B + ((size_t)r * (size_t)SB + (size_t)j) * (size_t)W64;
                 const int w64_i = w64_pair << 1;
-                const size_t base = (size_t)t * B_words + ((size_t)j * (size_t)TN + (size_t)n) * (size_t)K_STRIDE32 + (size_t)(w64_i << 1);
+                const size_t base = t * B_words + j * SLICE_STRIDE_B + n * K_STRIDE32 + (w64_i << 1);
                 bsi_cp_async_cg_16B(B_bits + base, &b_slice[(size_t)0 * (size_t)K_WORDS64 + (size_t)w64_i]);
             }
         }
@@ -1505,14 +1504,14 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
             constexpr int K_WORDS64_16B = K_WORDS64 / 2;
             for (int idx = threadIdx.x; idx < TM_TOTAL * SA * K_WORDS64_16B; idx += blockDim.x) {
                 int t = idx;
-                const int w64_pair = t & (K_WORDS64_16B - 1);
-                t >>= 1;
-                const int m = t & (TM_TOTAL - 1);
-                const int i = t >> 5;
+                const int w64_pair = t % K_WORDS64_16B;
+                t /= K_WORDS64_16B;
+                const int i = t % SA;
+                const int m = t / SA;
                 const int q = q0 + m;
                 const unsigned long long* a_slice = A + ((size_t)q * (size_t)SA + (size_t)i) * (size_t)W64;
                 const int w64_i = w64_pair << 1;
-                const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + (w64_i << 1);
+                const int base = (i * SLICE_STRIDE_A + m * K_STRIDE32) + (w64_i << 1);
                 bsi_cp_async_cg_16B(
                     A_bits_next + base,
                     &a_slice[(size_t)next_chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
@@ -1522,14 +1521,14 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
             for (int t = 0; t < R_SWEEP; ++t) {
                 for (int idx = threadIdx.x; idx < B_CHUNK_ELEMS; idx += blockDim.x) {
                     int u = idx;
-                    const int w64_pair = u & (K_WORDS64_16B - 1);
-                    u >>= 1;
-                    const int n = u & (TN - 1);
-                    const int j = u >> 5;
+                    const int w64_pair = u % K_WORDS64_16B;
+                    u /= K_WORDS64_16B;
+                    const int j = u % SB;
+                    const int n = u / SB;
                     const int r = r_base + t * TN + n;
                     const unsigned long long* b_slice = B + ((size_t)r * (size_t)SB + (size_t)j) * (size_t)W64;
                     const int w64_i = w64_pair << 1;
-                    const size_t base = (size_t)t * B_words + ((size_t)j * (size_t)TN + (size_t)n) * (size_t)K_STRIDE32 + (size_t)(w64_i << 1);
+                    const size_t base = t * B_words + j * SLICE_STRIDE_B + n * K_STRIDE32 + (w64_i << 1);
                     bsi_cp_async_cg_16B(
                         B_bits_next + base,
                         &b_slice[(size_t)next_chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
@@ -1561,13 +1560,12 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
             uint32_t b0_1[SB];
             uint32_t b1_1[SB];
 
-            const int b_slice_stride = TN * K_STRIDE32;
-            const uint32_t* b_col_base0 = B0 + (col_base + groupID) * K_STRIDE32;
-            const uint32_t* b_col_base1 = B1 + (col_base + groupID) * K_STRIDE32;
+            const uint32_t* b_n_base0 = B0 + (col_base + groupID) * K_STRIDE32;
+            const uint32_t* b_n_base1 = B1 + (col_base + groupID) * K_STRIDE32;
 #pragma unroll
             for (int j = 0; j < SB; ++j) {
-                const uint32_t* b_col0 = b_col_base0 + j * b_slice_stride;
-                const uint32_t* b_col1 = b_col_base1 + j * b_slice_stride;
+                const uint32_t* b_col0 = b_n_base0 + j * SLICE_STRIDE_B;
+                const uint32_t* b_col1 = b_n_base1 + j * SLICE_STRIDE_B;
                 b0_0[j] = b_col0[threadID];
                 b1_0[j] = b_col0[threadID + 4];
                 b0_1[j] = b_col1[threadID];
@@ -1578,11 +1576,11 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
             int chunk00_1 = 0, chunk01_1 = 0, chunk10_1 = 0, chunk11_1 = 0;
 #pragma unroll
             for (int i = 0; i < SA; ++i) {
-                const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
-                const uint32_t a0 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)threadID];
-                const uint32_t a1 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)threadID];
-                const uint32_t a2 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
-                const uint32_t a3 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+                const uint32_t* A_i = A_bits + i * SLICE_STRIDE_A;
+                const uint32_t a0 = A_i[m0 * K_STRIDE32 + threadID];
+                const uint32_t a1 = A_i[m1 * K_STRIDE32 + threadID];
+                const uint32_t a2 = A_i[m0 * K_STRIDE32 + threadID + 4];
+                const uint32_t a3 = A_i[m1 * K_STRIDE32 + threadID + 4];
 
 #pragma unroll
                 for (int j = 0; j < SB; ++j) {
@@ -1641,7 +1639,7 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
             }
         }
 
-        if (chunk + 1 < chunks) {
+        if (next_chunk < chunks) {
             bsi_cp_async_wait_all();
         }
         __syncthreads();
@@ -1748,7 +1746,9 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
     
     // Decoupled strides: A is padded for cp.async, B is tight for TMA
     constexpr int K_STRIDE32_A = 12;
+    constexpr int SLICE_STRIDE_A = TM_TOTAL * K_STRIDE32_A + 4; // 388
     constexpr int K_STRIDE32_B = 8;
+    constexpr int SLICE_STRIDE_B = TN * K_STRIDE32_B; // 256
 
     if (blockDim.x != (WARPS_PER_QTILE * QTILES * 32)) return;
     const int lane = threadIdx.x & 31;
@@ -1764,13 +1764,15 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
     p = (p + 127u) & ~uintptr_t(127u);
 
     constexpr int stages = 2;
-    constexpr size_t A_words = (size_t)SA * (size_t)TM_TOTAL * (size_t)K_STRIDE32_A;
-    constexpr size_t B_words = (size_t)SB * (size_t)TN * (size_t)K_STRIDE32_B;
+    constexpr size_t A_words = (size_t)SA * (size_t)SLICE_STRIDE_A;
+    constexpr size_t B_words = (size_t)SB * (size_t)SLICE_STRIDE_B;
     constexpr size_t B_words_sweep = (size_t)R_SWEEP * B_words;
     auto* A_bits0 = reinterpret_cast<uint32_t*>(p);
     p += (size_t)stages * A_words * sizeof(uint32_t);
+    p = (p + 127u) & ~uintptr_t(127u);
     auto* B_bits0 = reinterpret_cast<uint32_t*>(p);
     p += (size_t)stages * B_words_sweep * sizeof(uint32_t);
+    p = (p + 127u) & ~uintptr_t(127u);
     auto* acc0 = reinterpret_cast<float4*>(p);
     p += (size_t)R_SWEEP * (size_t)blockDim.x * sizeof(float4);
     (void)p;
@@ -1835,19 +1837,19 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
         }
     };
 
-    // --- GLOBAL MEMORY COALESCING FIX ---
     {
         uint32_t* A_bits = A_bits0;
         constexpr int K_WORDS64_16B = K_WORDS64 / 2;
         for (int idx = threadIdx.x; idx < TM_TOTAL * SA * K_WORDS64_16B; idx += blockDim.x) {
             int t = idx;
-            const int w64_pair = t % K_WORDS64_16B; t /= K_WORDS64_16B;
-            const int i = t % SA; const int m = t / SA;
-            
+            const int w64_pair = t % K_WORDS64_16B;
+            t /= K_WORDS64_16B;
+            const int i = t % SA;
+            const int m = t / SA;
             const int q = q0 + m;
             const unsigned long long* a_slice = A + ((size_t)q * (size_t)SA + (size_t)i) * (size_t)W64;
             const int w64_i = w64_pair << 1;
-            const int base = ((i * TM_TOTAL + m) * K_STRIDE32_A) + (w64_i << 1);
+            const int base = (i * SLICE_STRIDE_A + m * K_STRIDE32_A) + (w64_i << 1);
             bsi_cp_async_cg_16B(A_bits + base, &a_slice[(size_t)0 * (size_t)K_WORDS64 + (size_t)w64_i]);
         }
         bsi_cp_async_commit_group();
@@ -1871,13 +1873,14 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
             constexpr int K_WORDS64_16B = K_WORDS64 / 2;
             for (int idx = threadIdx.x; idx < TM_TOTAL * SA * K_WORDS64_16B; idx += blockDim.x) {
                 int t = idx;
-                const int w64_pair = t % K_WORDS64_16B; t /= K_WORDS64_16B;
-                const int i = t % SA; const int m = t / SA;
-                
+                const int w64_pair = t % K_WORDS64_16B;
+                t /= K_WORDS64_16B;
+                const int i = t % SA;
+                const int m = t / SA;
                 const int q = q0 + m;
                 const unsigned long long* a_slice = A + ((size_t)q * (size_t)SA + (size_t)i) * (size_t)W64;
                 const int w64_i = w64_pair << 1;
-                const int base = ((i * TM_TOTAL + m) * K_STRIDE32_A) + (w64_i << 1);
+                const int base = (i * SLICE_STRIDE_A + m * K_STRIDE32_A) + (w64_i << 1);
                 bsi_cp_async_cg_16B(
                     A_bits_next + base,
                     &a_slice[(size_t)next_chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
@@ -1897,7 +1900,6 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
         qscale_m0 = __shfl_sync(0xffffffff, qscale_m0, lane & ~3);
         qscale_m1 = __shfl_sync(0xffffffff, qscale_m1, lane & ~3);
 
-        // --- SOFTWARE SWIZZLE FIX FOR B BANK CONFLICTS ---
         const int swap_mask = (groupID & 4);
         const int idx_0 = threadID + swap_mask;
         const int idx_1 = threadID + (swap_mask ^ 4);
@@ -1915,14 +1917,13 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
             uint32_t b1_1[SB];
 
             const int n = col_base + groupID;
-            const int b_slice_stride = TN * K_STRIDE32_B;
-            const uint32_t* b_col_base0 = B0 + n * K_STRIDE32_B;
-            const uint32_t* b_col_base1 = B1 + n * K_STRIDE32_B;
+            const uint32_t* b_n_base0 = B0 + n * K_STRIDE32_B;
+            const uint32_t* b_n_base1 = B1 + n * K_STRIDE32_B;
             
 #pragma unroll
             for (int j = 0; j < SB; ++j) {
-                const uint32_t* b_col0 = b_col_base0 + j * b_slice_stride;
-                const uint32_t* b_col1 = b_col_base1 + j * b_slice_stride;
+                const uint32_t* b_col0 = b_n_base0 + j * SLICE_STRIDE_B;
+                const uint32_t* b_col1 = b_n_base1 + j * SLICE_STRIDE_B;
                 
                 uint32_t b0_0_raw = b_col0[idx_0];
                 uint32_t b1_0_raw = b_col0[idx_1];
@@ -1940,12 +1941,12 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
             
 #pragma unroll
             for (int i = 0; i < SA; ++i) {
-                const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32_A;
+                const uint32_t* A_i = A_bits + i * SLICE_STRIDE_A;
                 
-                const uint32_t a0 = A_i[(size_t)m0 * (size_t)K_STRIDE32_A + threadID];
-                const uint32_t a1 = A_i[(size_t)m1 * (size_t)K_STRIDE32_A + threadID];
-                const uint32_t a2 = A_i[(size_t)m0 * (size_t)K_STRIDE32_A + threadID + 4];
-                const uint32_t a3 = A_i[(size_t)m1 * (size_t)K_STRIDE32_A + threadID + 4];
+                const uint32_t a0 = A_i[m0 * K_STRIDE32_A + threadID];
+                const uint32_t a1 = A_i[m1 * K_STRIDE32_A + threadID];
+                const uint32_t a2 = A_i[m0 * K_STRIDE32_A + threadID + 4];
+                const uint32_t a3 = A_i[m1 * K_STRIDE32_A + threadID + 4];
 
 #pragma unroll
                 for (int j = 0; j < SB; ++j) {
@@ -2041,51 +2042,12 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
 #endif
 }
 
-extern "C" __global__ __launch_bounds__(256, 2)
-void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep2_tma_tensorB(
-    const unsigned long long* __restrict__ A,
-    const float* __restrict__ A_chunk_scales,
-    int A_scale_stride,
-    int W64,
-    const unsigned long long* __restrict__ B,
-    const float* __restrict__ Bw,
-    const void* __restrict__ B_tensor_map,
-    int R,
-    int Q,
-    float scale_inv,
-    int R_total,
-    float* __restrict__ out_global)
-{
-    extern __shared__ unsigned char smem_raw[];
-    bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tensorB<2>(
-        smem_raw, A, A_chunk_scales, A_scale_stride, W64, B, Bw, B_tensor_map, R, Q, scale_inv, R_total, out_global);
-}
-
-extern "C" __global__ __launch_bounds__(256, 2)
-void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_tma_tensorB(
-    const unsigned long long* __restrict__ A,
-    const float* __restrict__ A_chunk_scales,
-    int A_scale_stride,
-    int W64,
-    const unsigned long long* __restrict__ B,
-    const float* __restrict__ Bw,
-    const void* __restrict__ B_tensor_map,
-    int R,
-    int Q,
-    float scale_inv,
-    int R_total,
-    float* __restrict__ out_global)
-{
-    extern __shared__ unsigned char smem_raw[];
-    bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tensorB<4>(
-        smem_raw, A, A_chunk_scales, A_scale_stride, W64, B, Bw, B_tensor_map, R, Q, scale_inv, R_total, out_global);
-}
-
-template <int SB>
+template <int SB, int SLICE_STRIDE_A, int K_STRIDE_A, int SLICE_STRIDE_B, int K_STRIDE_B>
 __device__ __forceinline__ void bsi_bmma_tm32_accum_sa7_sb_hot(
     const uint32_t* __restrict__ A_bits,
     const float* __restrict__ Aw_tile,
-    const uint32_t* __restrict__ b_col_base,
+    const uint32_t* __restrict__ B_bits,
+    int n_col,
     const float* __restrict__ bw_col0,
     const float* __restrict__ bw_col1,
     int threadID,
@@ -2102,19 +2064,17 @@ __device__ __forceinline__ void bsi_bmma_tm32_accum_sa7_sb_hot(
 #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900)
     static_assert(SB == 6 || SB == 7, "SB must be 6 or 7");
     constexpr int SA = 7;
-    constexpr int TM_TOTAL = 32;
-    constexpr int TN = 32;
-    constexpr int K_STRIDE32 = 12;
-    const int b_slice_stride = TN * K_STRIDE32;
 
     uint32_t b0_cache[SB];
     uint32_t b1_cache[SB];
     float bw0_cache[SB];
     float bw1_cache[SB];
 
+    const uint32_t* b_n_base = B_bits + n_col * K_STRIDE_B;
+
 #pragma unroll
     for (int j = 0; j < SB; ++j) {
-        const uint32_t* b_col = b_col_base + j * b_slice_stride;
+        const uint32_t* b_col = b_n_base + j * SLICE_STRIDE_B;
         b0_cache[j] = b_col[threadID];
         b1_cache[j] = b_col[threadID + 4];
         bw0_cache[j] = bw_col0[j];
@@ -2124,11 +2084,11 @@ __device__ __forceinline__ void bsi_bmma_tm32_accum_sa7_sb_hot(
     float chunk00 = 0.0f, chunk01 = 0.0f, chunk10 = 0.0f, chunk11 = 0.0f;
 #pragma unroll
     for (int i = 0; i < SA; ++i) {
-        const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM_TOTAL * (size_t)K_STRIDE32;
-        const uint32_t a0 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)threadID];
-        const uint32_t a1 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)threadID];
-        const uint32_t a2 = A_i[(size_t)m0 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
-        const uint32_t a3 = A_i[(size_t)m1 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+        const uint32_t* A_i = A_bits + i * SLICE_STRIDE_A;
+        const uint32_t a0 = A_i[m0 * K_STRIDE_A + threadID];
+        const uint32_t a1 = A_i[m1 * K_STRIDE_A + threadID];
+        const uint32_t a2 = A_i[m0 * K_STRIDE_A + threadID + 4];
+        const uint32_t a3 = A_i[m1 * K_STRIDE_A + threadID + 4];
 
         float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
 #pragma unroll
@@ -2150,8 +2110,8 @@ __device__ __forceinline__ void bsi_bmma_tm32_accum_sa7_sb_hot(
             sum11 = __fmaf_rn(static_cast<float>(c3), bw1_cache[j], sum11);
         }
 
-        const float aw0 = Aw_tile[(size_t)m0 * (size_t)SA + (size_t)i];
-        const float aw1 = Aw_tile[(size_t)m1 * (size_t)SA + (size_t)i];
+        const float aw0 = Aw_tile[(size_t)m0 * SA + i];
+        const float aw1 = Aw_tile[(size_t)m1 * SA + i];
         chunk00 = __fmaf_rn(aw0, sum00, chunk00);
         chunk01 = __fmaf_rn(aw0, sum01, chunk01);
         chunk10 = __fmaf_rn(aw1, sum10, chunk10);
@@ -2167,7 +2127,8 @@ __device__ __forceinline__ void bsi_bmma_tm32_accum_sa7_sb_hot(
 #else
     (void)A_bits;
     (void)Aw_tile;
-    (void)b_col_base;
+    (void)B_bits;
+    (void)n_col;
     (void)bw_col0;
     (void)bw_col1;
     (void)threadID;
@@ -2207,9 +2168,6 @@ static inline const BsiSharedLimits& bsi_get_shared_limits_cached() {
 #if !defined(__CUDA_ARCH__)
 namespace bsi_tma {
 
-// Some CUDA toolchains ship the cuTensorMapEncodeTiled declaration but not the
-// PFN_cuTensorMapEncodeTiled typedef. Use our own function pointer type so we
-// can still resolve the symbol via cudaGetDriverEntryPointByVersion.
 using BsiCuTensorMapEncodeTiledFn = CUresult (*)(
     CUtensorMap*,
     CUtensorMapDataType,
@@ -2225,7 +2183,7 @@ using BsiCuTensorMapEncodeTiledFn = CUresult (*)(
     CUtensorMapFloatOOBfill);
 
 struct TmaTensorMapKey {
-    const void* base = nullptr; // global base pointer encoded into the tensor map
+    const void* base = nullptr;
     int device = 0;
     int w64 = 0;
     int r_total = 0;
@@ -2253,7 +2211,7 @@ static inline bool operator==(const TmaTensorMapKey& a, const TmaTensorMapKey& b
 }
 
 struct TmaTensorMapValue {
-    void* d_tma = nullptr; // device pointer to CUtensorMap
+    void* d_tma = nullptr;
 };
 
 static inline BsiCuTensorMapEncodeTiledFn bsi_get_encode_tiled_fn() {
@@ -2263,7 +2221,6 @@ static inline BsiCuTensorMapEncodeTiledFn bsi_get_encode_tiled_fn() {
         initialized = 1;
         cudaDriverEntryPointQueryResult driver_status = cudaDriverEntryPointSymbolNotFound;
         void* p = nullptr;
-        // Use the compile-time runtime version to avoid ABI mismatches.
         const unsigned int cuda_version = static_cast<unsigned int>(CUDART_VERSION);
         const cudaError_t err = cudaGetDriverEntryPointByVersion(
             "cuTensorMapEncodeTiled",
@@ -2287,7 +2244,7 @@ static inline void* bsi_get_or_create_b_fixed76_rsweep_tensor_map(
 {
     constexpr int TN = 32;
     constexpr int SB = 6;
-    constexpr int BYTES_PER_CHUNK = 32; // K=256b
+    constexpr int BYTES_PER_CHUNK = 32;
 
     if (B == nullptr) return nullptr;
     if (W64 <= 0 || (W64 & 3) != 0) return nullptr;
@@ -2297,13 +2254,7 @@ static inline void* bsi_get_or_create_b_fixed76_rsweep_tensor_map(
     int dev = 0;
     cudaGetDevice(&dev);
 
-    const TmaTensorMapKey key{
-        /*base=*/B,
-        /*device=*/dev,
-        /*w64=*/W64,
-        /*r_total=*/R_total,
-        /*r_sweep=*/R_sweep,
-    };
+    const TmaTensorMapKey key{B, dev, W64, R_total, R_sweep};
 
     static std::mutex mu;
     static std::unordered_map<TmaTensorMapKey, TmaTensorMapValue, TmaTensorMapKeyHash> cache;
@@ -2319,23 +2270,13 @@ static inline void* bsi_get_or_create_b_fixed76_rsweep_tensor_map(
     BsiCuTensorMapEncodeTiledFn encode = bsi_get_encode_tiled_fn();
     if (!encode) return nullptr;
 
-    // Tensor map dims order is innermost->outermost.
-    // We encode B as: [w_bytes, n(32), sb, tile(R_total/32)].
-    //
-    // This makes the TMA destination shared layout (outermost->innermost):
-    //   [tile, sb, n, w_bytes]
-    // which matches the baseline cp.async staging layout but without needing
-    // padding in the innermost dimension.
     const cuuint64_t w_bytes = static_cast<cuuint64_t>(W64) * 8ull;
     const cuuint64_t tile_count = static_cast<cuuint64_t>(R_total / TN);
 
     const cuuint64_t global_dim[4] = {w_bytes, (cuuint64_t)TN, (cuuint64_t)SB, tile_count};
     const cuuint64_t global_strides[3] = {
-        // stride (bytes) for n (r within tile)
         w_bytes * (cuuint64_t)SB,
-        // stride (bytes) for sb
         w_bytes,
-        // stride (bytes) for tile
         w_bytes * (cuuint64_t)SB * (cuuint64_t)TN,
     };
     const cuuint32_t box_dim[4] = {(cuuint32_t)BYTES_PER_CHUNK, (cuuint32_t)TN, (cuuint32_t)SB, (cuuint32_t)R_sweep};
@@ -2345,8 +2286,8 @@ static inline void* bsi_get_or_create_b_fixed76_rsweep_tensor_map(
     const CUresult res = encode(
         &tma,
         CU_TENSOR_MAP_DATA_TYPE_UINT8,
-        /*tensorRank=*/4,
-        /*globalAddress=*/(void*)B,
+        4,
+        (void*)B,
         global_dim,
         global_strides,
         box_dim,
@@ -2375,11 +2316,7 @@ static inline void* bsi_get_or_create_b_fixed76_rsweep_tensor_map(
 #else
 namespace bsi_tma {
 static inline void* bsi_get_or_create_b_fixed76_rsweep_tensor_map(
-    const unsigned long long*,
-    int,
-    int,
-    int,
-    cudaStream_t)
+    const unsigned long long*, int, int, int, cudaStream_t)
 {
     return nullptr;
 }
@@ -2408,9 +2345,7 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     float* out_global,
     cudaStream_t stream)
 {
-    // Optional SM90+ tensor-core (BMMA) path (guarded by BSI_TC_DOT).
     int use_tc = 0;
-    // Chunk-scale mode requires BMMA for correctness; force the TC path when scales are provided.
     if (A_chunk_scales != nullptr && A_scale_stride > 0) {
         use_tc = 1;
     } else if (const char* s = getenv("BSI_TC_DOT")) {
@@ -2426,15 +2361,12 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
             cached_tc_ok = (major >= 9) ? 1 : 0;
         }
         if (cached_tc_ok && Sa > 0 && Sb > 0 && (W % 4 == 0) && W >= 4) {
-            constexpr int K_WORDS32 = 8;           // 256 bits / 32
-            constexpr int K_STRIDE32 = K_WORDS32 + 4; // padding to reduce bank conflicts
+            constexpr int K_STRIDE32_BASE = 12;
 
             const auto& smem_limits = bsi_get_shared_limits_cached();
             const int max_shared_default = smem_limits.max_shared_default;
             const int max_shared = smem_limits.max_shared;
 
-            // Enable pipelined per-chunk global->shared loads by default on SM90.
-            // You can disable for A/B testing via: BSI_TC_CPASYNC=0
             static int cached_use_cpasync = -1;
             if (cached_use_cpasync < 0) {
                 int use_cpasync_env = 1;
@@ -2475,27 +2407,23 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                 cached_fixed_int = v;
             }
 
-	            static int cached_tc_r_sweep = -1;
-	            if (cached_tc_r_sweep < 0) {
-	                int v = 1;
-	                if (const char* s = getenv("BSI_TC_R_SWEEP")) {
-	                    v = atoi(s);
-	                }
-	                cached_tc_r_sweep = (v == 2 || v == 4) ? v : 1;
-	            }
+            static int cached_tc_r_sweep = -1;
+            if (cached_tc_r_sweep < 0) {
+                int v = 1;
+                if (const char* s = getenv("BSI_TC_R_SWEEP")) {
+                    v = atoi(s);
+                }
+                cached_tc_r_sweep = (v == 2 || v == 4) ? v : 1;
+            }
 
-	            // Optional TMA-based B staging for fixed76 rsweep TM32 kernels (H100+).
-	            // 0 (default): baseline cp.async staging
-	            // 1: force tensor-map TMA staging for B (fallback to baseline if descriptor creation fails)
-	            // 2: auto (enable only for large-R W64==64 cases)
-	            static int cached_tc_tma = -1;
-	            if (cached_tc_tma < 0) {
-	                int v = 0;
-	                if (const char* s = getenv("BSI_TC_TMA")) {
-	                    v = atoi(s);
-	                }
-	                cached_tc_tma = (v == 1) ? 1 : ((v == 2) ? 2 : 0);
-	            }
+            static int cached_tc_tma = -1;
+            if (cached_tc_tma < 0) {
+                int v = 0;
+                if (const char* s = getenv("BSI_TC_TMA")) {
+                    v = atoi(s);
+                }
+                cached_tc_tma = (v == 1) ? 1 : ((v == 2) ? 2 : 0);
+            }
 
             const bool fixed76 = (Sa == 7) && (Sb == 6) &&
                 (cached_fixed_bits_queries == 7) && (cached_fixed_bits_keys == 6);
@@ -2509,307 +2437,202 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                 if (const char* s = getenv("BSI_DOT_DEBUG")) {
                     debug = (atoi(s) != 0) ? 1 : 0;
                 }
-	            }
-	            static int debug_printed = 0;
-	            auto maybe_debug_print_fixed_int = [&](int tm, int r_sweep, int r_tail, int tma) {
-	                if (!debug || debug_printed) return;
-	                debug_printed = 1;
-	                const int chunks = W >> 2;
-	                const long long work = (long long)chunks * 7ll * 6ll;
-	                fprintf(
-	                    stderr,
-	                    "[BSI_DOT] tc_fixed_int=1 tm=%d cpasync=1 Sa=7 Sb=6 Q=%d R=%d W64=%d chunks=%d work=%lld rsweep=%d rtail=%d tma=%d\n",
-	                    tm,
-	                    Q,
-	                    R,
-	                    W,
-	                    chunks,
-	                    work,
-	                    r_sweep,
-	                    r_tail,
-	                    tma);
-	            };
+            }
+            static int debug_printed = 0;
+            auto maybe_debug_print_fixed_int = [&](int tm, int r_sweep, int r_tail, int tma) {
+                if (!debug || debug_printed) return;
+                debug_printed = 1;
+                const int chunks = W >> 2;
+                const long long work = (long long)chunks * 7ll * 6ll;
+                fprintf(
+                    stderr,
+                    "[BSI_DOT] tc_fixed_int=1 tm=%d cpasync=1 Sa=7 Sb=6 Q=%d R=%d W64=%d chunks=%d work=%lld rsweep=%d rtail=%d tma=%d\n",
+                    tm, Q, R, W, chunks, work, r_sweep, r_tail, tma);
+            };
 
             auto try_tm32 = [&]() -> bool {
                 constexpr int TM_TOTAL = 32;
                 constexpr int TN = 32;
+                constexpr int SLICE_STRIDE_A = TM_TOTAL * K_STRIDE32_BASE + 4;
+                constexpr int SLICE_STRIDE_B = TN * K_STRIDE32_BASE + 4;
+
                 dim3 block_tc(256, 1, 1);
                 dim3 grid_tc((R + TN - 1) / TN, (Q + TM_TOTAL - 1) / TM_TOTAL, 1);
-	                if (cached_fixed_int && use_cpasync_requested && fixed76 && identity && full_tiles_tm32 && chunk_scale) {
-	                    constexpr int K_WORDS32 = 8;
-	                    constexpr int K_STRIDE32 = K_WORDS32 + 4;
-	                    constexpr int stages = 2;
-	                    const int r_sweep = cached_tc_r_sweep;
-	                    int use_tma = 0;
-	                    void* B_tensor_map = nullptr;
+                
+                if (cached_fixed_int && use_cpasync_requested && fixed76 && identity && full_tiles_tm32 && chunk_scale) {
+                    constexpr int stages = 2;
+                    const int r_sweep = cached_tc_r_sweep;
+                    int use_tma = 0;
+                    void* B_tensor_map = nullptr;
 #if defined(__cccl_lib_local_barrier_arrive_tx)
-	                    const bool want_tma = (cached_tc_tma == 1) ||
-	                        (cached_tc_tma == 2 && W == 64 && R >= 16384);
-	                    if (want_tma) {
-	                        B_tensor_map = bsi_tma::bsi_get_or_create_b_fixed76_rsweep_tensor_map(
-	                            B, W, R_total, r_sweep, stream);
-	                        use_tma = (B_tensor_map != nullptr) ? 1 : 0;
-	                    }
+                    const bool want_tma = (cached_tc_tma == 1) ||
+                        (cached_tc_tma == 2 && W == 64 && R >= 16384);
+                    if (want_tma) {
+                        B_tensor_map = bsi_tma::bsi_get_or_create_b_fixed76_rsweep_tensor_map(
+                            B, W, R_total, r_sweep, stream);
+                        use_tma = (B_tensor_map != nullptr) ? 1 : 0;
+                    }
 #endif
-	                    const int tn_sweep = TN * r_sweep;
-	                    const int r_main = (r_sweep > 1) ? ((R / tn_sweep) * tn_sweep) : 0;
-	                    const int r_tail = R - r_main;
+                    const int tn_sweep = TN * r_sweep;
+                    const int r_main = (r_sweep > 1) ? ((R / tn_sweep) * tn_sweep) : 0;
+                    const int r_tail = R - r_main;
 
-	                    if (r_sweep > 1 && r_main >= tn_sweep) {
-	                        const size_t B_words = (size_t)6 * (size_t)TN * (size_t)K_STRIDE32;
-	                        const size_t B_words_sweep = (size_t)r_sweep * B_words;
+                    if (r_sweep > 1 && r_main >= tn_sweep) {
+                        const size_t B_words_sweep = (size_t)r_sweep * (size_t)6 * (size_t)SLICE_STRIDE_B;
+                        
+                        constexpr int K_STRIDE32_TMA = 8;
+                        constexpr int SLICE_STRIDE_B_TMA = TN * K_STRIDE32_TMA;
+                        const size_t B_words_sweep_tma = (size_t)r_sweep * (size_t)6 * (size_t)SLICE_STRIDE_B_TMA;
 
-	                        constexpr int K_STRIDE32_TMA = K_WORDS32;
-	                        const size_t B_words_tma = (size_t)6 * (size_t)TN * (size_t)K_STRIDE32_TMA;
-	                        const size_t B_words_sweep_tma = (size_t)r_sweep * B_words_tma;
-
-	                        const size_t shared_bytes_base =
-	                            16u +
-	                            (size_t)stages * (size_t)7 * (size_t)TM_TOTAL * (size_t)K_STRIDE32 * sizeof(uint32_t) +
-	                            (size_t)stages * B_words_sweep * sizeof(uint32_t) +
-	                            (size_t)r_sweep * (size_t)block_tc.x * sizeof(float4);
-	                        const size_t shared_bytes_tma =
-	                            128u +
-	                            (size_t)stages * (size_t)7 * (size_t)TM_TOTAL * (size_t)K_STRIDE32_TMA * sizeof(uint32_t) +
-	                            (size_t)stages * B_words_sweep_tma * sizeof(uint32_t) +
-	                            (size_t)r_sweep * (size_t)block_tc.x * sizeof(float4);
-	                        const size_t shared_bytes = use_tma ? shared_bytes_tma : shared_bytes_base;
-	                        if (shared_bytes <= (size_t)max_shared) {
-	                            dim3 grid_fixed(r_main / tn_sweep, Q / TM_TOTAL, 1);
-	                            if (shared_bytes > (size_t)max_shared_default) {
-	                                if (r_sweep == 2) {
-	                                    if (use_tma) {
-	                                        static size_t configured_shared_rsweep2_tma = 0;
-	                                        if (shared_bytes > configured_shared_rsweep2_tma) {
-	                                            cudaFuncSetAttribute(
-	                                                popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep2_tma_tensorB,
-	                                                cudaFuncAttributeMaxDynamicSharedMemorySize,
-	                                                (int)shared_bytes);
-	                                            configured_shared_rsweep2_tma = shared_bytes;
-	                                        }
-	                                        popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep2_tma_tensorB<<<
-	                                            grid_fixed, block_tc, shared_bytes, stream>>>(
-	                                            A,
-	                                            A_chunk_scales,
-	                                            A_scale_stride,
-	                                            W,
-	                                            B,
-	                                            Bw,
-	                                            B_tensor_map,
-	                                            r_main,
-	                                            Q,
-	                                            scale_inv,
-	                                            R_total,
-	                                            out_global);
-	                                    } else {
-	                                        static size_t configured_shared_rsweep2 = 0;
-	                                        if (shared_bytes > configured_shared_rsweep2) {
-	                                            cudaFuncSetAttribute(
-	                                                popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep2,
-	                                                cudaFuncAttributeMaxDynamicSharedMemorySize,
-	                                                (int)shared_bytes);
-	                                            configured_shared_rsweep2 = shared_bytes;
-	                                        }
-	                                        popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep2<<<
-	                                            grid_fixed, block_tc, shared_bytes, stream>>>(
-	                                            A,
-	                                            A_chunk_scales,
-	                                            A_scale_stride,
-	                                            W,
-	                                            B,
-	                                            Bw,
-	                                            r_main,
-	                                            Q,
-	                                            scale_inv,
-	                                            R_total,
-	                                            out_global);
-	                                    }
-	                                } else if (r_sweep == 4) {
-	                                    if (use_tma) {
-	                                        static size_t configured_shared_rsweep4_tma = 0;
-	                                        if (shared_bytes > configured_shared_rsweep4_tma) {
-	                                            cudaFuncSetAttribute(
-	                                                popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_tma_tensorB,
-	                                                cudaFuncAttributeMaxDynamicSharedMemorySize,
-	                                                (int)shared_bytes);
-	                                            configured_shared_rsweep4_tma = shared_bytes;
-	                                        }
-	                                        popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_tma_tensorB<<<
-	                                            grid_fixed, block_tc, shared_bytes, stream>>>(
-	                                            A,
-	                                            A_chunk_scales,
-	                                            A_scale_stride,
-	                                            W,
-	                                            B,
-	                                            Bw,
-	                                            B_tensor_map,
-	                                            r_main,
-	                                            Q,
-	                                            scale_inv,
-	                                            R_total,
-	                                            out_global);
-	                                    } else {
-	                                        static size_t configured_shared_rsweep4 = 0;
-	                                        if (shared_bytes > configured_shared_rsweep4) {
-	                                            cudaFuncSetAttribute(
-	                                                popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4,
-	                                                cudaFuncAttributeMaxDynamicSharedMemorySize,
-	                                                (int)shared_bytes);
-	                                            configured_shared_rsweep4 = shared_bytes;
-	                                        }
-	                                        popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4<<<
-	                                            grid_fixed, block_tc, shared_bytes, stream>>>(
-	                                            A,
-	                                            A_chunk_scales,
-	                                            A_scale_stride,
-	                                            W,
-	                                            B,
-	                                            Bw,
-	                                            r_main,
-	                                            Q,
-	                                            scale_inv,
-	                                            R_total,
-	                                            out_global);
-	                                    }
-	                                }
-	                            } else {
-	                                if (r_sweep == 2) {
-	                                    if (use_tma) {
-	                                        popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep2_tma_tensorB<<<
-	                                            grid_fixed, block_tc, shared_bytes, stream>>>(
-	                                            A,
-	                                            A_chunk_scales,
-	                                            A_scale_stride,
-	                                            W,
-	                                            B,
-	                                            Bw,
-	                                            B_tensor_map,
-	                                            r_main,
-	                                            Q,
-	                                            scale_inv,
-	                                            R_total,
-	                                            out_global);
-	                                    } else {
-	                                        popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep2<<<
-	                                            grid_fixed, block_tc, shared_bytes, stream>>>(
-	                                            A,
-	                                            A_chunk_scales,
-	                                            A_scale_stride,
-	                                            W,
-	                                            B,
-	                                            Bw,
-	                                            r_main,
-	                                            Q,
-	                                            scale_inv,
-	                                            R_total,
-	                                            out_global);
-	                                    }
-	                                } else if (r_sweep == 4) {
-	                                    if (use_tma) {
-	                                        popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_tma_tensorB<<<
-	                                            grid_fixed, block_tc, shared_bytes, stream>>>(
-	                                            A,
-	                                            A_chunk_scales,
-	                                            A_scale_stride,
-	                                            W,
-	                                            B,
-	                                            Bw,
-	                                            B_tensor_map,
-	                                            r_main,
-	                                            Q,
-	                                            scale_inv,
-	                                            R_total,
-	                                            out_global);
-	                                    } else {
-	                                        popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4<<<
-	                                            grid_fixed, block_tc, shared_bytes, stream>>>(
-	                                            A,
-	                                            A_chunk_scales,
-	                                            A_scale_stride,
-	                                            W,
-	                                            B,
-	                                            Bw,
-	                                            r_main,
-	                                            Q,
-	                                            scale_inv,
-	                                            R_total,
-	                                            out_global);
-	                                    }
-	                                }
-	                            }
+                        const size_t shared_bytes_base =
+                            512u +
+                            (size_t)stages * (size_t)7 * (size_t)SLICE_STRIDE_A * sizeof(uint32_t) +
+                            (size_t)stages * B_words_sweep * sizeof(uint32_t) +
+                            (size_t)r_sweep * (size_t)block_tc.x * sizeof(float4);
+                            
+                        const size_t shared_bytes_tma =
+                            512u +
+                            (size_t)stages * (size_t)7 * (size_t)SLICE_STRIDE_A * sizeof(uint32_t) +
+                            (size_t)stages * B_words_sweep_tma * sizeof(uint32_t) +
+                            (size_t)r_sweep * (size_t)block_tc.x * sizeof(float4);
+                            
+                        const size_t shared_bytes = use_tma ? shared_bytes_tma : shared_bytes_base;
+                        
+                        if (shared_bytes <= (size_t)max_shared) {
+                            dim3 grid_fixed(r_main / tn_sweep, Q / TM_TOTAL, 1);
+                            if (shared_bytes > (size_t)max_shared_default) {
+                                if (r_sweep == 2) {
+                                    if (use_tma) {
+                                        static size_t configured_shared_rsweep2_tma = 0;
+                                        if (shared_bytes > configured_shared_rsweep2_tma) {
+                                            cudaFuncSetAttribute(
+                                                popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep2_tma_tensorB,
+                                                cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                                (int)shared_bytes);
+                                            configured_shared_rsweep2_tma = shared_bytes;
+                                        }
+                                        popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep2_tma_tensorB<<<
+                                            grid_fixed, block_tc, shared_bytes, stream>>>(
+                                            A, A_chunk_scales, A_scale_stride, W, B, Bw, B_tensor_map, r_main, Q, scale_inv, R_total, out_global);
+                                    } else {
+                                        static size_t configured_shared_rsweep2 = 0;
+                                        if (shared_bytes > configured_shared_rsweep2) {
+                                            cudaFuncSetAttribute(
+                                                popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep2,
+                                                cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                                (int)shared_bytes);
+                                            configured_shared_rsweep2 = shared_bytes;
+                                        }
+                                        popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep2<<<
+                                            grid_fixed, block_tc, shared_bytes, stream>>>(
+                                            A, A_chunk_scales, A_scale_stride, W, B, Bw, r_main, Q, scale_inv, R_total, out_global);
+                                    }
+                                } else if (r_sweep == 4) {
+                                    if (use_tma) {
+                                        static size_t configured_shared_rsweep4_tma = 0;
+                                        if (shared_bytes > configured_shared_rsweep4_tma) {
+                                            cudaFuncSetAttribute(
+                                                popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_tma_tensorB,
+                                                cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                                (int)shared_bytes);
+                                            configured_shared_rsweep4_tma = shared_bytes;
+                                        }
+                                        popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_tma_tensorB<<<
+                                            grid_fixed, block_tc, shared_bytes, stream>>>(
+                                            A, A_chunk_scales, A_scale_stride, W, B, Bw, B_tensor_map, r_main, Q, scale_inv, R_total, out_global);
+                                    } else {
+                                        static size_t configured_shared_rsweep4 = 0;
+                                        if (shared_bytes > configured_shared_rsweep4) {
+                                            cudaFuncSetAttribute(
+                                                popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4,
+                                                cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                                (int)shared_bytes);
+                                            configured_shared_rsweep4 = shared_bytes;
+                                        }
+                                        popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4<<<
+                                            grid_fixed, block_tc, shared_bytes, stream>>>(
+                                            A, A_chunk_scales, A_scale_stride, W, B, Bw, r_main, Q, scale_inv, R_total, out_global);
+                                    }
+                                }
+                            } else {
+                                if (r_sweep == 2) {
+                                    if (use_tma) {
+                                        popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep2_tma_tensorB<<<
+                                            grid_fixed, block_tc, shared_bytes, stream>>>(
+                                            A, A_chunk_scales, A_scale_stride, W, B, Bw, B_tensor_map, r_main, Q, scale_inv, R_total, out_global);
+                                    } else {
+                                        popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep2<<<
+                                            grid_fixed, block_tc, shared_bytes, stream>>>(
+                                            A, A_chunk_scales, A_scale_stride, W, B, Bw, r_main, Q, scale_inv, R_total, out_global);
+                                    }
+                                } else if (r_sweep == 4) {
+                                    if (use_tma) {
+                                        popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_tma_tensorB<<<
+                                            grid_fixed, block_tc, shared_bytes, stream>>>(
+                                            A, A_chunk_scales, A_scale_stride, W, B, Bw, B_tensor_map, r_main, Q, scale_inv, R_total, out_global);
+                                    } else {
+                                        popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4<<<
+                                            grid_fixed, block_tc, shared_bytes, stream>>>(
+                                            A, A_chunk_scales, A_scale_stride, W, B, Bw, r_main, Q, scale_inv, R_total, out_global);
+                                    }
+                                }
+                            }
 
                             if (r_tail > 0) {
                                 size_t shared_bytes_tail =
-                                    16u +
-                                    (size_t)stages * (size_t)7 * (size_t)TM_TOTAL * (size_t)K_STRIDE32 * sizeof(uint32_t) +
-                                    (size_t)stages * (size_t)6 * (size_t)TN * (size_t)K_STRIDE32 * sizeof(uint32_t);
+                                    512u +
+                                    (size_t)stages * (size_t)7 * (size_t)SLICE_STRIDE_A * sizeof(uint32_t) +
+                                    (size_t)stages * (size_t)6 * (size_t)SLICE_STRIDE_B * sizeof(uint32_t);
 
                                 if (shared_bytes_tail <= (size_t)max_shared) {
                                     dim3 grid_tail(r_tail / TN, Q / TM_TOTAL, 1);
-                                    const unsigned long long* B_tail =
-                                        B + ((size_t)r_main * (size_t)6 * (size_t)W);
+                                    const unsigned long long* B_tail = B + ((size_t)r_main * (size_t)6 * (size_t)W);
                                     const float* Bw_tail = Bw + ((size_t)r_main * (size_t)6);
                                     float* out_tail = out_global + r_main;
+                                    
                                     popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale<<<
                                         grid_tail, block_tc, shared_bytes_tail, stream>>>(
-                                        A,
-                                        A_chunk_scales,
-                                        A_scale_stride,
-                                        W,
-                                        B_tail,
-                                        Bw_tail,
-                                        r_tail,
-                                        Q,
-                                        scale_inv,
-                                        R_total,
-                                        out_tail);
-	                                }
-	                            }
-	                            maybe_debug_print_fixed_int(32, r_sweep, r_tail, use_tma);
-	                            return true;
-	                        }
-	                    }
+                                        A, A_chunk_scales, A_scale_stride, W, B_tail, Bw_tail, r_tail, Q, scale_inv, R_total, out_tail);
+                                }
+                            }
+                            maybe_debug_print_fixed_int(32, r_sweep, r_tail, use_tma);
+                            return true;
+                        }
+                    }
 
                     size_t shared_bytes =
-                        16u +
-                        (size_t)stages * (size_t)7 * (size_t)TM_TOTAL * (size_t)K_STRIDE32 * sizeof(uint32_t) +
-                        (size_t)stages * (size_t)6 * (size_t)TN * (size_t)K_STRIDE32 * sizeof(uint32_t);
+                        512u +
+                        (size_t)stages * (size_t)7 * (size_t)SLICE_STRIDE_A * sizeof(uint32_t) +
+                        (size_t)stages * (size_t)6 * (size_t)SLICE_STRIDE_B * sizeof(uint32_t);
 
                     if (shared_bytes <= (size_t)max_shared) {
                         popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale<<<
                             grid_tc, block_tc, shared_bytes, stream>>>(
-                            A,
-                            A_chunk_scales,
-                            A_scale_stride,
-                            W,
-                            B,
-                            Bw,
-                            R,
-                            Q,
-                            scale_inv,
-                            R_total,
-                            out_global);
-	                        maybe_debug_print_fixed_int(32, 1, 0, 0);
-	                        return true;
-	                    }
-	                }
+                            A, A_chunk_scales, A_scale_stride, W, B, Bw, R, Q, scale_inv, R_total, out_global);
+                        maybe_debug_print_fixed_int(32, 1, 0, 0);
+                        return true;
+                    }
+                }
 
                 int use_cpasync = use_cpasync_requested;
                 const int stages = use_cpasync ? 2 : 1;
+                
+                size_t A_words_dynamic = (size_t)Sa * (size_t)SLICE_STRIDE_A;
+                size_t B_words_dynamic = (size_t)Sb * (size_t)SLICE_STRIDE_B;
+                
                 size_t shared_bytes =
-                    16u +
-                    (size_t)stages * (size_t)Sa * (size_t)TM_TOTAL * (size_t)K_STRIDE32 * sizeof(uint32_t) +
-                    (size_t)stages * (size_t)Sb * (size_t)TN * (size_t)K_STRIDE32 * sizeof(uint32_t) +
+                    512u +
+                    (size_t)stages * A_words_dynamic * sizeof(uint32_t) +
+                    (size_t)stages * B_words_dynamic * sizeof(uint32_t) +
                     (size_t)TM_TOTAL * (size_t)Sa * sizeof(float) +
                     (size_t)TN * (size_t)Sb * sizeof(float);
 
-                // If the pipelined (double-buffered) version doesn't fit, retry with stages=1.
                 if (shared_bytes > (size_t)max_shared && use_cpasync) {
                     use_cpasync = 0;
                     shared_bytes =
-                        16u +
-                        (size_t)Sa * (size_t)TM_TOTAL * (size_t)K_STRIDE32 * sizeof(uint32_t) +
-                        (size_t)Sb * (size_t)TN * (size_t)K_STRIDE32 * sizeof(uint32_t) +
+                        512u +
+                        A_words_dynamic * sizeof(uint32_t) +
+                        B_words_dynamic * sizeof(uint32_t) +
                         (size_t)TM_TOTAL * (size_t)Sa * sizeof(float) +
                         (size_t)TN * (size_t)Sb * sizeof(float);
                 }
@@ -2824,23 +2647,7 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                         configured_shared_tm32 = shared_bytes;
                     }
                     popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32<<<grid_tc, block_tc, shared_bytes, stream>>>(
-                        A,
-                        Aw,
-                        A_chunk_scales,
-                        A_scale_stride,
-                        Sa,
-                        W,
-                        B,
-                        Bw,
-                        Sb,
-                        R,
-                        Q,
-                        indices_r,
-                        indices_q,
-                        scale_inv,
-                        R_total,
-                        out_global,
-                        use_cpasync);
+                        A, Aw, A_chunk_scales, A_scale_stride, Sa, W, B, Bw, Sb, R, Q, indices_r, indices_q, scale_inv, R_total, out_global, use_cpasync);
                     return true;
                 }
                 return false;
@@ -2852,7 +2659,6 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     const int tile_q = (q_tile > 0) ? q_tile : 1;
     const int tile_r = (r_tile > 0) ? r_tile : 1;
 
-    // Simple non-TC fallback.
     dim3 block(256, 1, 1);
     dim3 grid((R + tile_r - 1) / tile_r, (Q + tile_q - 1) / tile_q);
     size_t shared_bytes =
