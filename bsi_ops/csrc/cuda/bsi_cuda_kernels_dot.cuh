@@ -232,10 +232,11 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
     constexpr int SB_MAX = 16;
     constexpr int K_BITS = 256;
     constexpr int K_WORDS64 = K_BITS / 64;   
-    constexpr int K_WORDS32 = K_BITS / 32;   
-    constexpr int K_STRIDE32 = 12; // 8 words + 4 pad
-    constexpr int SLICE_STRIDE_A = TM_TOTAL * K_STRIDE32 + 4; // Add 4 to break write bank conflicts across slices
-    constexpr int SLICE_STRIDE_B = TN * K_STRIDE32 + 4;
+    
+    constexpr int K_STRIDE32_A = 12; // 8 words + 4 pad
+    constexpr int K_STRIDE32_B = 12;
+    constexpr int SLICE_STRIDE_A = TM_TOTAL * K_STRIDE32_A + 4; 
+    constexpr int SLICE_STRIDE_B = TN * K_STRIDE32_B + 4;
 
     if (blockDim.x != (WARPS_PER_QTILE * QTILES * 32)) return; 
     const int lane = threadIdx.x & 31;
@@ -333,7 +334,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
             const int q = q0 + m;
             const unsigned long long* a_slice = A + ((size_t)q * (size_t)Sa + (size_t)i) * (size_t)W64;
             const int w64_i = w64_pair << 1;
-            const int base = (i * SLICE_STRIDE_A + m * K_STRIDE32) + (w64_i << 1);
+            const int base = (i * SLICE_STRIDE_A + m * K_STRIDE32_A) + (w64_i << 1);
             bsi_cp_async_cg_16B(A_bits + base, &a_slice[(size_t)0 * (size_t)K_WORDS64 + (size_t)w64_i]);
         }
         for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS64_16B; idx += blockDim.x) {
@@ -344,7 +345,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
             const int r = r0 + n;
             const unsigned long long* b_slice = B + ((size_t)r * (size_t)Sb + (size_t)j) * (size_t)W64;
             const int w64_i = w64_pair << 1; 
-            const int base = (j * SLICE_STRIDE_B + n * K_STRIDE32) + (w64_i << 1);
+            const int base = (j * SLICE_STRIDE_B + n * K_STRIDE32_B) + (w64_i << 1);
             bsi_cp_async_cg_16B(B_bits + base, &b_slice[(size_t)0 * (size_t)K_WORDS64 + (size_t)w64_i]);
         }
         bsi_cp_async_commit_group();
@@ -370,7 +371,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                         __ldg(&a_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
                     const uint32_t lo = static_cast<uint32_t>(w64);
                     const uint32_t hi = static_cast<uint32_t>(w64 >> 32);
-                    const int base = (i * SLICE_STRIDE_A + m * K_STRIDE32) + (w64_i << 1);
+                    const int base = (i * SLICE_STRIDE_A + m * K_STRIDE32_A) + (w64_i << 1);
                     A_bits[base] = lo;
                     A_bits[base + 1] = hi;
                 }
@@ -389,7 +390,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                         lo = static_cast<uint32_t>(w64);
                         hi = static_cast<uint32_t>(w64 >> 32);
                     }
-                    const int base = (i * SLICE_STRIDE_A + m * K_STRIDE32) + (w64_i << 1);
+                    const int base = (i * SLICE_STRIDE_A + m * K_STRIDE32_A) + (w64_i << 1);
                     A_bits[base] = lo;
                     A_bits[base + 1] = hi;
                 }
@@ -407,7 +408,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                         __ldg(&b_slice[(size_t)chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
                     const uint32_t lo = static_cast<uint32_t>(w64);
                     const uint32_t hi = static_cast<uint32_t>(w64 >> 32);
-                    const int base = (j * SLICE_STRIDE_B + n * K_STRIDE32) + (w64_i << 1);
+                    const int base = (j * SLICE_STRIDE_B + n * K_STRIDE32_B) + (w64_i << 1);
                     B_bits[base] = lo;
                     B_bits[base + 1] = hi;
                 }
@@ -426,7 +427,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                         lo = static_cast<uint32_t>(w64);
                         hi = static_cast<uint32_t>(w64 >> 32);
                     }
-                    const int base = (j * SLICE_STRIDE_B + n * K_STRIDE32) + (w64_i << 1);
+                    const int base = (j * SLICE_STRIDE_B + n * K_STRIDE32_B) + (w64_i << 1);
                     B_bits[base] = lo;
                     B_bits[base + 1] = hi;
                 }
@@ -448,7 +449,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                     const int q = q0 + m;
                     const unsigned long long* a_slice = A + ((size_t)q * (size_t)Sa + (size_t)i) * (size_t)W64;
                     const int w64_i = w64_pair << 1;
-                    const int base = (i * SLICE_STRIDE_A + m * K_STRIDE32) + (w64_i << 1);
+                    const int base = (i * SLICE_STRIDE_A + m * K_STRIDE32_A) + (w64_i << 1);
                     bsi_cp_async_cg_16B(
                         A_bits_next + base,
                         &a_slice[(size_t)next_chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
@@ -461,7 +462,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                     const int r = r0 + n;
                     const unsigned long long* b_slice = B + ((size_t)r * (size_t)Sb + (size_t)j) * (size_t)W64;
                     const int w64_i = w64_pair << 1; 
-                    const int base = (j * SLICE_STRIDE_B + n * K_STRIDE32) + (w64_i << 1);
+                    const int base = (j * SLICE_STRIDE_B + n * K_STRIDE32_B) + (w64_i << 1);
                     bsi_cp_async_cg_16B(
                         B_bits_next + base,
                         &b_slice[(size_t)next_chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
@@ -495,276 +496,23 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
 
         if (cache_sb) {
             if (Sa == 7 && Sb == 7) {
-                bsi_bmma_tm32_accum_sa7_sb_hot<7, SLICE_STRIDE_A, K_STRIDE32, SLICE_STRIDE_B, K_STRIDE32>(
+                bsi_bmma_tm32_accum_sa7_sb_hot<7, SLICE_STRIDE_A, K_STRIDE32_A, SLICE_STRIDE_B, K_STRIDE32_B>(
                     A_bits, Aw_tile, B_bits, col_base + groupID, bw_col0, bw_col1, threadID, m0, m1,
                     use_chunk_scale, qscale_m0, qscale_m1, acc00, acc01, acc10, acc11);
             } else if (Sa == 7 && Sb == 6) {
-                bsi_bmma_tm32_accum_sa7_sb_hot<6, SLICE_STRIDE_A, K_STRIDE32, SLICE_STRIDE_B, K_STRIDE32>(
+                bsi_bmma_tm32_accum_sa7_sb_hot<6, SLICE_STRIDE_A, K_STRIDE32_A, SLICE_STRIDE_B, K_STRIDE32_B>(
                     A_bits, Aw_tile, B_bits, col_base + groupID, bw_col0, bw_col1, threadID, m0, m1,
                     use_chunk_scale, qscale_m0, qscale_m1, acc00, acc01, acc10, acc11);
-            } else if (Sb == 7) {
-                constexpr int JBLOCK = 4;
-                const uint32_t* b_n_base = B_bits + (col_base + groupID) * K_STRIDE32;
-                {
-                    uint32_t b0_cache[JBLOCK];
-                    uint32_t b1_cache[JBLOCK];
-                    float bw0_cache[JBLOCK];
-                    float bw1_cache[JBLOCK];
-
-#pragma unroll
-                    for (int jj = 0; jj < JBLOCK; ++jj) {
-                        const uint32_t* b_col = b_n_base + jj * SLICE_STRIDE_B;
-                        b0_cache[jj] = b_col[threadID];
-                        b1_cache[jj] = b_col[threadID + 4];
-                        bw0_cache[jj] = bw_col0[jj];
-                        bw1_cache[jj] = bw_col1[jj];
-                    }
-
-                    for (int i = 0; i < Sa; ++i) {
-                        const float aw0 = Aw_tile[(size_t)m0 * (size_t)Sa + (size_t)i] * qscale_m0;
-                        const float aw1 = Aw_tile[(size_t)m1 * (size_t)Sa + (size_t)i] * qscale_m1;
-
-                        const uint32_t* A_i = A_bits + i * SLICE_STRIDE_A;
-                        const uint32_t a0 = A_i[m0 * K_STRIDE32 + threadID];
-                        const uint32_t a1 = A_i[m1 * K_STRIDE32 + threadID];
-                        const uint32_t a2 = A_i[m0 * K_STRIDE32 + threadID + 4];
-                        const uint32_t a3 = A_i[m1 * K_STRIDE32 + threadID + 4];
-
-                        float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
-                        {
-                            int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
-                            int d0 = 0, d1 = 0, d2 = 0, d3 = 0;
-                            asm volatile(
-                                "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
-                                "{%0, %1, %2, %3}, {%4, %5, %6, %7}, {%8, %9}, {%0, %1, %2, %3};\n"
-                                : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
-                                : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0_cache[0]), "r"(b1_cache[0]));
-                            asm volatile(
-                                "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
-                                "{%0, %1, %2, %3}, {%4, %5, %6, %7}, {%8, %9}, {%0, %1, %2, %3};\n"
-                                : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
-                                : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0_cache[1]), "r"(b1_cache[1]));
-                            sum00 = __fmaf_rn(static_cast<float>(c0), bw0_cache[0], sum00);
-                            sum01 = __fmaf_rn(static_cast<float>(c1), bw1_cache[0], sum01);
-                            sum10 = __fmaf_rn(static_cast<float>(c2), bw0_cache[0], sum10);
-                            sum11 = __fmaf_rn(static_cast<float>(c3), bw1_cache[0], sum11);
-                            sum00 = __fmaf_rn(static_cast<float>(d0), bw0_cache[1], sum00);
-                            sum01 = __fmaf_rn(static_cast<float>(d1), bw1_cache[1], sum01);
-                            sum10 = __fmaf_rn(static_cast<float>(d2), bw0_cache[1], sum10);
-                            sum11 = __fmaf_rn(static_cast<float>(d3), bw1_cache[1], sum11);
-                        }
-                        {
-                            int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
-                            int d0 = 0, d1 = 0, d2 = 0, d3 = 0;
-                            asm volatile(
-                                "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
-                                "{%0, %1, %2, %3}, {%4, %5, %6, %7}, {%8, %9}, {%0, %1, %2, %3};\n"
-                                : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
-                                : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0_cache[2]), "r"(b1_cache[2]));
-                            asm volatile(
-                                "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
-                                "{%0, %1, %2, %3}, {%4, %5, %6, %7}, {%8, %9}, {%0, %1, %2, %3};\n"
-                                : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
-                                : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0_cache[3]), "r"(b1_cache[3]));
-                            sum00 = __fmaf_rn(static_cast<float>(c0), bw0_cache[2], sum00);
-                            sum01 = __fmaf_rn(static_cast<float>(c1), bw1_cache[2], sum01);
-                            sum10 = __fmaf_rn(static_cast<float>(c2), bw0_cache[2], sum10);
-                            sum11 = __fmaf_rn(static_cast<float>(c3), bw1_cache[2], sum11);
-                            sum00 = __fmaf_rn(static_cast<float>(d0), bw0_cache[3], sum00);
-                            sum01 = __fmaf_rn(static_cast<float>(d1), bw1_cache[3], sum01);
-                            sum10 = __fmaf_rn(static_cast<float>(d2), bw0_cache[3], sum10);
-                            sum11 = __fmaf_rn(static_cast<float>(d3), bw1_cache[3], sum11);
-                        }
-                        acc00 = __fmaf_rn(aw0, sum00, acc00);
-                        acc01 = __fmaf_rn(aw0, sum01, acc01);
-                        acc10 = __fmaf_rn(aw1, sum10, acc10);
-                        acc11 = __fmaf_rn(aw1, sum11, acc11);
-                    }
-                }
-                {
-                    uint32_t b0_cache[3];
-                    uint32_t b1_cache[3];
-                    float bw0_cache[3];
-                    float bw1_cache[3];
-
-#pragma unroll
-                    for (int jj = 0; jj < 3; ++jj) {
-                        const uint32_t* b_col = b_n_base + (4 + jj) * SLICE_STRIDE_B;
-                        b0_cache[jj] = b_col[threadID];
-                        b1_cache[jj] = b_col[threadID + 4];
-                        bw0_cache[jj] = bw_col0[4 + jj];
-                        bw1_cache[jj] = bw_col1[4 + jj];
-                    }
-
-                    for (int i = 0; i < Sa; ++i) {
-                        const float aw0 = Aw_tile[(size_t)m0 * (size_t)Sa + (size_t)i] * qscale_m0;
-                        const float aw1 = Aw_tile[(size_t)m1 * (size_t)Sa + (size_t)i] * qscale_m1;
-
-                        const uint32_t* A_i = A_bits + i * SLICE_STRIDE_A;
-                        const uint32_t a0 = A_i[m0 * K_STRIDE32 + threadID];
-                        const uint32_t a1 = A_i[m1 * K_STRIDE32 + threadID];
-                        const uint32_t a2 = A_i[m0 * K_STRIDE32 + threadID + 4];
-                        const uint32_t a3 = A_i[m1 * K_STRIDE32 + threadID + 4];
-
-                        float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
-                        {
-                            int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
-                            int d0 = 0, d1 = 0, d2 = 0, d3 = 0;
-                            asm volatile(
-                                "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
-                                "{%0, %1, %2, %3}, {%4, %5, %6, %7}, {%8, %9}, {%0, %1, %2, %3};\n"
-                                : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
-                                : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0_cache[0]), "r"(b1_cache[0]));
-                            asm volatile(
-                                "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
-                                "{%0, %1, %2, %3}, {%4, %5, %6, %7}, {%8, %9}, {%0, %1, %2, %3};\n"
-                                : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
-                                : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0_cache[1]), "r"(b1_cache[1]));
-                            sum00 = __fmaf_rn(static_cast<float>(c0), bw0_cache[0], sum00);
-                            sum01 = __fmaf_rn(static_cast<float>(c1), bw1_cache[0], sum01);
-                            sum10 = __fmaf_rn(static_cast<float>(c2), bw0_cache[0], sum10);
-                            sum11 = __fmaf_rn(static_cast<float>(c3), bw1_cache[0], sum11);
-                            sum00 = __fmaf_rn(static_cast<float>(d0), bw0_cache[1], sum00);
-                            sum01 = __fmaf_rn(static_cast<float>(d1), bw1_cache[1], sum01);
-                            sum10 = __fmaf_rn(static_cast<float>(d2), bw0_cache[1], sum10);
-                            sum11 = __fmaf_rn(static_cast<float>(d3), bw1_cache[1], sum11);
-                        }
-                        {
-                            int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
-                            asm volatile(
-                                "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
-                                "{%0, %1, %2, %3}, {%4, %5, %6, %7}, {%8, %9}, {%0, %1, %2, %3};\n"
-                                : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
-                                : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0_cache[2]), "r"(b1_cache[2]));
-                            sum00 = __fmaf_rn(static_cast<float>(c0), bw0_cache[2], sum00);
-                            sum01 = __fmaf_rn(static_cast<float>(c1), bw1_cache[2], sum01);
-                            sum10 = __fmaf_rn(static_cast<float>(c2), bw0_cache[2], sum10);
-                            sum11 = __fmaf_rn(static_cast<float>(c3), bw1_cache[2], sum11);
-                        }
-                        acc00 = __fmaf_rn(aw0, sum00, acc00);
-                        acc01 = __fmaf_rn(aw0, sum01, acc01);
-                        acc10 = __fmaf_rn(aw1, sum10, acc10);
-                        acc11 = __fmaf_rn(aw1, sum11, acc11);
-                    }
-                }
-            } else if (Sb == 6) {
-                constexpr int JBLOCK = 4;
-                const uint32_t* b_n_base = B_bits + (col_base + groupID) * K_STRIDE32;
-                
-                uint32_t b0_cache0[JBLOCK];
-                uint32_t b1_cache0[JBLOCK];
-                float bw0_cache0[JBLOCK];
-                float bw1_cache0[JBLOCK];
-#pragma unroll
-                for (int jj = 0; jj < JBLOCK; ++jj) {
-                    const uint32_t* b_col = b_n_base + jj * SLICE_STRIDE_B;
-                    b0_cache0[jj] = b_col[threadID];
-                    b1_cache0[jj] = b_col[threadID + 4];
-                    bw0_cache0[jj] = bw_col0[jj];
-                    bw1_cache0[jj] = bw_col1[jj];
-                }
-
-                uint32_t b0_cache1[2];
-                uint32_t b1_cache1[2];
-                float bw0_cache1[2];
-                float bw1_cache1[2];
-#pragma unroll
-                for (int jj = 0; jj < 2; ++jj) {
-                    const uint32_t* b_col = b_n_base + (4 + jj) * SLICE_STRIDE_B;
-                    b0_cache1[jj] = b_col[threadID];
-                    b1_cache1[jj] = b_col[threadID + 4];
-                    bw0_cache1[jj] = bw_col0[4 + jj];
-                    bw1_cache1[jj] = bw_col1[4 + jj];
-                }
-
-                for (int i = 0; i < Sa; ++i) {
-                    const float aw0 = Aw_tile[(size_t)m0 * (size_t)Sa + (size_t)i] * qscale_m0;
-                    const float aw1 = Aw_tile[(size_t)m1 * (size_t)Sa + (size_t)i] * qscale_m1;
-
-                    const uint32_t* A_i = A_bits + i * SLICE_STRIDE_A;
-                    const uint32_t a0 = A_i[m0 * K_STRIDE32 + threadID];
-                    const uint32_t a1 = A_i[m1 * K_STRIDE32 + threadID];
-                    const uint32_t a2 = A_i[m0 * K_STRIDE32 + threadID + 4];
-                    const uint32_t a3 = A_i[m1 * K_STRIDE32 + threadID + 4];
-
-                    float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
-                    {
-                        int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
-                        int d0 = 0, d1 = 0, d2 = 0, d3 = 0;
-                        asm volatile(
-                            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
-                            "{%0, %1, %2, %3}, {%4, %5, %6, %7}, {%8, %9}, {%0, %1, %2, %3};\n"
-                            : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
-                            : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0_cache0[0]), "r"(b1_cache0[0]));
-                        asm volatile(
-                            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
-                            "{%0, %1, %2, %3}, {%4, %5, %6, %7}, {%8, %9}, {%0, %1, %2, %3};\n"
-                            : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
-                            : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0_cache0[1]), "r"(b1_cache0[1]));
-
-                        sum00 = __fmaf_rn(static_cast<float>(c0), bw0_cache0[0], sum00);
-                        sum01 = __fmaf_rn(static_cast<float>(c1), bw1_cache0[0], sum01);
-                        sum10 = __fmaf_rn(static_cast<float>(c2), bw0_cache0[0], sum10);
-                        sum11 = __fmaf_rn(static_cast<float>(c3), bw1_cache0[0], sum11);
-                        sum00 = __fmaf_rn(static_cast<float>(d0), bw0_cache0[1], sum00);
-                        sum01 = __fmaf_rn(static_cast<float>(d1), bw1_cache0[1], sum01);
-                        sum10 = __fmaf_rn(static_cast<float>(d2), bw0_cache0[1], sum10);
-                        sum11 = __fmaf_rn(static_cast<float>(d3), bw1_cache0[1], sum11);
-                    }
-                    {
-                        int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
-                        int d0 = 0, d1 = 0, d2 = 0, d3 = 0;
-                        asm volatile(
-                            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
-                            "{%0, %1, %2, %3}, {%4, %5, %6, %7}, {%8, %9}, {%0, %1, %2, %3};\n"
-                            : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
-                            : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0_cache0[2]), "r"(b1_cache0[2]));
-                        asm volatile(
-                            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
-                            "{%0, %1, %2, %3}, {%4, %5, %6, %7}, {%8, %9}, {%0, %1, %2, %3};\n"
-                            : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
-                            : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0_cache0[3]), "r"(b1_cache0[3]));
-
-                        sum00 = __fmaf_rn(static_cast<float>(c0), bw0_cache0[2], sum00);
-                        sum01 = __fmaf_rn(static_cast<float>(c1), bw1_cache0[2], sum01);
-                        sum10 = __fmaf_rn(static_cast<float>(c2), bw0_cache0[2], sum10);
-                        sum11 = __fmaf_rn(static_cast<float>(c3), bw1_cache0[2], sum11);
-                        sum00 = __fmaf_rn(static_cast<float>(d0), bw0_cache0[3], sum00);
-                        sum01 = __fmaf_rn(static_cast<float>(d1), bw1_cache0[3], sum01);
-                        sum10 = __fmaf_rn(static_cast<float>(d2), bw0_cache0[3], sum10);
-                        sum11 = __fmaf_rn(static_cast<float>(d3), bw1_cache0[3], sum11);
-                    }
-                    {
-                        int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
-                        int d0 = 0, d1 = 0, d2 = 0, d3 = 0;
-                        asm volatile(
-                            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
-                            "{%0, %1, %2, %3}, {%4, %5, %6, %7}, {%8, %9}, {%0, %1, %2, %3};\n"
-                            : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
-                            : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0_cache1[0]), "r"(b1_cache1[0]));
-                        asm volatile(
-                            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
-                            "{%0, %1, %2, %3}, {%4, %5, %6, %7}, {%8, %9}, {%0, %1, %2, %3};\n"
-                            : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
-                            : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0_cache1[1]), "r"(b1_cache1[1]));
-
-                        sum00 = __fmaf_rn(static_cast<float>(c0), bw0_cache1[0], sum00);
-                        sum01 = __fmaf_rn(static_cast<float>(c1), bw1_cache1[0], sum01);
-                        sum10 = __fmaf_rn(static_cast<float>(c2), bw0_cache1[0], sum10);
-                        sum11 = __fmaf_rn(static_cast<float>(c3), bw1_cache1[0], sum11);
-                        sum00 = __fmaf_rn(static_cast<float>(d0), bw0_cache1[1], sum00);
-                        sum01 = __fmaf_rn(static_cast<float>(d1), bw1_cache1[1], sum01);
-                        sum10 = __fmaf_rn(static_cast<float>(d2), bw0_cache1[1], sum10);
-                        sum11 = __fmaf_rn(static_cast<float>(d3), bw1_cache1[1], sum11);
-                    }
-                    acc00 = __fmaf_rn(aw0, sum00, acc00);
-                    acc01 = __fmaf_rn(aw0, sum01, acc01);
-                    acc10 = __fmaf_rn(aw1, sum10, acc10);
-                    acc11 = __fmaf_rn(aw1, sum11, acc11);
-                }
             } else {
+                constexpr int JBLOCK = 4;
                 const int Sb_full = Sb & ~(JBLOCK - 1);
-                const uint32_t* b_n_base = B_bits + (col_base + groupID) * K_STRIDE32;
+                
+                const int swap_mask = (groupID & 4);
+                const int idx_0 = threadID + swap_mask;
+                const int idx_1 = threadID + (swap_mask ^ 4);
+
+                const int n = col_base + groupID;
+                const uint32_t* b_n_base = B_bits + n * K_STRIDE32_B;
                 
                 for (int j0 = 0; j0 < Sb_full; j0 += JBLOCK) {
                     uint32_t b0_cache[JBLOCK];
@@ -775,8 +523,12 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
 #pragma unroll
                     for (int jj = 0; jj < JBLOCK; ++jj) {
                         const uint32_t* b_col = b_n_base + (j0 + jj) * SLICE_STRIDE_B;
-                        b0_cache[jj] = b_col[threadID];
-                        b1_cache[jj] = b_col[threadID + 4];
+                        
+                        uint32_t b0_raw = b_col[idx_0];
+                        uint32_t b1_raw = b_col[idx_1];
+                        b0_cache[jj] = swap_mask ? b1_raw : b0_raw;
+                        b1_cache[jj] = swap_mask ? b0_raw : b1_raw;
+
                         bw0_cache[jj] = bw_col0[j0 + jj];
                         bw1_cache[jj] = bw_col1[j0 + jj];
                     }
@@ -786,10 +538,16 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                         const float aw1 = Aw_tile[(size_t)m1 * (size_t)Sa + (size_t)i] * qscale_m1;
 
                         const uint32_t* A_i = A_bits + i * SLICE_STRIDE_A;
-                        const uint32_t a0 = A_i[m0 * K_STRIDE32 + threadID];
-                        const uint32_t a1 = A_i[m1 * K_STRIDE32 + threadID];
-                        const uint32_t a2 = A_i[m0 * K_STRIDE32 + threadID + 4];
-                        const uint32_t a3 = A_i[m1 * K_STRIDE32 + threadID + 4];
+                        
+                        uint32_t a0_raw = A_i[m0 * K_STRIDE32_A + idx_0];
+                        uint32_t a2_raw = A_i[m0 * K_STRIDE32_A + idx_1];
+                        const uint32_t a0 = swap_mask ? a2_raw : a0_raw;
+                        const uint32_t a2 = swap_mask ? a0_raw : a2_raw;
+
+                        uint32_t a1_raw = A_i[m1 * K_STRIDE32_A + idx_0];
+                        uint32_t a3_raw = A_i[m1 * K_STRIDE32_A + idx_1];
+                        const uint32_t a1 = swap_mask ? a3_raw : a1_raw;
+                        const uint32_t a3 = swap_mask ? a1_raw : a3_raw;
 
                         float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
                         {
@@ -857,8 +615,12 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                         if (t < tail) {
                             const int j = j0 + t;
                             const uint32_t* b_col = b_n_base + j * SLICE_STRIDE_B;
-                            b0_tail[t] = b_col[threadID];
-                            b1_tail[t] = b_col[threadID + 4];
+                            
+                            uint32_t b0_raw = b_col[idx_0];
+                            uint32_t b1_raw = b_col[idx_1];
+                            b0_tail[t] = swap_mask ? b1_raw : b0_raw;
+                            b1_tail[t] = swap_mask ? b0_raw : b1_raw;
+
                             bw0_tail[t] = bw_col0[j];
                             bw1_tail[t] = bw_col1[j];
                         }
@@ -870,10 +632,15 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                             const float aw1 = Aw_tile[(size_t)m1 * (size_t)Sa + (size_t)i] * qscale_m1;
 
                             const uint32_t* A_i = A_bits + i * SLICE_STRIDE_A;
-                            const uint32_t a0 = A_i[m0 * K_STRIDE32 + threadID];
-                            const uint32_t a1 = A_i[m1 * K_STRIDE32 + threadID];
-                            const uint32_t a2 = A_i[m0 * K_STRIDE32 + threadID + 4];
-                            const uint32_t a3 = A_i[m1 * K_STRIDE32 + threadID + 4];
+                            uint32_t a0_raw = A_i[m0 * K_STRIDE32_A + idx_0];
+                            uint32_t a2_raw = A_i[m0 * K_STRIDE32_A + idx_1];
+                            const uint32_t a0 = swap_mask ? a2_raw : a0_raw;
+                            const uint32_t a2 = swap_mask ? a0_raw : a2_raw;
+
+                            uint32_t a1_raw = A_i[m1 * K_STRIDE32_A + idx_0];
+                            uint32_t a3_raw = A_i[m1 * K_STRIDE32_A + idx_1];
+                            const uint32_t a1 = swap_mask ? a3_raw : a1_raw;
+                            const uint32_t a3 = swap_mask ? a1_raw : a3_raw;
 
                             int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
                             asm volatile(
@@ -893,10 +660,15 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                             const float aw1 = Aw_tile[(size_t)m1 * (size_t)Sa + (size_t)i] * qscale_m1;
 
                             const uint32_t* A_i = A_bits + i * SLICE_STRIDE_A;
-                            const uint32_t a0 = A_i[m0 * K_STRIDE32 + threadID];
-                            const uint32_t a1 = A_i[m1 * K_STRIDE32 + threadID];
-                            const uint32_t a2 = A_i[m0 * K_STRIDE32 + threadID + 4];
-                            const uint32_t a3 = A_i[m1 * K_STRIDE32 + threadID + 4];
+                            uint32_t a0_raw = A_i[m0 * K_STRIDE32_A + idx_0];
+                            uint32_t a2_raw = A_i[m0 * K_STRIDE32_A + idx_1];
+                            const uint32_t a0 = swap_mask ? a2_raw : a0_raw;
+                            const uint32_t a2 = swap_mask ? a0_raw : a2_raw;
+
+                            uint32_t a1_raw = A_i[m1 * K_STRIDE32_A + idx_0];
+                            uint32_t a3_raw = A_i[m1 * K_STRIDE32_A + idx_1];
+                            const uint32_t a1 = swap_mask ? a3_raw : a1_raw;
+                            const uint32_t a3 = swap_mask ? a1_raw : a3_raw;
 
                             int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
                             int d0 = 0, d1 = 0, d2 = 0, d3 = 0;
@@ -922,10 +694,15 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                             const float aw1 = Aw_tile[(size_t)m1 * (size_t)Sa + (size_t)i] * qscale_m1;
 
                             const uint32_t* A_i = A_bits + i * SLICE_STRIDE_A;
-                            const uint32_t a0 = A_i[m0 * K_STRIDE32 + threadID];
-                            const uint32_t a1 = A_i[m1 * K_STRIDE32 + threadID];
-                            const uint32_t a2 = A_i[m0 * K_STRIDE32 + threadID + 4];
-                            const uint32_t a3 = A_i[m1 * K_STRIDE32 + threadID + 4];
+                            uint32_t a0_raw = A_i[m0 * K_STRIDE32_A + idx_0];
+                            uint32_t a2_raw = A_i[m0 * K_STRIDE32_A + idx_1];
+                            const uint32_t a0 = swap_mask ? a2_raw : a0_raw;
+                            const uint32_t a2 = swap_mask ? a0_raw : a2_raw;
+
+                            uint32_t a1_raw = A_i[m1 * K_STRIDE32_A + idx_0];
+                            uint32_t a3_raw = A_i[m1 * K_STRIDE32_A + idx_1];
+                            const uint32_t a1 = swap_mask ? a3_raw : a1_raw;
+                            const uint32_t a3 = swap_mask ? a1_raw : a3_raw;
 
                             float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
                             {
@@ -974,26 +751,38 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                 }
             }
         } else {
+            const int swap_mask = (groupID & 4);
+            const int idx_0 = threadID + swap_mask;
+            const int idx_1 = threadID + (swap_mask ^ 4);
+
             for (int i = 0; i < Sa; ++i) {
                 const float aw0 = Aw_tile[(size_t)m0 * (size_t)Sa + (size_t)i] * qscale_m0;
                 const float aw1 = Aw_tile[(size_t)m1 * (size_t)Sa + (size_t)i] * qscale_m1;
 
                 const uint32_t* A_i = A_bits + i * SLICE_STRIDE_A;
-                const uint32_t a0 = A_i[m0 * K_STRIDE32 + threadID];
-                const uint32_t a1 = A_i[m1 * K_STRIDE32 + threadID];
-                const uint32_t a2 = A_i[m0 * K_STRIDE32 + threadID + 4];
-                const uint32_t a3 = A_i[m1 * K_STRIDE32 + threadID + 4];
+                uint32_t a0_raw = A_i[m0 * K_STRIDE32_A + idx_0];
+                uint32_t a2_raw = A_i[m0 * K_STRIDE32_A + idx_1];
+                const uint32_t a0 = swap_mask ? a2_raw : a0_raw;
+                const uint32_t a2 = swap_mask ? a0_raw : a2_raw;
+
+                uint32_t a1_raw = A_i[m1 * K_STRIDE32_A + idx_0];
+                uint32_t a3_raw = A_i[m1 * K_STRIDE32_A + idx_1];
+                const uint32_t a1 = swap_mask ? a3_raw : a1_raw;
+                const uint32_t a3 = swap_mask ? a1_raw : a3_raw;
 
                 float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
-                const uint32_t* b_n_base = B_bits + (col_base + groupID) * K_STRIDE32;
+                const int n = col_base + groupID;
+                const uint32_t* b_n_base = B_bits + n * K_STRIDE32_B;
                 
                 for (int j = 0; j < Sb; ++j) {
                     const float bw0 = Bw_tile[(size_t)col0 * (size_t)Sb + (size_t)j];
                     const float bw1 = Bw_tile[(size_t)col1 * (size_t)Sb + (size_t)j];
 
                     const uint32_t* B_col = b_n_base + j * SLICE_STRIDE_B;
-                    const uint32_t b0 = B_col[threadID];
-                    const uint32_t b1 = B_col[threadID + 4];
+                    uint32_t b0_raw = B_col[idx_0];
+                    uint32_t b1_raw = B_col[idx_1];
+                    const uint32_t b0 = swap_mask ? b1_raw : b0_raw;
+                    const uint32_t b1 = swap_mask ? b0_raw : b1_raw;
 
                     int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
                     asm volatile(
@@ -1138,9 +927,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
     constexpr int TN = 32;
     constexpr int WARPS_PER_QTILE = 4;
     constexpr int QTILES = TM_TOTAL / TM;
-    constexpr int K_BITS = 256;
-    constexpr int K_WORDS64 = K_BITS / 64;
-    constexpr int K_WORDS32 = K_BITS / 32;
+    constexpr int K_WORDS64 = 256 / 64;
     constexpr int K_STRIDE32 = 12;
     constexpr int SLICE_STRIDE_A = TM_TOTAL * K_STRIDE32 + 4;
     constexpr int SLICE_STRIDE_B = TN * K_STRIDE32 + 4;
@@ -1270,24 +1057,36 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
         qscale_m0 = __shfl_sync(0xffffffff, qscale_m0, lane & ~3);
         qscale_m1 = __shfl_sync(0xffffffff, qscale_m1, lane & ~3);
 
+        const int swap_mask = (groupID & 4);
+        const int idx_0 = threadID + swap_mask;
+        const int idx_1 = threadID + (swap_mask ^ 4);
+
         uint32_t b0_cache[SB];
         uint32_t b1_cache[SB];
-        const uint32_t* b_n_base = B_bits + (col_base + groupID) * K_STRIDE32;
+        const int n = col_base + groupID;
+        const uint32_t* b_n_base = B_bits + n * K_STRIDE32;
 #pragma unroll
         for (int j = 0; j < SB; ++j) {
             const uint32_t* b_col = b_n_base + j * SLICE_STRIDE_B;
-            b0_cache[j] = b_col[threadID];
-            b1_cache[j] = b_col[threadID + 4];
+            uint32_t b0_raw = b_col[idx_0];
+            uint32_t b1_raw = b_col[idx_1];
+            b0_cache[j] = swap_mask ? b1_raw : b0_raw;
+            b1_cache[j] = swap_mask ? b0_raw : b1_raw;
         }
 
         int chunk00 = 0, chunk01 = 0, chunk10 = 0, chunk11 = 0;
 #pragma unroll
         for (int i = 0; i < SA; ++i) {
             const uint32_t* A_i = A_bits + i * SLICE_STRIDE_A;
-            const uint32_t a0 = A_i[m0 * K_STRIDE32 + threadID];
-            const uint32_t a1 = A_i[m1 * K_STRIDE32 + threadID];
-            const uint32_t a2 = A_i[m0 * K_STRIDE32 + threadID + 4];
-            const uint32_t a3 = A_i[m1 * K_STRIDE32 + threadID + 4];
+            uint32_t a0_raw = A_i[m0 * K_STRIDE32 + idx_0];
+            uint32_t a2_raw = A_i[m0 * K_STRIDE32 + idx_1];
+            const uint32_t a0 = swap_mask ? a2_raw : a0_raw;
+            const uint32_t a2 = swap_mask ? a0_raw : a2_raw;
+
+            uint32_t a1_raw = A_i[m1 * K_STRIDE32 + idx_0];
+            uint32_t a3_raw = A_i[m1 * K_STRIDE32 + idx_1];
+            const uint32_t a1 = swap_mask ? a3_raw : a1_raw;
+            const uint32_t a3 = swap_mask ? a1_raw : a3_raw;
 
 #pragma unroll
             for (int j = 0; j < SB; j += 2) {
@@ -1395,9 +1194,7 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
     constexpr int TN = 32;
     constexpr int WARPS_PER_QTILE = 4;
     constexpr int QTILES = TM_TOTAL / TM;
-    constexpr int K_BITS = 256;
-    constexpr int K_WORDS64 = K_BITS / 64;
-    constexpr int K_WORDS32 = K_BITS / 32;
+    constexpr int K_WORDS64 = 256 / 64;
     constexpr int K_STRIDE32 = 12;
     constexpr int SLICE_STRIDE_A = TM_TOTAL * K_STRIDE32 + 4;
     constexpr int SLICE_STRIDE_B = TN * K_STRIDE32 + 4;
@@ -1412,7 +1209,7 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
     const int r_base = blockIdx.x * (TN * R_SWEEP);
 
     uintptr_t p = reinterpret_cast<uintptr_t>(smem_raw);
-    p = (p + 127u) & ~uintptr_t(127u);
+    p = (p + 15u) & ~uintptr_t(15u);
 
     constexpr int stages = 2;
     constexpr size_t A_words = (size_t)SA * (size_t)SLICE_STRIDE_A;
@@ -1548,6 +1345,10 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
         qscale_m0 = __shfl_sync(0xffffffff, qscale_m0, lane & ~3);
         qscale_m1 = __shfl_sync(0xffffffff, qscale_m1, lane & ~3);
 
+        const int swap_mask = (groupID & 4);
+        const int idx_0 = threadID + swap_mask;
+        const int idx_1 = threadID + (swap_mask ^ 4);
+
 #pragma unroll
         for (int t_pair = 0; t_pair < R_SWEEP; t_pair += 2) {
             const int t0 = t_pair;
@@ -1560,27 +1361,42 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
             uint32_t b0_1[SB];
             uint32_t b1_1[SB];
 
-            const uint32_t* b_n_base0 = B0 + (col_base + groupID) * K_STRIDE32;
-            const uint32_t* b_n_base1 = B1 + (col_base + groupID) * K_STRIDE32;
+            const int n = col_base + groupID;
+            const uint32_t* b_n_base0 = B0 + n * K_STRIDE32;
+            const uint32_t* b_n_base1 = B1 + n * K_STRIDE32;
+            
 #pragma unroll
             for (int j = 0; j < SB; ++j) {
                 const uint32_t* b_col0 = b_n_base0 + j * SLICE_STRIDE_B;
                 const uint32_t* b_col1 = b_n_base1 + j * SLICE_STRIDE_B;
-                b0_0[j] = b_col0[threadID];
-                b1_0[j] = b_col0[threadID + 4];
-                b0_1[j] = b_col1[threadID];
-                b1_1[j] = b_col1[threadID + 4];
+                
+                uint32_t b0_0_raw = b_col0[idx_0];
+                uint32_t b1_0_raw = b_col0[idx_1];
+                b0_0[j] = swap_mask ? b1_0_raw : b0_0_raw;
+                b1_0[j] = swap_mask ? b0_0_raw : b1_0_raw;
+
+                uint32_t b0_1_raw = b_col1[idx_0];
+                uint32_t b1_1_raw = b_col1[idx_1];
+                b0_1[j] = swap_mask ? b1_1_raw : b0_1_raw;
+                b1_1[j] = swap_mask ? b0_1_raw : b1_1_raw;
             }
 
             int chunk00_0 = 0, chunk01_0 = 0, chunk10_0 = 0, chunk11_0 = 0;
             int chunk00_1 = 0, chunk01_1 = 0, chunk10_1 = 0, chunk11_1 = 0;
+            
 #pragma unroll
             for (int i = 0; i < SA; ++i) {
                 const uint32_t* A_i = A_bits + i * SLICE_STRIDE_A;
-                const uint32_t a0 = A_i[m0 * K_STRIDE32 + threadID];
-                const uint32_t a1 = A_i[m1 * K_STRIDE32 + threadID];
-                const uint32_t a2 = A_i[m0 * K_STRIDE32 + threadID + 4];
-                const uint32_t a3 = A_i[m1 * K_STRIDE32 + threadID + 4];
+                
+                uint32_t a0_raw = A_i[m0 * K_STRIDE32 + idx_0];
+                uint32_t a2_raw = A_i[m0 * K_STRIDE32 + idx_1];
+                const uint32_t a0 = swap_mask ? a2_raw : a0_raw;
+                const uint32_t a2 = swap_mask ? a0_raw : a2_raw;
+
+                uint32_t a1_raw = A_i[m1 * K_STRIDE32 + idx_0];
+                uint32_t a3_raw = A_i[m1 * K_STRIDE32 + idx_1];
+                const uint32_t a1 = swap_mask ? a3_raw : a1_raw;
+                const uint32_t a3 = swap_mask ? a1_raw : a3_raw;
 
 #pragma unroll
                 for (int j = 0; j < SB; ++j) {
@@ -1639,7 +1455,7 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
             }
         }
 
-        if (next_chunk < chunks) {
+        if (chunk + 1 < chunks) {
             bsi_cp_async_wait_all();
         }
         __syncthreads();
@@ -1674,44 +1490,6 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
 #endif
 }
 
-extern "C" __global__ __launch_bounds__(256, 2)
-void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep2(
-    const unsigned long long* __restrict__ A,
-    const float* __restrict__ A_chunk_scales,
-    int A_scale_stride,
-    int W64,
-    const unsigned long long* __restrict__ B,
-    const float* __restrict__ Bw,
-    int R,
-    int Q,
-    float scale_inv,
-    int R_total,
-    float* __restrict__ out_global)
-{
-    extern __shared__ unsigned char smem_raw[];
-    bsi_fixed76_tm32_chunkscale_rsweep_body<2>(
-        smem_raw, A, A_chunk_scales, A_scale_stride, W64, B, Bw, R, Q, scale_inv, R_total, out_global);
-}
-
-extern "C" __global__ __launch_bounds__(256, 2)
-void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4(
-    const unsigned long long* __restrict__ A,
-    const float* __restrict__ A_chunk_scales,
-    int A_scale_stride,
-    int W64,
-    const unsigned long long* __restrict__ B,
-    const float* __restrict__ Bw,
-    int R,
-    int Q,
-    float scale_inv,
-    int R_total,
-    float* __restrict__ out_global)
-{
-    extern __shared__ unsigned char smem_raw[];
-    bsi_fixed76_tm32_chunkscale_rsweep_body<4>(
-        smem_raw, A, A_chunk_scales, A_scale_stride, W64, B, Bw, R, Q, scale_inv, R_total, out_global);
-}
-
 template <int R_SWEEP>
 __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tensorB(
     unsigned char* __restrict__ smem_raw,
@@ -1740,9 +1518,7 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
     constexpr int TN = 32;
     constexpr int WARPS_PER_QTILE = 4;
     constexpr int QTILES = TM_TOTAL / TM;
-    constexpr int K_BITS = 256;
-    constexpr int K_WORDS64 = K_BITS / 64;
-    constexpr int K_WORDS32 = K_BITS / 32;
+    constexpr int K_WORDS64 = 256 / 64;
     
     // Decoupled strides: A is padded for cp.async, B is tight for TMA
     constexpr int K_STRIDE32_A = 12;
@@ -1944,10 +1720,15 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
             for (int i = 0; i < SA; ++i) {
                 const uint32_t* A_i = A_bits + (size_t)i * (size_t)SLICE_STRIDE_A;
                 
-                const uint32_t a0 = A_i[(size_t)m0 * (size_t)K_STRIDE32_A + threadID];
-                const uint32_t a1 = A_i[(size_t)m1 * (size_t)K_STRIDE32_A + threadID];
-                const uint32_t a2 = A_i[(size_t)m0 * (size_t)K_STRIDE32_A + threadID + 4];
-                const uint32_t a3 = A_i[(size_t)m1 * (size_t)K_STRIDE32_A + threadID + 4];
+                uint32_t a0_raw = A_i[(size_t)m0 * (size_t)K_STRIDE32_A + idx_0];
+                uint32_t a2_raw = A_i[(size_t)m0 * (size_t)K_STRIDE32_A + idx_1];
+                const uint32_t a0 = swap_mask ? a2_raw : a0_raw;
+                const uint32_t a2 = swap_mask ? a0_raw : a2_raw;
+
+                uint32_t a1_raw = A_i[(size_t)m1 * (size_t)K_STRIDE32_A + idx_0];
+                uint32_t a3_raw = A_i[(size_t)m1 * (size_t)K_STRIDE32_A + idx_1];
+                const uint32_t a1 = swap_mask ? a3_raw : a1_raw;
+                const uint32_t a3 = swap_mask ? a1_raw : a3_raw;
 
 #pragma unroll
                 for (int j = 0; j < SB; ++j) {
@@ -2106,6 +1887,11 @@ __device__ __forceinline__ void bsi_bmma_tm32_accum_sa7_sb_hot(
     static_assert(SB == 6 || SB == 7, "SB must be 6 or 7");
     constexpr int SA = 7;
 
+    const int groupID = (threadIdx.x & 31) >> 2;
+    const int swap_mask = (groupID & 4);
+    const int idx_0 = threadID + swap_mask;
+    const int idx_1 = threadID + (swap_mask ^ 4);
+
     uint32_t b0_cache[SB];
     uint32_t b1_cache[SB];
     float bw0_cache[SB];
@@ -2116,8 +1902,12 @@ __device__ __forceinline__ void bsi_bmma_tm32_accum_sa7_sb_hot(
 #pragma unroll
     for (int j = 0; j < SB; ++j) {
         const uint32_t* b_col = b_n_base + j * SLICE_STRIDE_B;
-        b0_cache[j] = b_col[threadID];
-        b1_cache[j] = b_col[threadID + 4];
+        
+        uint32_t b0_raw = b_col[idx_0];
+        uint32_t b1_raw = b_col[idx_1];
+        b0_cache[j] = swap_mask ? b1_raw : b0_raw;
+        b1_cache[j] = swap_mask ? b0_raw : b1_raw;
+
         bw0_cache[j] = bw_col0[j];
         bw1_cache[j] = bw_col1[j];
     }
@@ -2126,10 +1916,16 @@ __device__ __forceinline__ void bsi_bmma_tm32_accum_sa7_sb_hot(
 #pragma unroll
     for (int i = 0; i < SA; ++i) {
         const uint32_t* A_i = A_bits + i * SLICE_STRIDE_A;
-        const uint32_t a0 = A_i[m0 * K_STRIDE_A + threadID];
-        const uint32_t a1 = A_i[m1 * K_STRIDE_A + threadID];
-        const uint32_t a2 = A_i[m0 * K_STRIDE_A + threadID + 4];
-        const uint32_t a3 = A_i[m1 * K_STRIDE_A + threadID + 4];
+        
+        uint32_t a0_raw = A_i[m0 * K_STRIDE_A + idx_0];
+        uint32_t a2_raw = A_i[m0 * K_STRIDE_A + idx_1];
+        const uint32_t a0 = swap_mask ? a2_raw : a0_raw;
+        const uint32_t a2 = swap_mask ? a0_raw : a2_raw;
+
+        uint32_t a1_raw = A_i[m1 * K_STRIDE_A + idx_0];
+        uint32_t a3_raw = A_i[m1 * K_STRIDE_A + idx_1];
+        const uint32_t a1 = swap_mask ? a3_raw : a1_raw;
+        const uint32_t a3 = swap_mask ? a1_raw : a3_raw;
 
         float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
 #pragma unroll
