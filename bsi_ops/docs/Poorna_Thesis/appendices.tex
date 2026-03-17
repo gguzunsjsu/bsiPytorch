@@ -75,6 +75,30 @@ python benchmarks/benchmark_apples_to_apples_bsi.py --modes linear_e2e \
   --torch_dtype fp16 --bsi_profile 0 --base_dtype fp16
 \end{verbatim}
 
+\subsection{CPU BERT Dot-Product Commands}
+The earlier CPU study used extracted BERT query, key, and value triplets stored in
+\texttt{extract\_tensors/Weight\_Processing/bert\_imdb\_pickle\_store/bert\_imdb45.pkl}.
+The following scripts reproduce the CPU-side dot-product study:
+
+\begin{verbatim}
+python testDotProductBert.py
+python testDotProductBert_bsi.py
+python testDotProductBert_torch.py
+\end{verbatim}
+
+\texttt{testDotProductBert.py} evaluates the one-decimal operating point, while
+\texttt{testDotProductBert\_bsi.py} evaluates the two-decimal operating point and
+\texttt{testDotProductBert\_torch.py} records the dense baseline. The archived result
+folders used in the thesis are:
+
+\begin{verbatim}
+hpcBERTTrainDataDotProduct/results/imdb_initial/torch_32/all/dc-1
+hpcBERTTrainDataDotProduct/results/imdb_initial/torch_32/all/dc-2
+\end{verbatim}
+
+These folders contain the per-layer text logs together with the corresponding timing,
+distribution, and error visualizations used in the CPU results section.
+
 \subsection{Model End-to-End Command}
 \begin{verbatim}
 python benchmarks/benchmark_apples_to_apples_bsi.py --modes model_e2e \
@@ -82,6 +106,15 @@ python benchmarks/benchmark_apples_to_apples_bsi.py --modes model_e2e \
   --dataset lambada --split validation --num_samples 200 \
   --decimal_places 2 --compress_threshold 0.5 \
   --scope all --bsi_device cuda --bsi_profile 1 --base_dtype fp16
+\end{verbatim}
+
+\subsection{Attention-Only End-to-End Command}
+\begin{verbatim}
+python benchmarks/benchmark_apples_to_apples_bsi.py --modes model_e2e \
+  --model_name facebook/opt-6.7b \
+  --dataset lambada --split validation --num_samples 200 \
+  --decimal_places 2 --compress_threshold 0.5 \
+  --scope attention --bsi_device cuda --bsi_profile 1 --base_dtype fp16
 \end{verbatim}
 
 \subsection{Interpretation Notes}

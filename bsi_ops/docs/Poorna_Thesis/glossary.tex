@@ -31,6 +31,18 @@
     \item[\textbf{Key Slices}]
     The static bit-sliced representation of linear-layer weights stored on device and reused across forward passes.
 
+    \item[\textbf{Query, Key, and Value Tensors}]
+    The three linear projections used by transformer attention. Queries and keys determine the attention score matrix, while values are combined according to the normalized attention weights.
+
+    \item[\textbf{Attention Score Matrix}]
+    The matrix \(QK^{T}/\sqrt{d_k}\), optionally combined with a mask before the softmax, that determines how strongly each token attends to every other token.
+
+    \item[\textbf{Multi-Head Attention}]
+    A transformer mechanism that splits attention into multiple heads, applies attention independently in each head, concatenates the results, and applies an output projection.
+
+    \item[\textbf{Feed-Forward Network (FFN)}]
+    The position-wise two-layer projection block in a transformer, typically consisting of an expansion projection, a nonlinearity, and a contraction projection.
+
     \item[\textbf{Slice Pair}]
     A pair consisting of one query slice and one key slice. In the same-bit dot kernel, each slice pair contributes a weighted overlap count to the final output.
 
