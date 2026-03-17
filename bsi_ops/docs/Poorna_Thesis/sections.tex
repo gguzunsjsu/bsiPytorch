@@ -40,7 +40,7 @@ The earlier CPU evaluation used both randomly generated vectors and extracted BE
 
 Those measurements established a more detailed picture than a simple statement that BSI was slower on CPU. For randomly generated ten-million-element vectors, BSI dot product and BSI multiplication were consistently slower than the corresponding dense baselines, and the gap widened as the value range increased. BSI vector summation was more favorable: it was slower at smaller value ranges but became competitive, and in one regime slightly favorable, at the widest tested range. Memory behavior moved in the opposite direction. For dot product and summation, the BSI representation consumed less memory than the standard vector implementation across the tested ranges. Multiplication showed mixed memory behavior, with some ranges slightly favorable to BSI and others not. When actual BERT weights were used, the BSI-based dot product remained markedly slower than an optimized C++ vector baseline, particularly in the widest tested range.
 
-This became the turning point of the project. The representation was expressive and often memory-efficient, but the overhead of slice management and bitwise bookkeeping on a CPU outweighed those storage advantages for the heavy arithmetic path. If BSI was to become useful for transformer inference, the computation had to move to massively parallel hardware that could exploit bitwise structure directly. The GPU phase of the work should therefore be read as a continuation of the earlier report rather than as a separate project.
+This stage clarified a central systems boundary. The representation remained expressive and often memory-efficient, but the overhead of slice management and bitwise bookkeeping on a CPU outweighed those storage advantages for the arithmetic path that dominates transformer inference. If BSI was to become useful for transformer workloads, the computation had to move to massively parallel hardware that could exploit bitwise structure directly. The later GPU phase should therefore be read as the natural continuation of the same line of work rather than as a separate undertaking.
 
 \subsection{Related Work in LLM Quantization}
 The broader LLM inference literature provides strong dense low-precision baselines. Earlier work on limited-precision deep learning, integer-only inference, and accelerator co-design already showed that arithmetic width, model quality, memory traffic, and hardware mapping are tightly coupled \cite{gupta2015limitedprecision,jacob2018quantization,lee2018unpu,mishra2020survey}. That line of work established the main design axes that still organize quantized LLM inference today: post-training quantization versus quantization-aware training, weight-only quantization versus joint weight-and-activation quantization, symmetric versus asymmetric scaling, per-tensor versus per-channel scaling, and static calibration versus input-dependent or dynamic rescaling. These choices determine not only numerical error but also whether the resulting tensors map cleanly onto dense accelerator kernels. Dense deployment practice places enormous emphasis on these calibration and scaling choices precisely because the target implementation remains a dense GEMM kernel with tight assumptions about data layout, scale granularity, and accumulator width.
@@ -81,9 +81,9 @@ The transformer block then applies a position-wise feed-forward network,
 \end{equation}
 with residual and normalization layers around both the attention and feed-forward sub-blocks \cite{attention,bert,opt}. These equations explain why the present work focuses so heavily on dot products and linear layers: the \(QK^{T}\) score computation, the \(Q/K/V/O\) projections, and the FFN expansion and contraction layers are exactly the places where BSI replacement either succeeds or fails.
 
-The CPU-side BERT study and the GPU-side OPT study occupy two different architectural settings, but they stress the same mathematical core. The BERT stage examined archived query, key, and value tensors from a BERT classifier fine-tuned on IMDB, while the later GPU stage evaluated decoder-only OPT checkpoints. The architectural distinction matters because BERT is encoder-only whereas OPT is decoder-only, but both architectures are built from the same projection-heavy attention and feed-forward pattern \cite{bert,opt,attention}. In practice, the CPU study is the earliest direct measurement of the attention-score dot-product path, and the attention-only OPT results later in the thesis should be read as the natural continuation of that line of evidence rather than as an isolated ablation.
+The CPU-side BERT study and the GPU-side OPT study occupy two different architectural settings, but they stress the same mathematical core. The BERT stage examined query, key, and value tensors from a BERT classifier fine-tuned on IMDB, while the later GPU stage evaluated decoder-only OPT checkpoints. The architectural distinction matters because BERT is encoder-only whereas OPT is decoder-only, but both architectures are built from the same projection-heavy attention and feed-forward pattern \cite{bert,opt,attention}. In practice, the CPU study is the earliest direct measurement of the attention-score dot-product path, and the attention-only OPT results later in the thesis should be read as the natural continuation of that line of evidence rather than as an isolated ablation.
 
-The extracted BERT tensors used in the CPU study span 12 transformer layers, which matches the standard BERT-base encoder scale of 12 layers, hidden size 768, 12 attention heads, and an intermediate width of 3072 \cite{bert}. Each archived layer contributes a query, key, and value array that is flattened before the dot-product experiment so that the comparison isolates raw BSI arithmetic from token batching and model-control overhead. Because the CPU study operates directly on query and key vectors, it is also the most intuitive place to explain why later attention-only GPU measurements are reported separately.
+The extracted BERT tensors used in the CPU study span 12 transformer layers, which matches the standard BERT-base encoder scale of 12 layers, hidden size 768, 12 attention heads, and an intermediate width of 3072 \cite{bert}. Each layer contributes a query, key, and value array that is flattened before the dot-product experiment so that the comparison isolates raw BSI arithmetic from token batching and model-control overhead. Because the CPU study operates directly on query and key vectors, it is also the most intuitive place to explain why later attention-only GPU measurements are reported separately.
 
 \section{From CPU BSI Algebra to GPU LLM Inference}\label{sec:cpu-to-gpu}
 The GPU implementation preserves the BSI semantics defined by the CPU bitmap library but changes the execution substrate completely. The CPU stage emphasized correctness of the data structure and of the bit-sliced algebra. The GPU stage narrowed the focus to the operation that dominates transformer inference: the dot product.
@@ -201,7 +201,7 @@ Unless otherwise noted, the principal evaluation setting is:
 \item \texttt{base\_dtype = fp16}.
 \end{itemize}
 
-This configuration was used to produce the main cross-model results reported in this thesis. Smaller sample counts are used only for debugging or targeted attribution experiments.
+This configuration was used to produce the main cross-model results reported in this thesis. Smaller sample counts are used only for supplementary diagnostic runs.
 
 \subsection{Apples-to-Apples Benchmark Modes}
 The evaluation harness supports three modes.
@@ -216,13 +216,13 @@ This separation is essential for correct interpretation. A kernel change that lo
 
 \section{Results}\label{sec:results}
 \subsection{CPU BERT Dot-Product Results}
-Before the OPT-based GPU study, the BSI dot path was evaluated on CPU using archived query, key, and value triplets extracted from a BERT model fine-tuned on the IMDB sentiment dataset \cite{bert,imdb}. The study used 12 archived transformer layers, flattened the query and key arrays, and compared a BSI dot product against a dense baseline under two decimal-scaling settings. Each flattened query and key vector contained 10,420,224 elements, and each layer was timed over five repeated runs. These archived CPU runs provide the first quantitative speed--accuracy--compression frontier for the BSI dot product before the transition to CUDA.
+Before the OPT-based GPU study, the BSI dot path was evaluated on CPU using query, key, and value triplets extracted from a BERT model fine-tuned on the IMDB sentiment dataset \cite{bert,imdb}. The study used 12 transformer layers, flattened the query and key arrays, and compared a BSI dot product against a dense baseline under two decimal-scaling settings. Each flattened query and key vector contained 10,420,224 elements, and each layer was timed over five repeated runs. These CPU runs establish the first quantitative speed--accuracy--compression frontier for the BSI dot product before the transition to CUDA.
 
 Table~\ref{tab:cpu-bert-runtime} summarizes the numerical fidelity and runtime tradeoff. Increasing the decimal scale from one decimal place to two decimal places reduces mean percentage error by roughly two orders of magnitude, from 0.168\% to 0.00194\%, and reduces the maximum per-layer error from 0.874\% to 0.00609\%. The cost of that improved fidelity is a clear increase in runtime. Mean BSI time rises from 2.178~ms to 5.104~ms, while the dense Torch baseline remains close to 2.0~ms in both settings. On CPU, therefore, decimal-place refinement improves fidelity but quickly erodes the practical speed of the bit-sliced path.
 
 \begin{table}[H]
 \centering
-\caption{Archived CPU BERT dot-product results on flattened query/key tensors over 12 layers and five runs per layer.}
+\caption{CPU BERT dot-product results on flattened query and key tensors over 12 layers and five runs per layer.}
 \label{tab:cpu-bert-runtime}
 \begin{tabular}{lrrrrrr}
 \toprule
@@ -234,31 +234,34 @@ dc-2 & 2 & 0.00194 & 0.00609 & 5.104 & 2.025 & 2.520$\times$ \\
 \end{tabular}
 \end{table}
 
-The storage picture moves in the opposite direction. Table~\ref{tab:cpu-bert-memory} shows that the one-decimal operating point achieves the stronger compression ratio, with mean BSI query and key sizes near 6.7--7.0~MB compared with 39.75~MB dense tensors. At two decimal places, the mean BSI query and key sizes rise to roughly 11~MB because the representation needs more slices to preserve the extra fractional detail. The archived outputs also show that the one-decimal setting used six total slices per tensor in this study, whereas the two-decimal setting used nine. This is the clearest CPU-side demonstration of the basic BSI tradeoff: increasing numeric fidelity raises both arithmetic cost and storage cost because more bit slices must be represented and processed.
+The storage picture moves in the opposite direction. Table~\ref{tab:cpu-bert-memory} shows that the one-decimal operating point achieves the stronger compression ratio, with mean BSI query and key sizes near 6.7--7.0~MB compared with 39.75~MB dense tensors. At two decimal places, the mean BSI query and key sizes rise to roughly 11~MB because the representation needs more slices to preserve the extra fractional detail. The recorded outputs also show that the one-decimal setting used six total slices per tensor in this study, whereas the two-decimal setting used nine. This is the clearest CPU-side demonstration of the basic BSI tradeoff: increasing numeric fidelity raises both arithmetic cost and storage cost because more bit slices must be represented and processed.
 
 \begin{table}[H]
 \centering
 \begingroup
 \singlespacing
-\footnotesize
-\setlength{\tabcolsep}{3pt}
-\renewcommand{\arraystretch}{1.08}
-\caption{\parbox{0.88\textwidth}{\centering Archived CPU BERT memory footprint and compression ratios. Dense query and key vectors are 39.75~MB each in both settings.}}
+\small
+\setlength{\tabcolsep}{0pt}
+\renewcommand{\arraystretch}{1.0}
+\caption{CPU BERT memory footprint and compression ratios.}
 \label{tab:cpu-bert-memory}
-\begin{tabularx}{0.90\textwidth}{>{\raggedright\arraybackslash}p{0.11\textwidth}*{6}{>{\centering\arraybackslash}X}}
+\begin{tabular*}{0.78\textwidth}{@{\extracolsep{\fill}}lcccccc}
 \toprule
-\makecell[l]{Setting} &
-\makecell{Mean\\BSI Q\\(MB)} &
-\makecell{Mean\\BSI K\\(MB)} &
-\makecell{Q\\Comp.} &
-\makecell{K\\Comp.} &
-\makecell{Q\\Comp.\\Slices} &
-\makecell{K\\Comp.\\Slices} \\
+Setting &
+\makecell{BSI Q\\(MB)} &
+\makecell{BSI K\\(MB)} &
+\makecell{Q\\ratio} &
+\makecell{K\\ratio} &
+\makecell{Q slice\\(\%)} &
+\makecell{K slice\\(\%)} \\
 \midrule
 dc-1 & 6.653 & 6.961 & 5.97$\times$ & 5.71$\times$ & 11.11\% & 6.94\% \\
 dc-2 & 10.984 & 10.978 & 3.62$\times$ & 3.62$\times$ & 1.85\% & 1.85\% \\
 \bottomrule
-\end{tabularx}
+\end{tabular*}
+
+\vspace{3pt}
+\parbox{0.78\textwidth}{\footnotesize \textit{Note.} Dense query and key vectors are 39.75~MB in both settings.}
 \endgroup
 \end{table}
 
@@ -294,11 +297,11 @@ Figure~\ref{fig:cpu-bert-error} shows the layer-wise error summaries associated 
   \centering
   \includegraphics[width=\textwidth]{bert_cpu_error_dc2.png}
 \end{minipage}
-\caption{Layer-wise CPU BSI output summaries for the archived BERT study. The two-decimal setting produces visibly tighter agreement with the dense baseline than the one-decimal setting.}
+\caption{Layer-wise CPU BSI output summaries for the BERT study. The two-decimal setting produces visibly tighter agreement with the dense baseline than the one-decimal setting.}
 \label{fig:cpu-bert-error}
 \end{figure}
 
-Figure~\ref{fig:cpu-bert-distribution} provides the archived tensor-distribution plots used to characterize the BERT query and key data before conversion into BSI form.
+Figure~\ref{fig:cpu-bert-distribution} provides the tensor-distribution plots used to characterize the BERT query and key data before conversion into BSI form.
 
 \begin{figure}[H]
 \centering
@@ -311,7 +314,7 @@ Figure~\ref{fig:cpu-bert-distribution} provides the archived tensor-distribution
   \centering
   \includegraphics[width=\textwidth]{bert_cpu_distribution_dc2.png}
 \end{minipage}
-\caption{Archived tensor-distribution plots for the BERT CPU study at one and two decimal places. These plots illustrate the data distributions from which the BSI query and key slices were built.}
+\caption{Tensor-distribution plots for the BERT CPU study at one and two decimal places. These plots illustrate the data distributions from which the BSI query and key slices were built.}
 \label{fig:cpu-bert-distribution}
 \end{figure}
 
@@ -458,10 +461,10 @@ Configuration & Top-1 & Top-5 & Dot (ms) & Avg Fwd (ms) & Static Size (MB) \\
 The lower-bit point reduces dot latency by roughly 20\% and further reduces static model size, but it also causes a clear drop in next-token accuracy. This is precisely why the thesis should not be framed as ``reduce the number of slices until the kernel is fast enough.'' The more meaningful claim is that same-bit performance can be improved through layout and kernel design, while slice-count reduction defines a separate speed/accuracy frontier that must be reported honestly.
 
 \subsection{Earlier CPU-to-GPU Ablation}
-The thesis also includes a broader architectural ablation that spans the two development stages of the work. On CPU, the earlier BSI vector algebra study demonstrated that bit-sliced dot product, multiplication, and summation could be implemented correctly and could offer memory savings. The archived BERT dot-product runs sharpen that statement into a concrete operating frontier. At one decimal place, the CPU BSI path remained close to dense Torch timing, with a mean slowdown of only 1.07$\times$, while preserving nearly 6$\times$ compression of the flattened query vector. At two decimal places, the mean error dropped dramatically, but the mean slowdown widened to 2.52$\times$ and the compression ratio fell to roughly 3.6$\times$. Moving to GPU therefore was not a simple implementation convenience. It was an ablation of the execution substrate itself, driven by direct evidence that the CPU implementation had already exposed the correct representation-level tradeoff but could not deliver the arithmetic throughput required by transformer inference.
+The thesis also includes a broader architectural ablation that spans the two development stages of the work. On CPU, the earlier BSI vector algebra study demonstrated that bit-sliced dot product, multiplication, and summation could be implemented correctly and could offer memory savings. The BERT dot-product runs sharpen that statement into a concrete operating frontier. At one decimal place, the CPU BSI path remained close to dense Torch timing, with a mean slowdown of only 1.07$\times$, while preserving nearly 6$\times$ compression of the flattened query vector. At two decimal places, the mean error dropped dramatically, but the mean slowdown widened to 2.52$\times$ and the compression ratio fell to roughly 3.6$\times$. Moving to GPU therefore was not a simple implementation convenience. It was an ablation of the execution substrate itself, driven by direct evidence that the CPU implementation had already exposed the correct representation-level tradeoff but could not deliver the arithmetic throughput required by transformer inference.
 
 \subsection{Design Iterations That Did Not Survive}
-Several aggressive design ideas were implemented and then removed after full-system testing. Runtime query repacking into more specialized tile layouts appeared plausible at the kernel level but increased end-to-end build cost too much. Other designs temporarily stored both legacy and experimental tensor formats at the same time, which increased static model size without a proportional runtime benefit. Lower fixed slice counts also improved dot time and further reduced memory footprint, but the resulting loss in next-token accuracy was too large for them to serve as the primary thesis baseline. These negative results are important because they define the real boundary of the design space.
+Several aggressive design ideas were implemented and then removed after full-system testing. Runtime query repacking into more specialized tile layouts appeared promising at the kernel level but increased end-to-end build cost too much. Other designs temporarily stored both legacy and experimental tensor formats at the same time, which increased static model size without a proportional runtime benefit. Lower fixed slice counts also improved dot time and further reduced memory footprint, but the resulting loss in next-token accuracy was too large for them to serve as the primary thesis baseline. These negative results are important because they define the real boundary of the design space.
 
 \section{Discussion}\label{sec:discussion}
 The work achieves a complete BSI-native inference path for OPT-family models. It starts from a bitmap and bit-sliced vector foundation, carries that representation into CUDA, integrates the resulting operators into PyTorch model execution, and evaluates them at kernel, layer, and model scales. That progression moves the problem beyond toy kernels or isolated arithmetic demonstrations and into the domain of full-system inference research.
