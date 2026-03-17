@@ -240,14 +240,24 @@ The storage picture moves in the opposite direction. Table~\ref{tab:cpu-bert-mem
 \centering
 \caption{Archived CPU BERT memory footprint and compression ratios. Dense query and key vectors are 39.75~MB each in both settings.}
 \label{tab:cpu-bert-memory}
-\begin{tabular}{lrrrrrr}
+\begingroup
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabularx}{0.96\textwidth}{lYYYYYY}
 \toprule
-Setting & Mean BSI Q (MB) & Mean BSI K (MB) & Q Compression & K Compression & Q Compressed Slices & K Compressed Slices \\
+\makecell[l]{Setting} &
+\makecell{Mean\\BSI Q\\(MB)} &
+\makecell{Mean\\BSI K\\(MB)} &
+\makecell{Q\\Comp.} &
+\makecell{K\\Comp.} &
+\makecell{Q\\Comp.\\Slices} &
+\makecell{K\\Comp.\\Slices} \\
 \midrule
 dc-1 & 6.653 & 6.961 & 5.97$\times$ & 5.71$\times$ & 11.11\% & 6.94\% \\
 dc-2 & 10.984 & 10.978 & 3.62$\times$ & 3.62$\times$ & 1.85\% & 1.85\% \\
 \bottomrule
-\end{tabular}
+\end{tabularx}
+\endgroup
 \end{table}
 
 These CPU measurements are meaningful for two reasons. First, they show that BSI is not merely a storage trick; even on a CPU, the representation can already compute approximate dot products with controllable error. Second, they make the limitation equally clear: the more accurate setting becomes meaningfully slower than dense Torch, even on a direct dot-product microstudy. This is precisely the observation that motivated the later CUDA work. The GPU phase was not started because the CPU results were inconclusive. It was started because the CPU results were decisive: BSI had clear compression value, but the execution substrate had to change if the dot path was to become competitive.
