@@ -238,12 +238,14 @@ The storage picture moves in the opposite direction. Table~\ref{tab:cpu-bert-mem
 
 \begin{table}[H]
 \centering
-\caption{Archived CPU BERT memory footprint and compression ratios. Dense query and key vectors are 39.75~MB each in both settings.}
-\label{tab:cpu-bert-memory}
 \begingroup
+\singlespacing
 \footnotesize
-\setlength{\tabcolsep}{4pt}
-\begin{tabularx}{0.96\textwidth}{lYYYYYY}
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.08}
+\caption{\parbox{0.88\textwidth}{\centering Archived CPU BERT memory footprint and compression ratios. Dense query and key vectors are 39.75~MB each in both settings.}}
+\label{tab:cpu-bert-memory}
+\begin{tabularx}{0.90\textwidth}{>{\raggedright\arraybackslash}p{0.11\textwidth}*{6}{>{\centering\arraybackslash}X}}
 \toprule
 \makecell[l]{Setting} &
 \makecell{Mean\\BSI Q\\(MB)} &
