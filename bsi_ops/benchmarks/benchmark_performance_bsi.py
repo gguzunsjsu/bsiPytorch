@@ -11,6 +11,7 @@ import time
 from verify_accuracy_bsi import (
     quantize_model_bsi, summarize_bsi_model,
     reset_bsi_dot_counters, sum_bsi_dot_counters, sum_bsi_build_counters,
+    sum_bsi_build_quantize_counters, sum_bsi_build_pack_counters, sum_bsi_build_kernel_counters,
     sum_bsi_dot_query_vectors, sum_bsi_dot_output_elements,
     enable_bsi_error_stats, collect_bsi_error_stats,
     print_compression_summary, save_bsi_model, bsi_full_model_static_bytes
@@ -169,6 +170,9 @@ class Evaluator:
         print("Running evaluation...")
         dot_ns_prev = sum_bsi_dot_counters(model)
         build_ns_prev = sum_bsi_build_counters(model)
+        build_q_ns_prev = sum_bsi_build_quantize_counters(model)
+        build_p_ns_prev = sum_bsi_build_pack_counters(model)
+        build_k_ns_prev = sum_bsi_build_kernel_counters(model)
         dot_q_prev = sum_bsi_dot_query_vectors(model)
         dot_elem_prev = sum_bsi_dot_output_elements(model)
         top5_hit = 0
@@ -226,14 +230,23 @@ class Evaluator:
 
                 dot_ns_cur = sum_bsi_dot_counters(model)
                 build_ns_cur = sum_bsi_build_counters(model)
+                build_q_ns_cur = sum_bsi_build_quantize_counters(model)
+                build_p_ns_cur = sum_bsi_build_pack_counters(model)
+                build_k_ns_cur = sum_bsi_build_kernel_counters(model)
                 dot_q_cur = sum_bsi_dot_query_vectors(model)
                 dot_elem_cur = sum_bsi_dot_output_elements(model)
 
                 batch_dot_ns = int(dot_ns_cur - dot_ns_prev)
                 batch_dot_ms = (dot_ns_cur - dot_ns_prev) / 1e6
                 batch_build_ms = (build_ns_cur - build_ns_prev) / 1e6
+                batch_build_q_ms = (build_q_ns_cur - build_q_ns_prev) / 1e6
+                batch_build_p_ms = (build_p_ns_cur - build_p_ns_prev) / 1e6
+                batch_build_k_ms = (build_k_ns_cur - build_k_ns_prev) / 1e6
                 dot_ns_prev = dot_ns_cur
                 build_ns_prev = build_ns_cur
+                build_q_ns_prev = build_q_ns_cur
+                build_p_ns_prev = build_p_ns_cur
+                build_k_ns_prev = build_k_ns_cur
                 batch_dot_q = int(dot_q_cur - dot_q_prev)
                 batch_dot_elem = int(dot_elem_cur - dot_elem_prev)
                 dot_q_prev = dot_q_cur
@@ -250,6 +263,8 @@ class Evaluator:
                 pbar.set_postfix(
                     fwd_ms=f"{batch_fwd_ms:.1f}",
                     build_ms=f"{batch_build_ms:.1f}",
+                    build_q_ms=f"{batch_build_q_ms:.1f}",
+                    build_p_ms=f"{batch_build_p_ms:.1f}",
                     dot_ms=f"{batch_dot_ms:.1f}",
                     dot_q_us=f"{batch_dot_us_per_query:.2f}",
                     dot_s_ns=f"{batch_dot_ns_per_scalar:.3f}",
@@ -309,14 +324,23 @@ class Evaluator:
 
                 dot_ns_cur = sum_bsi_dot_counters(model)
                 build_ns_cur = sum_bsi_build_counters(model)
+                build_q_ns_cur = sum_bsi_build_quantize_counters(model)
+                build_p_ns_cur = sum_bsi_build_pack_counters(model)
+                build_k_ns_cur = sum_bsi_build_kernel_counters(model)
                 dot_q_cur = sum_bsi_dot_query_vectors(model)
                 dot_elem_cur = sum_bsi_dot_output_elements(model)
 
                 batch_dot_ns = int(dot_ns_cur - dot_ns_prev)
                 batch_dot_ms = (dot_ns_cur - dot_ns_prev) / 1e6
                 batch_build_ms = (build_ns_cur - build_ns_prev) / 1e6
+                batch_build_q_ms = (build_q_ns_cur - build_q_ns_prev) / 1e6
+                batch_build_p_ms = (build_p_ns_cur - build_p_ns_prev) / 1e6
+                batch_build_k_ms = (build_k_ns_cur - build_k_ns_prev) / 1e6
                 dot_ns_prev = dot_ns_cur
                 build_ns_prev = build_ns_cur
+                build_q_ns_prev = build_q_ns_cur
+                build_p_ns_prev = build_p_ns_cur
+                build_k_ns_prev = build_k_ns_cur
                 batch_dot_q = int(dot_q_cur - dot_q_prev)
                 batch_dot_elem = int(dot_elem_cur - dot_elem_prev)
                 dot_q_prev = dot_q_cur
@@ -328,6 +352,7 @@ class Evaluator:
                 print(
                     f"  Processed batch {batch_idx + 1}/{self.num_samples} "
                     f"(fwd_ms={batch_fwd_ms:.1f}, build_ms={batch_build_ms:.1f}, dot_ms={batch_dot_ms:.1f}, "
+                    f"build_q_ms={batch_build_q_ms:.1f}, build_p_ms={batch_build_p_ms:.1f}, build_k_ms={batch_build_k_ms:.1f}, "
                     f"dot_q_us={batch_dot_us_per_query:.2f}, dot_s_ns={batch_dot_ns_per_scalar:.3f})"
                 )
 
@@ -339,14 +364,23 @@ class Evaluator:
         avg_forward_ms = latency / max(1, self.num_samples)
         dot_ns_total = sum_bsi_dot_counters(model)
         build_ns_total = sum_bsi_build_counters(model)
+        build_q_ns_total = sum_bsi_build_quantize_counters(model)
+        build_p_ns_total = sum_bsi_build_pack_counters(model)
+        build_k_ns_total = sum_bsi_build_kernel_counters(model)
         dot_q_total = sum_bsi_dot_query_vectors(model)
         dot_elem_total = sum_bsi_dot_output_elements(model)
         avg_dot_ms = (dot_ns_total / 1e6) / max(1, self.num_samples)
         avg_build_ms = (build_ns_total / 1e6) / max(1, self.num_samples)
+        avg_build_q_ms = (build_q_ns_total / 1e6) / max(1, self.num_samples)
+        avg_build_p_ms = (build_p_ns_total / 1e6) / max(1, self.num_samples)
+        avg_build_k_ms = (build_k_ns_total / 1e6) / max(1, self.num_samples)
         avg_dot_us_per_query = ((dot_ns_total / dot_q_total) / 1e3) if dot_q_total > 0 else 0.0
         avg_dot_ns_per_scalar = (dot_ns_total / dot_elem_total) if dot_elem_total > 0 else 0.0
         layer_stats = collect_bsi_error_stats(model) if self.layer_stats_batches > 0 else []
         enable_bsi_error_stats(model, False)
+        summary["build_quantize_ms_per_sample"] = avg_build_q_ms
+        summary["build_pack_ms_per_sample"] = avg_build_p_ms
+        summary["build_kernel_ms_per_sample"] = avg_build_k_ms
         print(f"Completed BSI eval: top1_acc={accuracy:.4f}, top5_acc={top5_acc:.4f}")
         return (
             accuracy,
@@ -581,8 +615,12 @@ def main():
         help='Print per-layer slice compression summary (default: off)')
     parser.add_argument('--bsi_device', type=str, choices=['auto','cpu','cuda'], default='auto',
         help='Preferred device for BSI dot kernels (auto=CUDA if available)')
+    parser.add_argument('--bsi_profile', type=int, default=1,
+        help='Set BSI_PROFILE env (1=collect internal CUDA timing with sync, 0=async/no internal timing)')
     
     args = parser.parse_args()
+    os.environ["BSI_PROFILE"] = "1" if int(args.bsi_profile) != 0 else "0"
+    print(f"BSI_PROFILE={os.environ['BSI_PROFILE']}")
 
     fp16_model_name = args.model_name
     device = get_device()
@@ -814,9 +852,13 @@ def main():
                     compression_vs_dense = (
                         dense_linear_mb / bsi_total_mb if bsi_total_mb > 0 else 0
                     )
+                    build_q_ms = float(summary.get("build_quantize_ms_per_sample", 0.0))
+                    build_p_ms = float(summary.get("build_pack_ms_per_sample", 0.0))
+                    build_k_ms = float(summary.get("build_kernel_ms_per_sample", 0.0))
                     print(
                         f"-> [NEXT-TOKEN ACC] {name} top1={acc_bsi:.4f}, top5={top5_acc:.4f}, "
                         f"avg_fwd={fwd_ms:.3f}ms, build={build_ms:.3f}ms, dot={dot_ms:.3f}ms (per-sample), "
+                        f"build_q={build_q_ms:.3f}ms, build_p={build_p_ms:.3f}ms, build_k={build_k_ms:.3f}ms, "
                         f"dot_q={dot_q_us:.3f}us, dot_s={dot_s_ns:.3f}ns"
                     )
                     print(f"Baseline model static size: {base_full_static_mb:.3f}MB")
@@ -849,6 +891,9 @@ def main():
                         "accuracy_top5": top5_acc,
                         "avg_forward_ms": fwd_ms,
                         "avg_build_ms": build_ms,
+                        "avg_build_quantize_ms": build_q_ms,
+                        "avg_build_pack_ms": build_p_ms,
+                        "avg_build_kernel_ms": build_k_ms,
                         "avg_dot_ms": dot_ms,
                         "avg_dot_us_per_query": dot_q_us,
                         "avg_dot_ns_per_scalar": dot_s_ns,

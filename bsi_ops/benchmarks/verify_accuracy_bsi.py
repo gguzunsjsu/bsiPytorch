@@ -100,6 +100,9 @@ class BSIQuantizedLinear(torch.nn.Module):
         self.dot_query_vectors_total = 0
         self.dot_output_elements_total = 0
         self.build_ns_total = 0  # optional: track Python-side build time if desired
+        self.build_quantize_ns_total = 0
+        self.build_pack_ns_total = 0
+        self.build_kernel_ns_total = 0
         self.build_calls = 0
         # optional stats collection flag toggled by helpers
         self.collect_stats = False
@@ -118,7 +121,10 @@ class BSIQuantizedLinear(torch.nn.Module):
         original_shape = x.shape
         if len(x.shape) > 2:
             x = x.view(-1, x.shape[-1])
-        x = x.to(torch.float32)
+        # Keep activations in their native dtype for query build by default.
+        # The CUDA fixed-bit quant kernels accept fp16/bf16/fp32 directly.
+        if os.getenv("BSI_QUERY_FP32", "0") != "0":
+            x = x.to(torch.float32)
 
         dot_ns_this_forward = 0
         
@@ -138,20 +144,42 @@ class BSIQuantizedLinear(torch.nn.Module):
             print(f"  Decimal Places used: {self.decimalPlaces}")
 
         t_build0 = time.perf_counter_ns()
-        query_capsules = bsi_ops.build_bsi_queries_cuda_batch(
-            batch_inputs,
-            self.decimalPlaces,
-            float(self.query_compress_threshold),
+        use_packed = (
+            os.getenv("BSI_QUERY_PACKED", "1") != "0"
+            and hasattr(bsi_ops, "build_bsi_queries_cuda_batch_packed")
+            and hasattr(bsi_ops, "batch_dot_product_multiquery_cuda_batch_caps")
         )
+        if use_packed:
+            query_capsules = bsi_ops.build_bsi_queries_cuda_batch_packed(
+                batch_inputs,
+                self.decimalPlaces,
+                float(self.query_compress_threshold),
+            )
+        else:
+            query_capsules = bsi_ops.build_bsi_queries_cuda_batch(
+                batch_inputs,
+                self.decimalPlaces,
+                float(self.query_compress_threshold),
+            )
         self.build_ns_total += (time.perf_counter_ns() - t_build0)
+        if hasattr(bsi_ops, "get_last_query_build_profile_cuda"):
+            q_ns, p_ns, t_ns = bsi_ops.get_last_query_build_profile_cuda()
+            self.build_quantize_ns_total += int(q_ns)
+            self.build_pack_ns_total += int(p_ns)
+            self.build_kernel_ns_total += int(t_ns)
         self.build_calls += 1
 
         # Single multi-query call on CUDA to compute all outputs at once
         # Dot-only timing comes from CUDA events inside the extension. The "total" is for the full
         # output matrix [Q, R]; the per-query/per-scalar are averages derived from that total.
-        scores_2d, dot_kernel_ns_total, dot_kernel_ns_per_query, dot_kernel_ns_per_scalar = (
-            bsi_ops.batch_dot_product_multiquery_cuda_caps(query_capsules, self._bsi_keys_cuda)
-        )
+        if use_packed:
+            scores_2d, dot_kernel_ns_total, dot_kernel_ns_per_query, dot_kernel_ns_per_scalar = (
+                bsi_ops.batch_dot_product_multiquery_cuda_batch_caps(query_capsules, self._bsi_keys_cuda)
+            )
+        else:
+            scores_2d, dot_kernel_ns_total, dot_kernel_ns_per_query, dot_kernel_ns_per_scalar = (
+                bsi_ops.batch_dot_product_multiquery_cuda_caps(query_capsules, self._bsi_keys_cuda)
+            )
         dot_ns_this_forward += int(dot_kernel_ns_total)
         # Expose last-call averages for debugging/analysis (in nanoseconds).
         self.dot_kernel_ns_per_query_last = float(dot_kernel_ns_per_query)
@@ -192,6 +220,9 @@ def reset_bsi_dot_counters(model: nn.Module):
             m.dot_ns_total = 0
             m.dot_calls = 0
             m.build_ns_total = 0
+            m.build_quantize_ns_total = 0
+            m.build_pack_ns_total = 0
+            m.build_kernel_ns_total = 0
             m.build_calls = 0
             m.dot_query_vectors_total = 0
             m.dot_output_elements_total = 0
@@ -208,6 +239,27 @@ def sum_bsi_build_counters(model: nn.Module) -> int:
     for m in model.modules():
         if isinstance(m, BSIQuantizedLinear):
             total += int(m.build_ns_total)
+    return total
+
+def sum_bsi_build_quantize_counters(model: nn.Module) -> int:
+    total = 0
+    for m in model.modules():
+        if isinstance(m, BSIQuantizedLinear):
+            total += int(getattr(m, "build_quantize_ns_total", 0))
+    return total
+
+def sum_bsi_build_pack_counters(model: nn.Module) -> int:
+    total = 0
+    for m in model.modules():
+        if isinstance(m, BSIQuantizedLinear):
+            total += int(getattr(m, "build_pack_ns_total", 0))
+    return total
+
+def sum_bsi_build_kernel_counters(model: nn.Module) -> int:
+    total = 0
+    for m in model.modules():
+        if isinstance(m, BSIQuantizedLinear):
+            total += int(getattr(m, "build_kernel_ns_total", 0))
     return total
 
 def sum_bsi_dot_query_vectors(model: nn.Module) -> int:
