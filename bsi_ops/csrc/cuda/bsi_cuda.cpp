@@ -551,11 +551,12 @@ struct TempGroup {
                 cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, dev);
                 TORCH_CHECK(major >= 9, "Chunk scales require SM90+ (Hopper) tensor-core path");
             }
-            TORCH_CHECK(keys->W % 4 == 0, "Chunk scales require W64 multiple of 4");
+            TORCH_CHECK((keys->W * kBsiWordBits) % 256 == 0, "Chunk scales require W aligned to 256 bits");
             TORCH_CHECK(pg.chunk_scales.dim() == 2, "Expected [Q, chunks] chunk scales");
-            TORCH_CHECK(pg.chunk_scales.size(1) == (keys->W / 4),
+            const int expected_chunks = keys->W * kBsiWordBits / 256;
+            TORCH_CHECK(pg.chunk_scales.size(1) == expected_chunks,
                         "Chunk scale stride mismatch: got ", pg.chunk_scales.size(1),
-                        " expected ", (keys->W / 4));
+                        " expected ", expected_chunks);
             A_chunk_scales = tensor_data_ptr<float>(pg.chunk_scales);
             A_scale_stride = static_cast<int>(pg.chunk_scales.size(1));
         }
@@ -696,10 +697,11 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
             cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, dev);
             TORCH_CHECK(major >= 9, "Chunk scales require SM90+ (Hopper) tensor-core path");
         }
-        TORCH_CHECK(keys->W % 4 == 0, "Chunk scales require W64 multiple of 4");
-        TORCH_CHECK(qb->chunk_scales.size(1) == (keys->W / 4),
+        TORCH_CHECK((keys->W * kBsiWordBits) % 256 == 0, "Chunk scales require W aligned to 256 bits");
+        const int expected_chunks_b = keys->W * kBsiWordBits / 256;
+        TORCH_CHECK(qb->chunk_scales.size(1) == expected_chunks_b,
                     "Chunk scale stride mismatch: got ", qb->chunk_scales.size(1),
-                    " expected ", (keys->W / 4));
+                    " expected ", expected_chunks_b);
         A_chunk_scales = tensor_data_ptr<float>(qb->chunk_scales);
         A_scale_stride = static_cast<int>(qb->chunk_scales.size(1));
     }
