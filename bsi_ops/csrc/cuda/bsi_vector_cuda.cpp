@@ -1014,7 +1014,7 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& inp
         bsi_cuda_fused_qpack_enabled()) {
         const int offset = 0;
         const int slices = std::max(1, fixed_bits);
-        const int words_per_slice = (d_input > 0) ? static_cast<int>((d_input + 63) / 64) : 1;
+        const int words_per_slice = bsi_words_per_slice(d_input);
 
         torch::Tensor words;
         torch::Tensor scale;

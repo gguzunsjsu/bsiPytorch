@@ -874,7 +874,7 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
 
         auto batch = build_bsi_queries_cuda_batch_data(K.detach(), decimalPlaces, device, verbose, /*for_keys=*/true);
         TORCH_CHECK(batch.rows == num_keys, "CUDA fixed-bit key build row mismatch");
-        TORCH_CHECK(batch.words_per_slice == static_cast<int>((d + 63) / 64),
+        TORCH_CHECK(batch.words_per_slice == bsi_words_per_slice(d),
                     "CUDA fixed-bit key build word count mismatch");
 
         auto* holder = new PrebuiltBSIKeysCUDA();
