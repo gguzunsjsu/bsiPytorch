@@ -926,7 +926,7 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
         std::vector<double> tmp_row; tmp_row.reserve(d);
         for (int64_t c=0;c<d;++c) tmp_row.push_back(static_cast<double>(Kd[c]));
         BsiSigned<bsi_word_t> b; BsiVector<bsi_word_t>* t = b.buildBsiVector(tmp_row, decimalPlaces, compress_threshold);
-        int S0, W0; std::vector<u64> tmp_words; bsi_flatten_words_gpu_helper(*t, tmp_words, S0, W0);
+        int S0, W0; std::vector<bsi_word_t> tmp_words; bsi_flatten_words_gpu_helper(*t, tmp_words, S0, W0);
         holder->W = W0; delete t;
     }
 
