@@ -3,6 +3,7 @@
 // Multi-query fused version: process Q queries and multiple keys per block; tiles both axes to shrink grid
 #include <stdint.h>
 #include <stdio.h>
+#include "bsi_word_config.h"
 
 #if defined(__CUDACC__)
 #include <cuda/barrier>
@@ -2614,13 +2615,13 @@ static inline void* bsi_get_or_create_b_fixed76_rsweep_tensor_map(
 
 
 extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
-    const unsigned long long* A,
+    const bsi_word_t* A_raw,
     const float* Aw,
     const float* A_chunk_scales,
     int A_scale_stride,
     int Sa,
-    int W,
-    const unsigned long long* B,
+    int W_words,                    // words per slice in bsi_word_t units
+    const bsi_word_t* B_raw,
     const float* Bw,
     int Sb,
     int R,
@@ -2634,6 +2635,13 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     float* out_global,
     cudaStream_t stream)
 {
+    // Convert bsi_word_t pointers to unsigned long long* for kernel consumption.
+    // The memory is contiguous bits; reinterpreting as uint64 is safe for aligned tensors.
+    const auto* A = reinterpret_cast<const unsigned long long*>(A_raw);
+    const auto* B = reinterpret_cast<const unsigned long long*>(B_raw);
+    // Number of uint64 words per slice (the internal unit for all kernels).
+    const int W = W_words * kBsiWordBits / 64;
+
     // Optional SM90+ tensor-core (BMMA) path (guarded by BSI_TC_DOT).
     int use_tc = 0;
     // Chunk-scale mode requires BMMA for correctness; force the TC path when scales are provided.

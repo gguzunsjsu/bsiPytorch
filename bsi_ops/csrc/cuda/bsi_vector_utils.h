@@ -5,6 +5,7 @@
 
 #include "../../../bsiCPP/bsi/BsiVector.hpp"
 #include "../../../bsiCPP/bsi/hybridBitmap/hybridbitmap.h"
+#include "bsi_word_config.h"
 
 template <typename U>
 inline void hb_to_verbatim_words_gpu_helper(const HybridBitmap<U>& hb,
@@ -71,18 +72,22 @@ inline void bsi_flatten_words_gpu_helper(const BsiVector<U>& vec,
 }
 
 // Build an EWAH-encoded stream (RLW + literals) for one HybridBitmap slice.
-// Encoding matches ewah_decompress_kernel: bit0=runningBit; bits[1..32]=run_len; bits[33..63]=lit_count.
+// RLW layout matches hybridbitmap runninglengthword.h per word type:
+//   bit0=runningBit; bits[1..rlwRunBits]=run_len; bits[rlwRunBits+1..end]=lit_count
+// where rlwRunBits = sizeof(U) * 4  (half the word bits).
 template <typename U>
 inline void hb_to_ewah_stream_helper(const HybridBitmap<U>& hb,
                                      int64_t rows,
                                      std::vector<U>& out_words) {
     out_words.clear();
     const int word_bits = 8 * sizeof(U);
+    const int rlw_run_bits = sizeof(U) * 4;  // matches runninglengthword.h
+    const int rlw_lit_shift = 1 + rlw_run_bits;
     const int64_t W = (rows + word_bits - 1) / word_bits;
 
     if (hb.verbatim) {
         // Literal-only: single RLW with run_len=0 and lit_count=W, followed by W literal words.
-        U rlw = (U)0 | ((U)0 << 1) | ((U)W << (1 + 32));
+        U rlw = static_cast<U>(0) | (static_cast<U>(W) << rlw_lit_shift);
         out_words.push_back(rlw);
         for (int64_t w = 0; w < W; ++w) {
             out_words.push_back(hb.getWord((size_t)w));
@@ -98,7 +103,9 @@ inline void hb_to_ewah_stream_helper(const HybridBitmap<U>& hb,
         bool run_bit = rle.getRunningBit();
         U lit_words = rle.getNumberOfLiteralWords();
         const U* dw = it.dirtyWords();
-        U rlw = (U)(run_bit ? 1 : 0) | ((U)(run_len) << 1) | ((U)(lit_words) << (1 + 32));
+        U rlw = static_cast<U>(run_bit ? 1 : 0)
+              | (static_cast<U>(run_len) << 1)
+              | (static_cast<U>(lit_words) << rlw_lit_shift);
         out_words.push_back(rlw);
         for (U k = 0; k < lit_words; ++k) out_words.push_back(dw[k]);
     }

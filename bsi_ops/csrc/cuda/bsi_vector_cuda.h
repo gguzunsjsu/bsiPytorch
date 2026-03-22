@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <tuple>
 
+#include "bsi_word_config.h"
 #include "bsi_vector_utils.h"
 
 struct BsiVectorCudaData {
@@ -17,12 +18,12 @@ struct BsiVectorCudaData {
     // Additional per-vector scaling factor used by fixed-bit quantization modes.
     // Default is 1.0 (no scaling).
     float scale = 1.0f;
-    torch::Tensor words;      // [slices, words_per_slice] (verbatim; optional)
+    torch::Tensor words;      // [slices, bsi_torch_word_dim(words_per_slice)] dtype=BSI_TORCH_WORD_DTYPE
     torch::Tensor metadata;   // placeholder for future hybrid metadata
     // Hybrid (EWAH) compressed representation (always populated in hybrid builder)
-    torch::Tensor comp_words; // [u64_total]
+    torch::Tensor comp_words; // [total_words] dtype=BSI_TORCH_WORD_DTYPE
     torch::Tensor comp_off;   // [slices] int64 offsets into comp_words
-    torch::Tensor comp_len;   // [slices] int32 lengths (u64 count) per slice
+    torch::Tensor comp_len;   // [slices] int32 lengths (word count) per slice
 
     void log(const char* tag = nullptr) const;
 };
@@ -32,7 +33,7 @@ struct BsiQueryBatchCudaData {
     int slices = 0;
     int words_per_slice = 0;
     int offset = 0;
-    torch::Tensor words;         // [Q, slices, words_per_slice]
+    torch::Tensor words;         // [Q, slices, bsi_torch_word_dim(words_per_slice)] dtype=BSI_TORCH_WORD_DTYPE
     torch::Tensor slice_weights; // [Q, slices]
     // Optional per-query, per-256-element-chunk power-of-two scales used by
     // fixed-bit "block floating" modes. Shape: [Q, chunks] where
@@ -73,7 +74,7 @@ bsi_cuda_quantize_debug(const torch::Tensor& values,
                         const torch::Device& device,
                         int64_t k = 8);
 
-BsiVectorCudaData create_bsi_vector_cuda_from_cpu(const BsiVector<uint64_t>& src,
+BsiVectorCudaData create_bsi_vector_cuda_from_cpu(const BsiVector<bsi_word_t>& src,
                                                   const torch::Device& device,
                                                   bool verbose = false);
 

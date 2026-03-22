@@ -30,17 +30,18 @@ inline const T* tensor_data_ptr(const torch::Tensor& t) {
     return const_cast<const T*>(nc.data_ptr<T>());
 }
 
-inline torch::Tensor make_words_tensor(const std::vector<uint64_t>& words,
+inline torch::Tensor make_words_tensor(const std::vector<bsi_word_t>& words,
                                        int slices,
                                        int words_per_slice,
                                        const torch::Device& device) {
-    auto options = torch::TensorOptions().dtype(torch::kInt64).device(device);
+    const int torch_dim = bsi_torch_word_dim(words_per_slice);
+    auto options = torch::TensorOptions().dtype(BSI_TORCH_WORD_DTYPE).device(device);
     if (words.empty()) {
-        return torch::zeros({slices, words_per_slice}, options);
+        return torch::zeros({slices, torch_dim}, options);
     }
-    return torch::from_blob(const_cast<uint64_t*>(words.data()),
-                            {slices, words_per_slice},
-                            torch::TensorOptions().dtype(torch::kInt64))
+    return torch::from_blob(const_cast<bsi_word_t*>(words.data()),
+                            {slices, torch_dim},
+                            torch::TensorOptions().dtype(BSI_TORCH_WORD_DTYPE))
         .clone()
         .to(device, /*non_blocking=*/true);
 }
@@ -94,7 +95,7 @@ extern "C" void launch_pack_bits_all_ballot(
     int slices,
     int words_per_slice,
     unsigned long long value_mask,
-    unsigned long long* out,
+    bsi_word_t* out,
     cudaStream_t stream);
 
 extern "C" void launch_pack_bits_all_ballot_batch(
@@ -104,7 +105,7 @@ extern "C" void launch_pack_bits_all_ballot_batch(
     int slices,
     int words_per_slice,
     unsigned long long value_mask,
-    unsigned long long* out,
+    bsi_word_t* out,
     cudaStream_t stream);
 
 extern "C" void launch_quantize_round_to_int64_batch(
@@ -190,7 +191,7 @@ extern "C" void launch_quantize_shift_pack_row_batch(
     double dec_scale,
     int fixed_bits,
     const int* shifts,
-    unsigned long long* out,
+    bsi_word_t* out,
     cudaStream_t stream);
 
 extern "C" void launch_quantize_shift_pack_chunk_batch(
@@ -205,11 +206,11 @@ extern "C" void launch_quantize_shift_pack_chunk_batch(
     double dec_scale,
     int fixed_bits,
     const int* shifts,
-    unsigned long long* out,
+    bsi_word_t* out,
     cudaStream_t stream);
 
 extern "C" void launch_slice_popcount_sum(
-    const unsigned long long* words,
+    const bsi_word_t* words,
     int S,
     int W,
     unsigned long long* out_counts,
@@ -224,7 +225,7 @@ extern "C" void launch_compress_flags_from_density(
     cudaStream_t stream);
 
 extern "C" void launch_ewah_size(
-    const unsigned long long* words,
+    const bsi_word_t* words,
     int S,
     int W,
     const int* flags,
@@ -232,12 +233,12 @@ extern "C" void launch_ewah_size(
     cudaStream_t stream);
 
 extern "C" void launch_ewah_emit(
-    const unsigned long long* words,
+    const bsi_word_t* words,
     int S,
     int W,
     const int* flags,
     const unsigned long long* off,
-    unsigned long long* out,
+    bsi_word_t* out,
     int* out_len,
     cudaStream_t stream);
 
@@ -421,11 +422,12 @@ static bool bsi_cuda_build_fixed_query_words_fused(const torch::Tensor& input,
     const int64_t Q = values.size(0);
     const int64_t d = values.size(1);
     const int slices = std::max(1, fixed_bits);
-    const int words_per_slice = (d > 0) ? static_cast<int>((d + 63) / 64) : 1;
+    const int words_per_slice = bsi_words_per_slice(d);
+    const int torch_wdim = bsi_torch_word_dim(words_per_slice);
     auto stream = at::cuda::getCurrentCUDAStream();
 
-    words_out = torch::zeros({Q, slices, words_per_slice},
-                             torch::TensorOptions().dtype(torch::kInt64).device(device));
+    words_out = torch::zeros({Q, slices, torch_wdim},
+                             torch::TensorOptions().dtype(BSI_TORCH_WORD_DTYPE).device(device));
 
     if (Q <= 0 || d <= 0) {
         if (chunk_scale) {
@@ -493,7 +495,7 @@ static bool bsi_cuda_build_fixed_query_words_fused(const torch::Tensor& input,
             dec_scale,
             fixed_bits,
             shifts.data_ptr<int>(),
-            reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(words_out)),
+            reinterpret_cast<bsi_word_t*>(words_out.data_ptr()),
             stream.stream());
         if (profile_cuda) {
             cudaEventRecord(pack_end_evt, stream.stream());
@@ -536,7 +538,7 @@ static bool bsi_cuda_build_fixed_query_words_fused(const torch::Tensor& input,
             dec_scale,
             fixed_bits,
             shifts.data_ptr<int>(),
-            reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(words_out)),
+            reinterpret_cast<bsi_word_t*>(words_out.data_ptr()),
             stream.stream());
         if (profile_cuda) {
             cudaEventRecord(pack_end_evt, stream.stream());
@@ -810,9 +812,10 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& input,
     int stored_slices = std::max(1, total_slices);
     torch::Tensor shifted = scaled.contiguous();
 
-    const int words_per_slice = rows > 0 ? static_cast<int>((rows + 63) / 64) : 1;
-    auto words = torch::zeros({stored_slices, words_per_slice},
-                              torch::TensorOptions().dtype(torch::kInt64).device(device));
+    const int words_per_slice = bsi_words_per_slice(rows);
+    const int torch_wdim = bsi_torch_word_dim(words_per_slice);
+    auto words = torch::zeros({stored_slices, torch_wdim},
+                              torch::TensorOptions().dtype(BSI_TORCH_WORD_DTYPE).device(device));
 
     if (rows > 0) {
         unsigned long long value_mask = (stored_slices >= 64)
@@ -827,7 +830,7 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor(const torch::Tensor& input,
             stored_slices,
             words_per_slice,
             value_mask,
-            reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(words)),
+            reinterpret_cast<bsi_word_t*>(words.data_ptr()),
             stream.stream());
     }
 
@@ -878,10 +881,11 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor_hybrid(const torch::Tensor&
 
     int offset = 0;
     int stored_slices = std::max(1, total_slices);
-    const int W = rows > 0 ? static_cast<int>((rows + 63) / 64) : 1;
+    const int W = bsi_words_per_slice(rows);
+    const int torch_wdim = bsi_torch_word_dim(W);
 
     // Build temporary verbatim words on device quickly; we release them after compression
-    auto words = torch::zeros({stored_slices, W}, torch::dtype(torch::kInt64).device(device));
+    auto words = torch::zeros({stored_slices, torch_wdim}, torch::dtype(BSI_TORCH_WORD_DTYPE).device(device));
     if (rows > 0) {
         unsigned long long value_mask = (stored_slices >= 64) ? ~0ULL : ((1ULL << stored_slices) - 1ULL);
         auto stream = at::cuda::getCurrentCUDAStream();
@@ -892,16 +896,15 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor_hybrid(const torch::Tensor&
             stored_slices,
             W,
             value_mask,
-            reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(words)),
+            reinterpret_cast<bsi_word_t*>(words.data_ptr()),
             stream.stream());
     }
-
 
     // Per-slice popcounts and compress flags on device
     auto slice_counts = torch::empty({stored_slices}, torch::dtype(torch::kInt64).device(device));
     auto stream = at::cuda::getCurrentCUDAStream();
     launch_slice_popcount_sum(
-        reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words)),
+        reinterpret_cast<const bsi_word_t*>(words.data_ptr()),
         stored_slices,
         W,
         reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(slice_counts)),
@@ -919,7 +922,7 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor_hybrid(const torch::Tensor&
     // Size pass per slice
     auto sizes = torch::empty({stored_slices}, torch::dtype(torch::kInt64).device(device));
     launch_ewah_size(
-        reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words)),
+        reinterpret_cast<const bsi_word_t*>(words.data_ptr()),
         stored_slices,
         W,
         flags.data_ptr<int>(),
@@ -928,7 +931,7 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor_hybrid(const torch::Tensor&
 
     // Exclusive scan to offsets and total size
     auto inclusive = sizes.cumsum(0);
-    int64_t total_u64 = inclusive.index({stored_slices - 1}).item<int64_t>();
+    int64_t total_words = inclusive.index({stored_slices - 1}).item<int64_t>();
     auto comp_off = torch::empty({stored_slices}, torch::dtype(torch::kInt64).device(device));
     if (stored_slices > 0) {
         comp_off.index_put_({0}, 0);
@@ -937,17 +940,18 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor_hybrid(const torch::Tensor&
             comp_off.narrow(0, 1, stored_slices - 1).copy_(shifted);
         }
     }
-    auto comp_words = torch::empty({total_u64}, torch::dtype(torch::kInt64).device(device));
+    const int64_t total_torch_elems = total_words * bsi_torch_elems_per_word();
+    auto comp_words = torch::empty({total_torch_elems}, torch::dtype(BSI_TORCH_WORD_DTYPE).device(device));
     auto comp_len = torch::empty({stored_slices}, torch::dtype(torch::kInt32).device(device));
 
     // Emit pass
     launch_ewah_emit(
-        reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words)),
+        reinterpret_cast<const bsi_word_t*>(words.data_ptr()),
         stored_slices,
         W,
         flags.data_ptr<int>(),
         reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(comp_off)),
-        reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(comp_words)),
+        reinterpret_cast<bsi_word_t*>(comp_words.data_ptr()),
         comp_len.data_ptr<int>(),
         stream.stream());
 
@@ -959,7 +963,7 @@ BsiVectorCudaData build_bsi_vector_from_float_tensor_hybrid(const torch::Tensor&
     data.decimals = decimal_places;
     data.twos_complement = has_negative;
     data.scale = (fixed_bits > 0) ? q.scale.item<float>() : 1.0f;
-    data.words = torch::empty({0}, torch::dtype(torch::kInt64).device(device)); // not stored
+    data.words = torch::empty({0}, torch::dtype(BSI_TORCH_WORD_DTYPE).device(device)); // not stored
     data.metadata = torch::empty({stored_slices, 0}, torch::dtype(torch::kInt32).device(device));
     data.comp_words = comp_words;
     data.comp_off = comp_off;
@@ -981,8 +985,10 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& inp
     if (!for_keys && fixed_bits > 0 && bsi_cuda_fixed_chunk_scale_queries()) {
         // Only enable chunk scaling when the bitplane word count is compatible with BMMA chunks (256 bits).
         const int64_t d = input.size(1);
-        const int words_per_slice = (d > 0) ? static_cast<int>((d + 63) / 64) : 1;
-        if ((words_per_slice % 4) == 0) {
+        const int words_per_slice = bsi_words_per_slice(d);
+        // Check BMMA chunk alignment: 256 bits = 4 uint64 words = K_WORDS64
+        const int W_u64 = words_per_slice * kBsiWordBits / 64;
+        if ((W_u64 % 4) == 0) {
             int dev = 0;
             cudaGetDevice(&dev);
             int major = 0;
@@ -1103,10 +1109,11 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& inp
 
     int offset = 0;
     int slices = std::max(1, total_slices);
-    const int words_per_slice = (d > 0) ? static_cast<int>((d + 63) / 64) : 1;
+    const int words_per_slice = bsi_words_per_slice(d);
+    const int torch_wdim = bsi_torch_word_dim(words_per_slice);
 
-    auto words = torch::zeros({Q, slices, words_per_slice},
-                              torch::TensorOptions().dtype(torch::kInt64).device(device));
+    auto words = torch::zeros({Q, slices, torch_wdim},
+                              torch::TensorOptions().dtype(BSI_TORCH_WORD_DTYPE).device(device));
 
     if (Q > 0 && d > 0) {
         cudaEvent_t pack_start_evt = nullptr;
@@ -1129,7 +1136,7 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& inp
             slices,
             words_per_slice,
             value_mask,
-            reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(words)),
+            reinterpret_cast<bsi_word_t*>(words.data_ptr()),
             stream.stream());
         if (profile_cuda) {
             auto stream2 = at::cuda::getCurrentCUDAStream();
@@ -1195,13 +1202,13 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& inp
     }
     return out;
 }
-BsiVectorCudaData create_bsi_vector_cuda_from_cpu(const BsiVector<uint64_t>& src,
+BsiVectorCudaData create_bsi_vector_cuda_from_cpu(const BsiVector<bsi_word_t>& src,
                                                   const torch::Device& device,
                                                   bool verbose) {
-    std::vector<uint64_t> words;
+    std::vector<bsi_word_t> words;
     int slices = 0;
     int words_per_slice = 0;
-    bsi_flatten_words_gpu_helper<uint64_t>(src, words, slices, words_per_slice);
+    bsi_flatten_words_gpu_helper<bsi_word_t>(src, words, slices, words_per_slice);
     int offset = src.offset;
 
     BsiVectorCudaData data;

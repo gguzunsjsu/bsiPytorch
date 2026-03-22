@@ -6,6 +6,20 @@
 #include <stdint.h>
 #include <math.h>
 
+#include "bsi_word_config.h"
+
+// Sub-word extraction for small words (< 32-bit): identical to pack kernel helper.
+#if BSI_WORD_BITS < 32
+__device__ __forceinline__
+bsi_word_t bsi_quant_extract_subword(unsigned int ballot, int sub_idx) {
+  #if BSI_WORD_BITS == 8
+    return static_cast<bsi_word_t>((ballot >> (sub_idx * 8)) & 0xFFu);
+  #elif BSI_WORD_BITS == 16
+    return static_cast<bsi_word_t>((ballot >> (sub_idx * 16)) & 0xFFFFu);
+  #endif
+}
+#endif
+
 template <typename T>
 __device__ __forceinline__ float bsi_cast_to_float(T v) {
     return static_cast<float>(v);
@@ -340,6 +354,25 @@ __global__ void compute_chunk_shift_scale_from_input_kernel(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Fused quantize + shift + pack (row-level shifts) — word-size-aware
+// ---------------------------------------------------------------------------
+
+// Shared quantize helper: input float → shifted, clamped, masked ULL
+__device__ __forceinline__
+unsigned long long bsi_quant_one(float f, double dec_scale, int shift,
+                                  long long qmin, long long qmax,
+                                  unsigned long long value_mask) {
+    const long long r = bsi_round_half_away_to_ll(static_cast<double>(f) * dec_scale);
+    const unsigned long long av = bsi_uabs_ll(r);
+    const unsigned long long round_add = (shift > 0) ? (1ULL << (shift - 1)) : 0ULL;
+    const unsigned long long uq = (av + round_add) >> shift;
+    long long qv = (r < 0) ? -static_cast<long long>(uq) : static_cast<long long>(uq);
+    if (qv < qmin) qv = qmin;
+    if (qv > qmax) qv = qmax;
+    return static_cast<unsigned long long>(qv) & value_mask;
+}
+
 template <typename T>
 __global__ void quantize_shift_pack_row_batch_oneshot_kernel(
     const T* __restrict__ input,
@@ -351,64 +384,124 @@ __global__ void quantize_shift_pack_row_batch_oneshot_kernel(
     double dec_scale,
     int fixed_bits,
     const int* __restrict__ shifts,
-    unsigned long long* __restrict__ out) {
+    bsi_word_t* __restrict__ out) {
     const int q = blockIdx.z;
     if (q >= Q) return;
 
     const int warps_per_block = blockDim.x >> 5;
     const int warp = threadIdx.x >> 5;
     const int lane = threadIdx.x & 31;
-    const int words_group = blockIdx.x;
-    const int word_idx = words_group * warps_per_block + warp;
-    if (word_idx >= words_per_slice) return;
 
     const T* in_q = input + static_cast<int64_t>(q) * d;
-    unsigned long long* out_q =
+    bsi_word_t* out_q =
         out + (static_cast<size_t>(q) * static_cast<size_t>(slices) * static_cast<size_t>(words_per_slice));
 
     const int shift = shifts[q];
     const long long qmax = (static_cast<long long>(1) << (fixed_bits - 1)) - 1LL;
     const long long qmin = -(static_cast<long long>(1) << (fixed_bits - 1));
 
-    const int64_t row0 = static_cast<int64_t>(word_idx) * 64LL + static_cast<int64_t>(lane);
-    const int64_t row1 = row0 + 32LL;
+#if BSI_WORD_BITS >= 32
+    const int word_idx = blockIdx.x * warps_per_block + warp;
+    if (word_idx >= words_per_slice) return;
 
-    unsigned long long v0 = 0ULL;
-    unsigned long long v1 = 0ULL;
-    if (row0 < d) {
-        const float f = bsi_cast_to_float(in_q[row0]);
-        const long long r = bsi_round_half_away_to_ll(static_cast<double>(f) * dec_scale);
-        const unsigned long long av = bsi_uabs_ll(r);
-        const unsigned long long round_add = (shift > 0) ? (1ULL << (shift - 1)) : 0ULL;
-        const unsigned long long uq = (av + round_add) >> shift;
-        long long qv = (r < 0) ? -static_cast<long long>(uq) : static_cast<long long>(uq);
-        if (qv < qmin) qv = qmin;
-        if (qv > qmax) qv = qmax;
-        v0 = static_cast<unsigned long long>(qv) & value_mask;
-    }
-    if (row1 < d) {
-        const float f = bsi_cast_to_float(in_q[row1]);
-        const long long r = bsi_round_half_away_to_ll(static_cast<double>(f) * dec_scale);
-        const unsigned long long av = bsi_uabs_ll(r);
-        const unsigned long long round_add = (shift > 0) ? (1ULL << (shift - 1)) : 0ULL;
-        const unsigned long long uq = (av + round_add) >> shift;
-        long long qv = (r < 0) ? -static_cast<long long>(uq) : static_cast<long long>(uq);
-        if (qv < qmin) qv = qmin;
-        if (qv > qmax) qv = qmax;
-        v1 = static_cast<unsigned long long>(qv) & value_mask;
+    // Quantize kBsiBallotsPerWord groups of 32 rows
+    unsigned long long v[kBsiBallotsPerWord];
+    #pragma unroll
+    for (int b = 0; b < kBsiBallotsPerWord; ++b) {
+        v[b] = 0ULL;
+        const int64_t row = static_cast<int64_t>(word_idx) * static_cast<int64_t>(kBsiWordBits)
+                          + static_cast<int64_t>(b * 32 + lane);
+        if (row < d) {
+            v[b] = bsi_quant_one(bsi_cast_to_float(in_q[row]), dec_scale, shift,
+                                 qmin, qmax, value_mask);
+        }
     }
 
     for (int slice = 0; slice < slices; ++slice) {
-        const bool b0 = ((v0 >> slice) & 1ULL) != 0ULL;
-        const bool b1 = ((v1 >> slice) & 1ULL) != 0ULL;
+  #if BSI_WORD_BITS == 32
+        const bool bit = ((v[0] >> slice) & 1ULL) != 0ULL;
+        const unsigned ballot = __ballot_sync(0xffffffff, bit);
+        if (lane == 0) {
+            out_q[static_cast<size_t>(slice) * static_cast<size_t>(words_per_slice) +
+                  static_cast<size_t>(word_idx)] = static_cast<bsi_word_t>(ballot);
+        }
+  #elif BSI_WORD_BITS == 64
+        const bool b0 = ((v[0] >> slice) & 1ULL) != 0ULL;
+        const bool b1 = ((v[1] >> slice) & 1ULL) != 0ULL;
         const unsigned lo = __ballot_sync(0xffffffff, b0);
         const unsigned hi = __ballot_sync(0xffffffff, b1);
         if (lane == 0) {
             out_q[static_cast<size_t>(slice) * static_cast<size_t>(words_per_slice) +
                   static_cast<size_t>(word_idx)] =
-                static_cast<unsigned long long>(lo) | (static_cast<unsigned long long>(hi) << 32);
+                static_cast<bsi_word_t>(lo) | (static_cast<bsi_word_t>(hi) << 32);
+        }
+  #else // 128 or 256
+        bsi_word_t word;
+        #pragma unroll
+        for (int p = 0; p < kBsiWordParts; ++p) {
+            const bool b0 = ((v[p * 2] >> slice) & 1ULL) != 0ULL;
+            const bool b1 = ((v[p * 2 + 1] >> slice) & 1ULL) != 0ULL;
+            const unsigned lo = __ballot_sync(0xffffffff, b0);
+            const unsigned hi = __ballot_sync(0xffffffff, b1);
+            word.parts[p] = static_cast<uint64_t>(lo) | (static_cast<uint64_t>(hi) << 32);
+        }
+        if (lane == 0) {
+            out_q[static_cast<size_t>(slice) * static_cast<size_t>(words_per_slice) +
+                  static_cast<size_t>(word_idx)] = word;
+        }
+  #endif
+    }
+
+#else // BSI_WORD_BITS < 32 (8 or 16)
+    const int group_idx = blockIdx.x * warps_per_block + warp;
+    const int first_word = group_idx * kBsiWordsPerBallot;
+    if (first_word >= words_per_slice) return;
+
+    const int64_t row = static_cast<int64_t>(group_idx) * 32LL + static_cast<int64_t>(lane);
+    unsigned long long qval = 0ULL;
+    if (row < d) {
+        qval = bsi_quant_one(bsi_cast_to_float(in_q[row]), dec_scale, shift,
+                             qmin, qmax, value_mask);
+    }
+
+    for (int slice = 0; slice < slices; ++slice) {
+        const bool bit = ((qval >> slice) & 1ULL) != 0ULL;
+        const unsigned ballot = __ballot_sync(0xffffffff, bit);
+        if (lane == 0) {
+            #pragma unroll
+            for (int s = 0; s < kBsiWordsPerBallot; ++s) {
+                const int wi = first_word + s;
+                if (wi < words_per_slice) {
+                    out_q[static_cast<size_t>(slice) * static_cast<size_t>(words_per_slice) +
+                          static_cast<size_t>(wi)] = bsi_quant_extract_subword(ballot, s);
+                }
+            }
         }
     }
+#endif
+}
+
+// ---------------------------------------------------------------------------
+// Fused quantize + shift + pack (chunk-level shifts) — word-size-aware
+// ---------------------------------------------------------------------------
+
+// Chunk-level quantize helper: uses per-chunk shift looked up from row index
+__device__ __forceinline__
+unsigned long long bsi_quant_one_chunk(float f, double dec_scale,
+                                        const int* __restrict__ shifts,
+                                        int shift_base, int64_t row, int chunks,
+                                        long long qmin, long long qmax,
+                                        unsigned long long value_mask) {
+    const int chunk = static_cast<int>(row >> 8);
+    const int shift = shifts[shift_base + (chunk < chunks ? chunk : chunks - 1)];
+    const long long r = bsi_round_half_away_to_ll(static_cast<double>(f) * dec_scale);
+    const unsigned long long av = bsi_uabs_ll(r);
+    const unsigned long long round_add = (shift > 0) ? (1ULL << (shift - 1)) : 0ULL;
+    const unsigned long long uq = (av + round_add) >> shift;
+    long long qv = (r < 0) ? -static_cast<long long>(uq) : static_cast<long long>(uq);
+    if (qv < qmin) qv = qmin;
+    if (qv > qmax) qv = qmax;
+    return static_cast<unsigned long long>(qv) & value_mask;
 }
 
 template <typename T>
@@ -423,68 +516,103 @@ __global__ void quantize_shift_pack_chunk_batch_oneshot_kernel(
     double dec_scale,
     int fixed_bits,
     const int* __restrict__ shifts,
-    unsigned long long* __restrict__ out) {
+    bsi_word_t* __restrict__ out) {
     const int q = blockIdx.z;
     if (q >= Q) return;
 
     const int warps_per_block = blockDim.x >> 5;
     const int warp = threadIdx.x >> 5;
     const int lane = threadIdx.x & 31;
-    const int words_group = blockIdx.x;
-    const int word_idx = words_group * warps_per_block + warp;
-    if (word_idx >= words_per_slice) return;
 
     const T* in_q = input + static_cast<int64_t>(q) * d;
-    unsigned long long* out_q =
+    bsi_word_t* out_q =
         out + (static_cast<size_t>(q) * static_cast<size_t>(slices) * static_cast<size_t>(words_per_slice));
 
     const long long qmax = (static_cast<long long>(1) << (fixed_bits - 1)) - 1LL;
     const long long qmin = -(static_cast<long long>(1) << (fixed_bits - 1));
     const int shift_base = q * chunks;
 
-    const int64_t row0 = static_cast<int64_t>(word_idx) * 64LL + static_cast<int64_t>(lane);
-    const int64_t row1 = row0 + 32LL;
+#if BSI_WORD_BITS >= 32
+    const int word_idx = blockIdx.x * warps_per_block + warp;
+    if (word_idx >= words_per_slice) return;
 
-    unsigned long long v0 = 0ULL;
-    unsigned long long v1 = 0ULL;
-    if (row0 < d) {
-        const int chunk0 = static_cast<int>(row0 >> 8);
-        const int shift = shifts[shift_base + chunk0];
-        const float f = bsi_cast_to_float(in_q[row0]);
-        const long long r = bsi_round_half_away_to_ll(static_cast<double>(f) * dec_scale);
-        const unsigned long long av = bsi_uabs_ll(r);
-        const unsigned long long round_add = (shift > 0) ? (1ULL << (shift - 1)) : 0ULL;
-        const unsigned long long uq = (av + round_add) >> shift;
-        long long qv = (r < 0) ? -static_cast<long long>(uq) : static_cast<long long>(uq);
-        if (qv < qmin) qv = qmin;
-        if (qv > qmax) qv = qmax;
-        v0 = static_cast<unsigned long long>(qv) & value_mask;
-    }
-    if (row1 < d) {
-        const int chunk1 = static_cast<int>(row1 >> 8);
-        const int shift = shifts[shift_base + chunk1];
-        const float f = bsi_cast_to_float(in_q[row1]);
-        const long long r = bsi_round_half_away_to_ll(static_cast<double>(f) * dec_scale);
-        const unsigned long long av = bsi_uabs_ll(r);
-        const unsigned long long round_add = (shift > 0) ? (1ULL << (shift - 1)) : 0ULL;
-        const unsigned long long uq = (av + round_add) >> shift;
-        long long qv = (r < 0) ? -static_cast<long long>(uq) : static_cast<long long>(uq);
-        if (qv < qmin) qv = qmin;
-        if (qv > qmax) qv = qmax;
-        v1 = static_cast<unsigned long long>(qv) & value_mask;
+    // Quantize kBsiBallotsPerWord groups of 32 rows (each with per-chunk shift)
+    unsigned long long v[kBsiBallotsPerWord];
+    #pragma unroll
+    for (int b = 0; b < kBsiBallotsPerWord; ++b) {
+        v[b] = 0ULL;
+        const int64_t row = static_cast<int64_t>(word_idx) * static_cast<int64_t>(kBsiWordBits)
+                          + static_cast<int64_t>(b * 32 + lane);
+        if (row < d) {
+            v[b] = bsi_quant_one_chunk(bsi_cast_to_float(in_q[row]), dec_scale,
+                                       shifts, shift_base, row, chunks,
+                                       qmin, qmax, value_mask);
+        }
     }
 
     for (int slice = 0; slice < slices; ++slice) {
-        const bool b0 = ((v0 >> slice) & 1ULL) != 0ULL;
-        const bool b1 = ((v1 >> slice) & 1ULL) != 0ULL;
+  #if BSI_WORD_BITS == 32
+        const bool bit = ((v[0] >> slice) & 1ULL) != 0ULL;
+        const unsigned ballot = __ballot_sync(0xffffffff, bit);
+        if (lane == 0) {
+            out_q[static_cast<size_t>(slice) * static_cast<size_t>(words_per_slice) +
+                  static_cast<size_t>(word_idx)] = static_cast<bsi_word_t>(ballot);
+        }
+  #elif BSI_WORD_BITS == 64
+        const bool b0 = ((v[0] >> slice) & 1ULL) != 0ULL;
+        const bool b1 = ((v[1] >> slice) & 1ULL) != 0ULL;
         const unsigned lo = __ballot_sync(0xffffffff, b0);
         const unsigned hi = __ballot_sync(0xffffffff, b1);
         if (lane == 0) {
             out_q[static_cast<size_t>(slice) * static_cast<size_t>(words_per_slice) +
                   static_cast<size_t>(word_idx)] =
-                static_cast<unsigned long long>(lo) | (static_cast<unsigned long long>(hi) << 32);
+                static_cast<bsi_word_t>(lo) | (static_cast<bsi_word_t>(hi) << 32);
+        }
+  #else // 128 or 256
+        bsi_word_t word;
+        #pragma unroll
+        for (int p = 0; p < kBsiWordParts; ++p) {
+            const bool b0 = ((v[p * 2] >> slice) & 1ULL) != 0ULL;
+            const bool b1 = ((v[p * 2 + 1] >> slice) & 1ULL) != 0ULL;
+            const unsigned lo = __ballot_sync(0xffffffff, b0);
+            const unsigned hi = __ballot_sync(0xffffffff, b1);
+            word.parts[p] = static_cast<uint64_t>(lo) | (static_cast<uint64_t>(hi) << 32);
+        }
+        if (lane == 0) {
+            out_q[static_cast<size_t>(slice) * static_cast<size_t>(words_per_slice) +
+                  static_cast<size_t>(word_idx)] = word;
+        }
+  #endif
+    }
+
+#else // BSI_WORD_BITS < 32 (8 or 16)
+    const int group_idx = blockIdx.x * warps_per_block + warp;
+    const int first_word = group_idx * kBsiWordsPerBallot;
+    if (first_word >= words_per_slice) return;
+
+    const int64_t row = static_cast<int64_t>(group_idx) * 32LL + static_cast<int64_t>(lane);
+    unsigned long long qval = 0ULL;
+    if (row < d) {
+        qval = bsi_quant_one_chunk(bsi_cast_to_float(in_q[row]), dec_scale,
+                                   shifts, shift_base, row, chunks,
+                                   qmin, qmax, value_mask);
+    }
+
+    for (int slice = 0; slice < slices; ++slice) {
+        const bool bit = ((qval >> slice) & 1ULL) != 0ULL;
+        const unsigned ballot = __ballot_sync(0xffffffff, bit);
+        if (lane == 0) {
+            #pragma unroll
+            for (int s = 0; s < kBsiWordsPerBallot; ++s) {
+                const int wi = first_word + s;
+                if (wi < words_per_slice) {
+                    out_q[static_cast<size_t>(slice) * static_cast<size_t>(words_per_slice) +
+                          static_cast<size_t>(wi)] = bsi_quant_extract_subword(ballot, s);
+                }
+            }
         }
     }
+#endif
 }
 
 extern "C" void launch_compute_row_shift_scale_from_input(
@@ -567,12 +695,19 @@ extern "C" void launch_quantize_shift_pack_row_batch(
     double dec_scale,
     int fixed_bits,
     const int* shifts,
-    unsigned long long* out,
+    bsi_word_t* out,
     cudaStream_t stream) {
     if (Q <= 0 || d <= 0 || slices <= 0 || words_per_slice <= 0) return;
     const int warps_per_block = 8;
     dim3 block(warps_per_block * 32);
+
+#if BSI_WORD_BITS >= 32
     dim3 grid((words_per_slice + warps_per_block - 1) / warps_per_block, 1, static_cast<unsigned>(Q));
+#else
+    int groups = (words_per_slice + kBsiWordsPerBallot - 1) / kBsiWordsPerBallot;
+    dim3 grid((groups + warps_per_block - 1) / warps_per_block, 1, static_cast<unsigned>(Q));
+#endif
+
     switch (input_dtype) {
         case 0:
             quantize_shift_pack_row_batch_oneshot_kernel<float><<<grid, block, 0, stream>>>(
@@ -605,12 +740,19 @@ extern "C" void launch_quantize_shift_pack_chunk_batch(
     double dec_scale,
     int fixed_bits,
     const int* shifts,
-    unsigned long long* out,
+    bsi_word_t* out,
     cudaStream_t stream) {
     if (Q <= 0 || d <= 0 || chunks <= 0 || slices <= 0 || words_per_slice <= 0) return;
     const int warps_per_block = 8;
     dim3 block(warps_per_block * 32);
+
+#if BSI_WORD_BITS >= 32
     dim3 grid((words_per_slice + warps_per_block - 1) / warps_per_block, 1, static_cast<unsigned>(Q));
+#else
+    int groups = (words_per_slice + kBsiWordsPerBallot - 1) / kBsiWordsPerBallot;
+    dim3 grid((groups + warps_per_block - 1) / warps_per_block, 1, static_cast<unsigned>(Q));
+#endif
+
     switch (input_dtype) {
         case 0:
             quantize_shift_pack_chunk_batch_oneshot_kernel<float><<<grid, block, 0, stream>>>(
