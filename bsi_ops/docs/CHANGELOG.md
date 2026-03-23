@@ -304,3 +304,113 @@ the word container size. The BMMA kernel sees identical data in both cases.
 - `dot_ms` identical across word sizes (BMMA kernel processes same bits)
 - `build_p_ms` (pack time) slightly higher for 32-bit (2× more words to pack)
 - Accuracy bitwise identical (same quantization, same bits, different containers)
+
+---
+
+## 6. Composite Type Support (128/256-bit Words)
+
+### 6.1 Problem: bsiCPP Library Requires Native Scalar Types
+
+The `BsiVector<U>`, `BsiSigned<U>`, and `HybridBitmap<U>` templates from the bsiCPP
+library use native integer operations (`<<`, `>>`, `|`, `&`, `~`, comparisons) on the
+word type `U`. For 128/256-bit words, `bsi_word_t` is a struct (`uint64_t parts[N]`)
+which doesn't support these operators on the CPU side.
+
+### 6.2 Solution: `bsi_cpu_word_t` Bridge Type
+
+**`bsi_word_config.h`** defines:
+```cpp
+#if BSI_WORD_BITS <= 64
+  using bsi_cpu_word_t = bsi_word_t;   // same as the GPU type
+#else
+  using bsi_cpu_word_t = uint64_t;     // CPU always uses uint64 for bsiCPP compat
+#endif
+```
+
+**Memory layout equivalence:** `bsi_word_t{uint64_t parts[N]}` is just N contiguous
+`uint64_t` values. A `std::vector<uint64_t>` from the CPU path has the same byte layout
+as a tensor of `kInt64` elements. No conversion is needed — `reinterpret_cast` works.
+
+**Words per slice difference:**
+- CPU (uint64): `W_cpu = (d + 63) / 64`
+- GPU (128-bit): `W_gpu = (d + 127) / 128`, tensor dim = `W_gpu * 2`
+
+For model dimensions aligned to `kBsiWordBits` (all standard models: 128, 256, ..., 4096),
+`W_cpu == W_gpu * kBsiWordParts`. For unaligned `d`, `make_words_tensor` zero-pads.
+
+### 6.3 Files Changed for Composite Type Support
+
+**`bsi_word_config.h`:**
+- Added `bsi_cpu_word_t` typedef
+- Added `bsi_cpu_words_per_slice()` helper
+
+**`bsi_cuda.cpp`:**
+- Added `tensor_word_ptr()` helper — bypasses PyTorch's `data_ptr<T>()` type checking
+  for composite `bsi_word_t` structs stored as `kInt64` tensors
+- Replaced 6 × `tensor_data_ptr<bsi_sword_t>(tensor)` → `tensor_word_ptr(tensor)`
+- Fixed 2 × tensor shape: `holder->W` → `bsi_torch_word_dim(holder->W)`
+- Fixed 2 × tensor dtype: `torch::kInt64` → `BSI_TORCH_WORD_DTYPE`
+- CPU fallback path: `BsiSigned<bsi_word_t>` → `BsiSigned<bsi_cpu_word_t>`
+
+**`bsi_vector_cuda.h` / `bsi_vector_cuda.cpp`:**
+- `create_bsi_vector_cuda_from_cpu()` signature: `BsiVector<bsi_word_t>&` → `BsiVector<bsi_cpu_word_t>&`
+- `make_words_tensor()` accepts `std::vector<bsi_cpu_word_t>`, handles zero-padding
+  when CPU uint64 count < GPU torch_dim (unaligned `d`)
+
+**`bsiFunctions.cpp`:**
+- All `BsiVector<bsi_word_t>` → `BsiVector<bsi_cpu_word_t>`
+- All `BsiSigned<bsi_word_t>` → `BsiSigned<bsi_cpu_word_t>`
+- All `BsiUnsigned<bsi_word_t>` → `BsiUnsigned<bsi_cpu_word_t>`
+
+### 6.4 GPU Kernels: Already Composite-Ready
+
+The CUDA kernels were designed with composite types from the start:
+
+**Pack kernels (`bsi_cuda_kernels_pack.cuh`):**
+- `bsi_pack_word()` for BSI_WORD_BITS > 64 loops over `kBsiWordParts`, doing 2 ballots
+  per uint64 part: `word.parts[p] = lo | (hi << 32)`
+
+**Quant kernels (`bsi_cuda_kernels_quant.cuh`):**
+- Same pattern: `kBsiBallotsPerWord` quantized values, assembled into parts
+
+**EWAH kernels (`bsi_cuda_kernels_ewah.cuh`):**
+- `bsi_word_is_zero()` / `bsi_word_is_ones()` check all parts
+- `bsi_rlw_encode()` / decode helpers encode into `parts[0]`
+- `bsi_popc()` sums `__popcll` across parts
+
+**Dot kernel (`bsi_cuda_kernels_dot.cuh`):**
+- Launcher does `reinterpret_cast<const unsigned long long*>(A_raw)` and
+  `W = W_words * kBsiWordBits / 64` — converts to uint64 units
+- Popcount fallback and BMMA kernels operate on uint64 chunks regardless of word type
+- No changes needed for composite types
+
+### 6.5 How to Run 128/256-bit Experiments
+
+```bash
+# Build with 128-bit words
+BSI_WORD_BITS=128 bash rebuild_local.sh
+
+# Sweep R_SWEEP values (runtime, no rebuild needed)
+for RS in 2 4 6 8; do
+  BSI_TC_R_SWEEP=$RS BSI_DOT_DEBUG=1 BSI_TC_DOT=1 BSI_TC_FIXED_INT=1 BSI_TC_CPASYNC=1 \
+    python benchmarks/benchmark_apples_to_apples_bsi.py \
+      --modes model_e2e --model_name facebook/opt-6.7b \
+      --dataset lambada --split validation --num_samples 200 \
+      --decimal_places 2 --compress_threshold 0.5 \
+      --scope all --bsi_device cuda --bsi_profile 1 --base_dtype fp16
+done
+
+# Full sweep: word sizes × R_SWEEP
+for WBITS in 32 64 128; do
+  BSI_WORD_BITS=$WBITS bash rebuild_local.sh
+  for RS in 2 4 6 8; do
+    BSI_TC_R_SWEEP=$RS BSI_DOT_DEBUG=1 BSI_TC_DOT=1 BSI_TC_FIXED_INT=1 BSI_TC_CPASYNC=1 \
+      python benchmarks/benchmark_apples_to_apples_bsi.py \
+        --modes model_e2e --model_name facebook/opt-6.7b \
+        --dataset lambada --split validation --num_samples 200 \
+        --decimal_places 2 --compress_threshold 0.5 \
+        --scope all --bsi_device cuda --bsi_profile 1 --base_dtype fp16 \
+      2>&1 | tee -a sweep_results_w${WBITS}_r${RS}.log
+  done
+done
+```

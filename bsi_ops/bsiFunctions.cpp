@@ -45,7 +45,7 @@ struct BsiSliceStats {
     }
 };
 
-BsiSliceStats compute_bsi_slice_stats(const BsiVector<bsi_word_t> &vec) {
+BsiSliceStats compute_bsi_slice_stats(const BsiVector<bsi_cpu_word_t> &vec) {
     BsiSliceStats stats;
     stats.total_slices = vec.bsi.size();
     for (const auto &slice : vec.bsi) {
@@ -132,9 +132,9 @@ RandomNumberDotProduct random_number_dot_bsi(torch::Tensor m, torch::Tensor n){
         n_v.push_back(static_cast<long>(n_a[i]));
     }
 
-    BsiSigned<bsi_word_t> bsi;
-    BsiVector<bsi_word_t>* bsi_1;
-    BsiVector<bsi_word_t>* bsi_2;
+    BsiSigned<bsi_cpu_word_t> bsi;
+    BsiVector<bsi_cpu_word_t>* bsi_1;
+    BsiVector<bsi_cpu_word_t>* bsi_2;
     bsi_1 = bsi.buildBsiVector(m_v, 1);
     bsi_1->setPartitionID(0);
     bsi_1->setFirstSliceFlag(true);
@@ -281,9 +281,9 @@ DotProductResult dot_product(torch::Tensor m, torch::Tensor n, float precision_f
 //    std::cout << "m_v size in mb: " << m_v_mb << std::endl;
 //    std::cout << "n_v size in mb: " << n_v_mb << std::endl;
 
-    BsiSigned<bsi_word_t> bsi;
-    BsiVector<bsi_word_t>* bsi_1;
-    BsiVector<bsi_word_t>* bsi_2;
+    BsiSigned<bsi_cpu_word_t> bsi;
+    BsiVector<bsi_cpu_word_t>* bsi_1;
+    BsiVector<bsi_cpu_word_t>* bsi_2;
     bsi_1 = bsi.buildBsiVector(m_v, 1);
     // std::cout << "BSI1 slices: " << bsi_1->getNumberOfSlices() << std::endl;
 //    std::cout << "----------- added bits login -----------" << std::endl;
@@ -352,9 +352,9 @@ DotProductResult dot_product_decimal(torch::Tensor m, torch::Tensor n, int decim
         n_v.push_back(n_a[i]);
     }
 
-    BsiSigned<bsi_word_t> bsi;
-    BsiVector<bsi_word_t>* bsi_1;
-    BsiVector<bsi_word_t>* bsi_2;
+    BsiSigned<bsi_cpu_word_t> bsi;
+    BsiVector<bsi_cpu_word_t>* bsi_1;
+    BsiVector<bsi_cpu_word_t>* bsi_2;
     bsi_1 = bsi.buildBsiVector(m_v, decimalPlaces, 0.2f);
     bsi_1->setPartitionID(0); 
     bsi_1->setFirstSliceFlag(true); 
@@ -439,8 +439,8 @@ pybind11::tuple batch_dot_product(torch::Tensor q, torch::Tensor K, int decimalP
     std::vector<double> q_v; q_v.reserve(d);
     for (int64_t i = 0; i < d; ++i) q_v.push_back(static_cast<double>(q_a[i]));
 
-    BsiSigned<bsi_word_t> bsi;
-    BsiVector<bsi_word_t>* bsi_q = bsi.buildBsiVector(q_v, decimalPlaces, threshold);
+    BsiSigned<bsi_cpu_word_t> bsi;
+    BsiVector<bsi_cpu_word_t>* bsi_q = bsi.buildBsiVector(q_v, decimalPlaces, threshold);
     bsi_q->setPartitionID(0); 
     bsi_q->setFirstSliceFlag(true); 
     bsi_q->setLastSliceFlag(true);
@@ -455,7 +455,7 @@ pybind11::tuple batch_dot_product(torch::Tensor q, torch::Tensor K, int decimalP
         std::vector<double> k_v; 
         k_v.reserve(d);
         for (int64_t c = 0; c < d; ++c) k_v.push_back(static_cast<double>(K_a[r][c]));
-        BsiVector<bsi_word_t>* bsi_k = bsi.buildBsiVector(k_v, decimalPlaces, threshold);
+        BsiVector<bsi_cpu_word_t>* bsi_k = bsi.buildBsiVector(k_v, decimalPlaces, threshold);
         bsi_k->setPartitionID(0); bsi_k->setFirstSliceFlag(true); bsi_k->setLastSliceFlag(true);
         if (r == 0) mem_k_first = bsi_k->getSizeInMemory();
 
@@ -478,7 +478,7 @@ pybind11::tuple batch_dot_product(torch::Tensor q, torch::Tensor K, int decimalP
 }
 
 struct PrebuiltBSIKeys {
-    std::vector<BsiVector<bsi_word_t>*> keys;
+    std::vector<BsiVector<bsi_cpu_word_t>*> keys;
     int decimalPlaces = 0;
     int64_t d = 0;
     int64_t num_keys = 0;
@@ -490,7 +490,7 @@ static PrebuiltBSIKeys* capsule_to_keys(const pybind11::capsule& cap) {
 }
 
 struct PrebuiltBSIQuery {
-    BsiVector<bsi_word_t>* vec = nullptr;
+    BsiVector<bsi_cpu_word_t>* vec = nullptr;
     int decimalPlaces = 0;
     float threshold = 0.2f;
 };
@@ -535,12 +535,12 @@ pybind11::dict tensor_slice_stats(torch::Tensor tensor, int decimalPlaces, float
         values.push_back(static_cast<double>(accessor[i]));
     }
 
-    BsiVector<bsi_word_t>* bsi_vec = nullptr;
+    BsiVector<bsi_cpu_word_t>* bsi_vec = nullptr;
     if (signed_input) {
-        BsiSigned<bsi_word_t> builder;
+        BsiSigned<bsi_cpu_word_t> builder;
         bsi_vec = builder.buildBsiVector(values, decimalPlaces, compress_threshold);
     } else {
-        BsiUnsigned<bsi_word_t> builder;
+        BsiUnsigned<bsi_cpu_word_t> builder;
         bsi_vec = builder.buildBsiVector(values, decimalPlaces, compress_threshold);
     }
 
@@ -572,7 +572,7 @@ pybind11::tuple build_bsi_keys(torch::Tensor K, int decimalPlaces, float compres
     const int64_t num_keys = K_a.size(0);
     const int64_t d = K_a.size(1);
 
-    BsiSigned<bsi_word_t> bsi;
+    BsiSigned<bsi_cpu_word_t> bsi;
 
     auto* holder = new PrebuiltBSIKeys();
     holder->decimalPlaces = decimalPlaces;
@@ -588,7 +588,7 @@ pybind11::tuple build_bsi_keys(torch::Tensor K, int decimalPlaces, float compres
         for (int64_t c = 0; c < d; ++c) {
             k_v.push_back(static_cast<double>(K_a[r][c]));
         }
-        BsiVector<bsi_word_t>* bsi_k = bsi.buildBsiVector(k_v, decimalPlaces, compress_threshold);
+        BsiVector<bsi_cpu_word_t>* bsi_k = bsi.buildBsiVector(k_v, decimalPlaces, compress_threshold);
         bsi_k->setPartitionID(0);
         bsi_k->setFirstSliceFlag(true);
         bsi_k->setLastSliceFlag(true);
@@ -626,7 +626,7 @@ pybind11::tuple build_bsi_query(torch::Tensor q, int decimalPlaces, float compre
     holder->decimalPlaces = decimalPlaces;
     holder->threshold = compress_threshold;
 
-    BsiSigned<bsi_word_t> builder;
+    BsiSigned<bsi_cpu_word_t> builder;
     holder->vec = builder.buildBsiVector(values, decimalPlaces, compress_threshold);
     TORCH_CHECK(holder->vec != nullptr, "Failed to build BSI query vector");
     holder->vec->setPartitionID(0);
@@ -665,8 +665,8 @@ pybind11::tuple batch_dot_product_prebuilt(torch::Tensor q, pybind11::capsule ke
     for (int64_t i = 0; i < d; ++i) q_v.push_back(static_cast<double>(q_a[i]));
 
     uint64_t build_ns_start = timeSinceEpoch();
-    BsiSigned<bsi_word_t> bsi;
-    BsiVector<bsi_word_t>* bsi_q = bsi.buildBsiVector(q_v, decimalPlaces, threshold_val);
+    BsiSigned<bsi_cpu_word_t> bsi;
+    BsiVector<bsi_cpu_word_t>* bsi_q = bsi.buildBsiVector(q_v, decimalPlaces, threshold_val);
     bsi_q->setPartitionID(0);
     bsi_q->setFirstSliceFlag(true);
     bsi_q->setLastSliceFlag(true);
@@ -734,10 +734,10 @@ pybind11::tuple debug_bsi_query_words(pybind11::capsule query_cap) {
     auto* query = capsule_to_query(query_cap);
     TORCH_CHECK(query != nullptr && query->vec != nullptr, "Invalid BSI query capsule");
 
-    std::vector<bsi_word_t> words;
+    std::vector<bsi_cpu_word_t> words;
     int slices = 0;
     int words_per_slice = 0;
-    bsi_flatten_words_gpu_helper<bsi_word_t>(*query->vec, words, slices, words_per_slice);
+    bsi_flatten_words_gpu_helper<bsi_cpu_word_t>(*query->vec, words, slices, words_per_slice);
 
     const int torch_wdim = bsi_torch_word_dim(words_per_slice);
     auto tensor = torch::from_blob(

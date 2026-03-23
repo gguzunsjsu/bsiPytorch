@@ -74,7 +74,7 @@ bsi_cuda_quantize_debug(const torch::Tensor& values,
                         const torch::Device& device,
                         int64_t k = 8);
 
-BsiVectorCudaData create_bsi_vector_cuda_from_cpu(const BsiVector<bsi_word_t>& src,
+BsiVectorCudaData create_bsi_vector_cuda_from_cpu(const BsiVector<bsi_cpu_word_t>& src,
                                                   const torch::Device& device,
                                                   bool verbose = false);
 

@@ -30,7 +30,11 @@ inline const T* tensor_data_ptr(const torch::Tensor& t) {
     return const_cast<const T*>(nc.data_ptr<T>());
 }
 
-inline torch::Tensor make_words_tensor(const std::vector<bsi_word_t>& words,
+// For native word types (<=64), bsi_cpu_word_t == bsi_word_t and this is direct.
+// For composite types (128/256), bsi_cpu_word_t == uint64_t: the CPU produces
+// flat uint64 arrays whose memory layout matches the kInt64 tensor storage.
+// `words_per_slice` is in bsi_word_t units (GPU granularity).
+inline torch::Tensor make_words_tensor(const std::vector<bsi_cpu_word_t>& words,
                                        int slices,
                                        int words_per_slice,
                                        const torch::Device& device) {
@@ -39,7 +43,18 @@ inline torch::Tensor make_words_tensor(const std::vector<bsi_word_t>& words,
     if (words.empty()) {
         return torch::zeros({slices, torch_dim}, options);
     }
-    return torch::from_blob(const_cast<bsi_word_t*>(words.data()),
+    // For composite types, the CPU may produce fewer uint64 elements than
+    // torch_dim (when d is not aligned to kBsiWordBits).  Create zero tensor
+    // and copy the available data.
+    const size_t cpu_total = words.size();
+    const size_t gpu_total = static_cast<size_t>(slices) * static_cast<size_t>(torch_dim);
+    if (cpu_total < gpu_total) {
+        auto t = torch::zeros({slices, torch_dim},
+                               torch::TensorOptions().dtype(BSI_TORCH_WORD_DTYPE));
+        std::memcpy(t.data_ptr(), words.data(), cpu_total * sizeof(bsi_cpu_word_t));
+        return t.to(device, /*non_blocking=*/true);
+    }
+    return torch::from_blob(const_cast<bsi_cpu_word_t*>(words.data()),
                             {slices, torch_dim},
                             torch::TensorOptions().dtype(BSI_TORCH_WORD_DTYPE))
         .clone()
@@ -1202,13 +1217,15 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& inp
     }
     return out;
 }
-BsiVectorCudaData create_bsi_vector_cuda_from_cpu(const BsiVector<bsi_word_t>& src,
+BsiVectorCudaData create_bsi_vector_cuda_from_cpu(const BsiVector<bsi_cpu_word_t>& src,
                                                   const torch::Device& device,
                                                   bool verbose) {
-    std::vector<bsi_word_t> words;
+    std::vector<bsi_cpu_word_t> words;
     int slices = 0;
-    int words_per_slice = 0;
-    bsi_flatten_words_gpu_helper<bsi_word_t>(src, words, slices, words_per_slice);
+    int cpu_wps = 0;  // words per slice in bsi_cpu_word_t units
+    bsi_flatten_words_gpu_helper<bsi_cpu_word_t>(src, words, slices, cpu_wps);
+    // Convert to GPU word granularity (same for native types, differs for composite)
+    const int words_per_slice = bsi_words_per_slice(src.getNumberOfRows());
     int offset = src.offset;
 
     BsiVectorCudaData data;

@@ -49,6 +49,24 @@ constexpr int kBsiWordBytes = BSI_WORD_BITS / 8;
 #endif
 
 // ---------------------------------------------------------------------------
+// CPU-side word type for BsiVector/HybridBitmap templates.
+// For composite types (128/256), the bsiCPP library templates require a native
+// scalar type (operator<<, >>, |, & etc.).  CPU code uses uint64_t; the tensor
+// layout is identical because bsi_word_t{parts[N]} is just N contiguous uint64.
+// ---------------------------------------------------------------------------
+#if BSI_WORD_BITS <= 64
+  using bsi_cpu_word_t = bsi_word_t;
+#else
+  using bsi_cpu_word_t = uint64_t;
+#endif
+
+// CPU-side words per slice (always uses 64-bit granularity for composite types).
+inline constexpr int bsi_cpu_words_per_slice(int64_t d) {
+    constexpr int cpu_bits = (kBsiWordBits <= 64) ? kBsiWordBits : 64;
+    return (d > 0) ? static_cast<int>((d + cpu_bits - 1) / cpu_bits) : 1;
+}
+
+// ---------------------------------------------------------------------------
 // Torch dtype for word tensors
 // ---------------------------------------------------------------------------
 // For composite types (128/256), we store as kInt64 tensors with the last

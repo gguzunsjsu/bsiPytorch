@@ -67,6 +67,13 @@ inline const T* tensor_data_ptr(const torch::Tensor& t) {
     return const_cast<const T*>(nc.data_ptr<T>());
 }
 
+// Word-tensor pointer helper: bypasses PyTorch's type checking for composite
+// bsi_word_t (128/256-bit structs stored as kInt64 tensors).
+static inline const bsi_word_t* tensor_word_ptr(const torch::Tensor& t) {
+    return static_cast<const bsi_word_t*>(
+        const_cast<torch::Tensor&>(t).data_ptr());
+}
+
 static int bsi_cuda_q_tile() {
     static int cached = 0;
     if (cached > 0) return cached;
@@ -181,7 +188,7 @@ static PrebuiltBSIKeysCUDA* capsule_to_keys_cuda(const pybind11::capsule& cap) {
 }
 
 struct PrebuiltBSIQueryCUDA {
-    BsiVector<bsi_word_t>* vec = nullptr;
+    BsiVector<bsi_cpu_word_t>* vec = nullptr;
     BsiVectorCudaData device_view;
     at::Tensor dev_words;      // alias of device_view.words
     at::Tensor slice_weights;  // [S]
@@ -392,7 +399,8 @@ static pybind11::tuple build_bsi_query_cuda_hybrid(torch::Tensor q, int decimalP
     holder->device_view = build_bsi_vector_from_float_tensor_hybrid(q.detach(), decimalPlaces, compress_threshold, device, verbose);
     holder->S = holder->device_view.slices;
     holder->W = holder->device_view.words_per_slice;
-    holder->dev_words = torch::zeros({holder->S, holder->W}, torch::dtype(torch::kInt64).device(device));
+    holder->dev_words = torch::zeros({holder->S, bsi_torch_word_dim(holder->W)},
+                                     torch::dtype(BSI_TORCH_WORD_DTYPE).device(device));
     holder->slice_weights = make_slice_weights_cuda(holder->S,
                                                     holder->device_view.offset,
                                                     holder->device_view.twos_complement);
@@ -538,7 +546,7 @@ struct TempGroup {
     }
 
     for (const auto& pg : prepared) {
-        const auto* A = reinterpret_cast<const bsi_word_t*>(tensor_data_ptr<bsi_sword_t>(pg.words));
+        const auto* A = tensor_word_ptr(pg.words);
         const auto* Aw = tensor_data_ptr<float>(pg.weights);
         const float* A_chunk_scales = nullptr;
         int A_scale_stride = 0;
@@ -565,7 +573,7 @@ struct TempGroup {
         if (keys->single_group) {
             const int Sb = keys->single_sb;
             const int Rg = keys->single_rg;
-            const auto* B_words = reinterpret_cast<const bsi_word_t*>(tensor_data_ptr<bsi_sword_t>(keys->single_words));
+            const auto* B_words = tensor_word_ptr(keys->single_words);
             const auto* Bw_ptr = tensor_data_ptr<float>(keys->single_weights);
             const long long* r_idx_ptr = nullptr;
             if (!keys->single_indices_identity) {
@@ -599,7 +607,7 @@ struct TempGroup {
 
                 const auto& words = keys->grouped_words.at(Sb);
                 const auto& Bw_stacked = keys->grouped_weights.at(Sb);
-                const auto* B_words = reinterpret_cast<const bsi_word_t*>(tensor_data_ptr<bsi_sword_t>(words));
+                const auto* B_words = tensor_word_ptr(words);
                 const auto* Bw_ptr = tensor_data_ptr<float>(Bw_stacked);
                 const bool identity_r = (keys->grouped_indices_identity.count(Sb) > 0)
                     ? keys->grouped_indices_identity.at(Sb)
@@ -725,14 +733,14 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
         cudaEventRecord(start_evt, stream.stream());
     }
 
-    const auto* A = reinterpret_cast<const bsi_word_t*>(tensor_data_ptr<bsi_sword_t>(qb->words));
+    const auto* A = tensor_word_ptr(qb->words);
     const auto* Aw = tensor_data_ptr<float>(qb->slice_weights);
     const long long* indices_q = nullptr; // identity mapping in packed batch mode
 
     if (keys->single_group) {
         const int Sb = keys->single_sb;
         const int Rg = keys->single_rg;
-        const auto* B_words = reinterpret_cast<const bsi_word_t*>(tensor_data_ptr<bsi_sword_t>(keys->single_words));
+        const auto* B_words = tensor_word_ptr(keys->single_words);
         const auto* Bw_ptr = tensor_data_ptr<float>(keys->single_weights);
         const long long* r_idx_ptr = nullptr;
         if (!keys->single_indices_identity) {
@@ -766,7 +774,7 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
 
             const auto& words = keys->grouped_words.at(Sb);
             const auto& Bw_stacked = keys->grouped_weights.at(Sb);
-            const auto* B_words = reinterpret_cast<const bsi_word_t*>(tensor_data_ptr<bsi_sword_t>(words));
+            const auto* B_words = tensor_word_ptr(words);
             const auto* Bw_ptr = tensor_data_ptr<float>(Bw_stacked);
             const bool identity_r = (keys->grouped_indices_identity.count(Sb) > 0)
                 ? keys->grouped_indices_identity.at(Sb)
@@ -927,9 +935,9 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
     {
         std::vector<double> tmp_row; tmp_row.reserve(d);
         for (int64_t c=0;c<d;++c) tmp_row.push_back(static_cast<double>(Kd[c]));
-        BsiSigned<bsi_word_t> b; BsiVector<bsi_word_t>* t = b.buildBsiVector(tmp_row, decimalPlaces, compress_threshold);
-        int S0, W0; std::vector<bsi_word_t> tmp_words; bsi_flatten_words_gpu_helper(*t, tmp_words, S0, W0);
-        holder->W = W0; delete t;
+        BsiSigned<bsi_cpu_word_t> b; BsiVector<bsi_cpu_word_t>* t = b.buildBsiVector(tmp_row, decimalPlaces, compress_threshold);
+        int S0, W0; std::vector<bsi_cpu_word_t> tmp_words; bsi_flatten_words_gpu_helper(*t, tmp_words, S0, W0);
+        holder->W = bsi_words_per_slice(d); delete t;
     }
 
     holder->dev_words.clear(); holder->dev_words.reserve(num_keys);
@@ -941,8 +949,8 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
             std::vector<double> kv; kv.reserve(d);
             const float* rowp = Kd + r * d;
             for (int64_t c=0;c<d;++c) kv.push_back(static_cast<double>(rowp[c]));
-            BsiSigned<bsi_word_t> b;
-            BsiVector<bsi_word_t>* bsi_k = b.buildBsiVector(kv, decimalPlaces, compress_threshold);
+            BsiSigned<bsi_cpu_word_t> b;
+            BsiVector<bsi_cpu_word_t>* bsi_k = b.buildBsiVector(kv, decimalPlaces, compress_threshold);
             bsi_k->setPartitionID(0); bsi_k->setFirstSliceFlag(true); bsi_k->setLastSliceFlag(true);
             auto device = torch::Device(torch::kCUDA, c10::cuda::current_device());
             auto dev_view = create_bsi_vector_cuda_from_cpu(*bsi_k, device, bsi_cuda_should_log());
@@ -962,7 +970,8 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
         for (int64_t r=0; r<num_keys; ++r) groups[ holder->metas[r].S ].push_back(r);
         for (auto& kv : groups) {
             int Sb = kv.first; const auto& idxs = kv.second; int R = static_cast<int>(idxs.size());
-            auto gw = torch::zeros({R, Sb, holder->W}, torch::TensorOptions().dtype(torch::kInt64).device(torch::kCUDA));
+            auto gw = torch::zeros({R, Sb, bsi_torch_word_dim(holder->W)},
+                                   torch::TensorOptions().dtype(BSI_TORCH_WORD_DTYPE).device(torch::kCUDA));
             auto gwt = torch::zeros({R, Sb}, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
             for (int i=0; i<R; ++i) {
                 int64_t r = idxs[i];
