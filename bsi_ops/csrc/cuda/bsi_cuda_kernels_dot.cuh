@@ -2752,11 +2752,13 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
 	                const long long work = (long long)chunks * 7ll * 6ll;
 	                fprintf(
 	                    stderr,
-	                    "[BSI_DOT] tc_fixed_int=1 tm=%d cpasync=1 Sa=7 Sb=6 Q=%d R=%d W64=%d chunks=%d work=%lld rsweep=%d rtail=%d tma=%d\n",
+	                    "[BSI_DOT] tc_fixed_int=1 tm=%d cpasync=1 Sa=7 Sb=6 Q=%d R=%d W64=%d W_words=%d word_bits=%d chunks=%d work=%lld rsweep=%d rtail=%d tma=%d\n",
 	                    tm,
 	                    Q,
 	                    R,
 	                    W,
+	                    W_words,
+	                    kBsiWordBits,
 	                    chunks,
 	                    work,
 	                    r_sweep,
