@@ -1,0 +1,119 @@
+\section{Glossary of Terms}\label{apx:glossary}
+\input{glossary}
+
+\section{Reproducibility Commands}\label{apx:reproducibility}
+\subsection{Cluster and Environment Setup}
+The following commands assume that execution begins from the repository root after cloning. If the cluster requires a proxy to download models or datasets, the proxy configuration must be sourced before launching Python or HuggingFace downloads. If the cluster provides an additional GPU initialization script, that script should be sourced before the CUDA environment is initialized.
+
+\begin{verbatim}
+source bsi_ops/network_connection.sh
+module load nvhpc-hpcx-cuda12/24.11
+source gpu_connection.sh
+source gpu_env_setup.sh
+\end{verbatim}
+
+\subsection{Repository Setup}
+\begin{verbatim}
+git clone https://github.com/gguzunsjsu/bsiPytorch.git
+cd bsiPytorch
+git submodule update --init --recursive
+\end{verbatim}
+
+Create and activate a Python environment with a CUDA-enabled PyTorch build that matches the target system.
+
+\subsection{Build and Rebuild}
+\begin{verbatim}
+cd bsi_ops
+bash rebuild_local.sh
+\end{verbatim}
+
+This rebuild step uninstalls any existing \texttt{bsi\_ops} installation, cleans previous build artifacts, and reinstalls the extension through \texttt{pip install . -v}. Build logs are written to \texttt{bsi\_ops/install.log}.
+
+\subsection{Stable Same-Bit Environment}
+\begin{verbatim}
+export BSI_TC_DOT=1
+export BSI_TC_FIXED_INT=1
+export BSI_TC_CPASYNC=1
+export BSI_TC_TM=32
+export BSI_FIXED_BITS_KEYS=6
+export BSI_FIXED_BITS_QUERIES=7
+export BSI_FIXED_CHUNK_SCALE=1
+export BSI_TC_R_SWEEP=4
+export BSI_TC_TMA=1
+export BSI_DOT_DEBUG=1
+\end{verbatim}
+
+The debug flag may be enabled when kernel-dispatch metadata and effective problem dimensions are required during execution.
+
+\subsection{Apples-to-Apples Benchmark Modes}
+The benchmark harness \texttt{benchmarks/benchmark\_apples\_to\_apples\_bsi.py} supports three modes. These modes are intentionally separated so that kernel behavior, single-layer behavior, and full-model behavior are not conflated during analysis.
+
+\begin{itemize}[leftmargin=2em]
+\item \texttt{kernel\_only}: builds keys and queries once and measures only the BSI dot kernel against dense \texttt{torch.matmul}
+\item \texttt{linear\_e2e}: includes per-call query construction and approximates a single BSI linear layer end to end
+\item \texttt{model\_e2e}: invokes the full LAMBADA evaluator and measures end-to-end model behavior
+\end{itemize}
+
+\subsection{Kernel-Only Commands}
+\begin{verbatim}
+python benchmarks/benchmark_apples_to_apples_bsi.py --modes kernel_only \
+  --Q 512 --R 16384 --D 4096 \
+  --decimal_places 2 --compress_threshold 0.5 \
+  --torch_dtype fp16 --bsi_profile 0 --base_dtype fp16
+
+python benchmarks/benchmark_apples_to_apples_bsi.py --modes kernel_only \
+  --Q 512 --R 50272 --D 4096 \
+  --decimal_places 2 --compress_threshold 0.5 \
+  --torch_dtype fp16 --bsi_profile 0 --base_dtype fp16
+\end{verbatim}
+
+\subsection{Single-Layer End-to-End Command}
+\begin{verbatim}
+python benchmarks/benchmark_apples_to_apples_bsi.py --modes linear_e2e \
+  --Q 512 --R 16384 --D 4096 \
+  --decimal_places 2 --compress_threshold 0.5 \
+  --torch_dtype fp16 --bsi_profile 0 --base_dtype fp16
+\end{verbatim}
+
+\subsection{CPU BERT Dot-Product Commands}
+The earlier CPU study used extracted BERT query, key, and value triplets stored in
+\texttt{extract\_tensors/Weight\_Processing/bert\_imdb\_pickle\_store/bert\_imdb45.pkl}.
+The following scripts reproduce the CPU-side dot-product study:
+
+\begin{verbatim}
+python testDotProductBert.py
+python testDotProductBert_bsi.py
+python testDotProductBert_torch.py
+\end{verbatim}
+
+\texttt{testDotProductBert.py} evaluates the one-decimal operating point, while
+\texttt{testDotProductBert\_bsi.py} evaluates the two-decimal operating point and
+\texttt{testDotProductBert\_torch.py} records the dense baseline. The result directories used in the thesis are:
+
+\begin{verbatim}
+hpcBERTTrainDataDotProduct/results/imdb_initial/torch_32/all/dc-1
+hpcBERTTrainDataDotProduct/results/imdb_initial/torch_32/all/dc-2
+\end{verbatim}
+
+These directories contain the per-layer text logs together with the corresponding timing, distribution, and error visualizations used in the CPU results section.
+
+\subsection{Model End-to-End Command}
+\begin{verbatim}
+python benchmarks/benchmark_apples_to_apples_bsi.py --modes model_e2e \
+  --model_name facebook/opt-6.7b \
+  --dataset lambada --split validation --num_samples 200 \
+  --decimal_places 2 --compress_threshold 0.5 \
+  --scope all --bsi_device cuda --bsi_profile 1 --base_dtype fp16
+\end{verbatim}
+
+\subsection{Attention-Only End-to-End Command}
+\begin{verbatim}
+python benchmarks/benchmark_apples_to_apples_bsi.py --modes model_e2e \
+  --model_name facebook/opt-6.7b \
+  --dataset lambada --split validation --num_samples 200 \
+  --decimal_places 2 --compress_threshold 0.5 \
+  --scope attention --bsi_device cuda --bsi_profile 1 --base_dtype fp16
+\end{verbatim}
+
+\subsection{Interpretation Notes}
+Use \texttt{kernel\_only} to study the pure dot kernel, \texttt{linear\_e2e} to include runtime query construction, and \texttt{model\_e2e} to evaluate full-model behavior. Use \texttt{scope=all} and \texttt{scope=attention} separately when comparing the speed and accuracy tradeoff of broad versus selective BSI replacement. The principal thesis results were collected under \texttt{decimal\_places=2}, \texttt{compress\_threshold=0.5}, \texttt{max\_seq\_len=512}, and an \texttt{fp16} dense baseline.

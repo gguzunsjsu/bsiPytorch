@@ -1,0 +1,81 @@
+\begin{description}
+    \setlength{\itemsep}{0.5cm}
+
+    \item[\textbf{Bit-Sliced Indexing (BSI)}]
+    A representation in which numeric values are decomposed into aligned bit slices so that computation can be expressed through bitwise overlap, bitmap logic, and weighted accumulation rather than through scalar arithmetic alone.
+
+    \item[\textbf{Bit-Sliced Vector (BSV)}]
+    A vector encoded as a stack of bitmap slices together with sign and existence metadata.
+
+    \item[\textbf{HybridBitmap}]
+    The bitmap container used in the CPU-side implementation. A slice may be stored either in compressed form or in verbatim form depending on its density and expected storage cost.
+
+    \item[\textbf{Existence Bitmap}]
+    A bitmap that records whether a value is present at each position in a bit-sliced vector.
+
+    \item[\textbf{Sign Bitmap}]
+    A bitmap that records whether the corresponding vector value is negative.
+
+    \item[\textbf{Chunk Scaling}]
+    A fixed-bit mechanism that rescales bit-sliced values at chunk granularity so that limited slice counts can still represent a useful numeric range.
+
+    \item[\textbf{Decimal Scaling}]
+    The preprocessing step that multiplies floating-point values by a power of ten before integer conversion so that fractional information can be retained within a fixed-slice representation.
+
+    \item[\textbf{Fixed-Bit Regime}]
+    An operating point in which the number of query slices and key slices is fixed in advance rather than chosen adaptively for each tensor.
+
+    \item[\textbf{Query Slices}]
+    The runtime bit-sliced representation of activation rows supplied to the CUDA dot kernel.
+
+    \item[\textbf{Key Slices}]
+    The static bit-sliced representation of linear-layer weights stored on device and reused across forward passes.
+
+    \item[\textbf{Query, Key, and Value Tensors}]
+    The three linear projections used by transformer attention. Queries and keys determine the attention score matrix, while values are combined according to the normalized attention weights.
+
+    \item[\textbf{Attention Score Matrix}]
+    The matrix \(QK^{T}/\sqrt{d_k}\), optionally combined with a mask before the softmax, that determines how strongly each token attends to every other token.
+
+    \item[\textbf{Multi-Head Attention}]
+    A transformer mechanism that splits attention into multiple heads, applies attention independently in each head, concatenates the results, and applies an output projection.
+
+    \item[\textbf{Feed-Forward Network (FFN)}]
+    The position-wise two-layer projection block in a transformer, typically consisting of an expansion projection, a nonlinearity, and a contraction projection.
+
+    \item[\textbf{Slice Pair}]
+    A pair consisting of one query slice and one key slice. In the same-bit dot kernel, each slice pair contributes a weighted overlap count to the final output.
+
+    \item[\textbf{Weighted Popcount}]
+    The accumulation rule used in BSI dot product, where overlap counts between slices are multiplied by slice-dependent significance weights before accumulation.
+
+    \item[\textbf{Scope = all}]
+    The policy that replaces all eligible transformer linear layers, except the language-model head, with BSI-based linear operators.
+
+    \item[\textbf{Scope = attention}]
+    The policy that replaces only the attention-related linear projections and leaves feed-forward layers dense.
+
+    \item[\textbf{Scope = mlp}]
+    The policy that replaces only the feed-forward expansion and contraction layers while leaving attention projections dense.
+
+    \item[\textbf{LAMBADA}]
+    A next-token benchmark in which the target token depends on broad discourse context. It is used here for end-to-end evaluation of autoregressive model quality.
+
+    \item[\textbf{SmoothQuant}]
+    A dense post-training quantization method that redistributes activation outliers into the weights to enable efficient W8A8 inference.
+
+    \item[\textbf{Tensor Core}]
+    Specialized GPU execution hardware used for matrix-style operations. In this work, the kernels use tensor-core-oriented Boolean accumulation rather than dense FP16 GEMM.
+
+    \item[\textbf{Tensor Memory Accelerator (TMA)}]
+    Hopper hardware support for efficient multidimensional tensor movement between global and shared memory.
+
+    \item[\textbf{PTQ}]
+    Post-training quantization, in which model parameters are quantized after training without retraining the full model.
+
+    \item[\textbf{Eligible Warp}]
+    A warp that is ready to issue work on a scheduler cycle. Low eligible-warp count indicates scheduling and dependency inefficiency inside the kernel.
+
+    \item[\textbf{Same-Bit Configuration}]
+    The stable fixed-slice operating point used in the thesis, centered on seven query slices, six key slices, chunk scaling, and tensor-core-oriented dot kernels.
+\end{description}
