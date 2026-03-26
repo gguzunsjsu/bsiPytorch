@@ -1,14 +1,14 @@
 \begin{description}
     \setlength{\itemsep}{0.5cm}
 
-    \item[\textbf{Bit-Sliced Indexing (BSI)}]
-    A representation in which numeric values are decomposed into aligned bit slices so that computation can be expressed through bitwise overlap, bitmap logic, and weighted accumulation rather than through scalar arithmetic alone.
-
     \item[\textbf{Bit-Sliced Vector (BSV)}]
-    A vector encoded as a stack of bitmap slices together with sign and existence metadata.
+    A vector encoded as a stack of aligned bitmap slices together with sign and existence metadata. This is the primary term used throughout the thesis for the tensor representation applied to model weights and activations.
 
-    \item[\textbf{HybridBitmap}]
-    The bitmap container used in the CPU-side implementation. A slice may be stored either in compressed form or in verbatim form depending on its density and expected storage cost.
+    \item[\textbf{Bit-Sliced Indexing (BSI)}]
+    The historical database term from which the present vector representation is derived. The thesis retains this term only when discussing the originating literature.
+
+    \item[\textbf{Hybrid Bitmap}]
+    A bitmap storage strategy in which a slice may be kept either in compressed form or in verbatim form depending on its density and expected storage cost.
 
     \item[\textbf{Existence Bitmap}]
     A bitmap that records whether a value is present at each position in a bit-sliced vector.
@@ -16,13 +16,16 @@
     \item[\textbf{Sign Bitmap}]
     A bitmap that records whether the corresponding vector value is negative.
 
-    \item[\textbf{Chunk Scaling}]
-    A fixed-bit mechanism that rescales bit-sliced values at chunk granularity so that limited slice counts can still represent a useful numeric range.
+    \item[\textbf{Chunk-Local Rescaling}]
+    A fixed-bit mechanism that rescales bit-sliced values at chunk granularity so that limited bit budgets can still represent a useful numeric range.
 
-    \item[\textbf{Decimal Scaling}]
-    The preprocessing step that multiplies floating-point values by a power of ten before integer conversion so that fractional information can be retained within a fixed-slice representation.
+    \item[\textbf{Bit Budget}]
+    The number of magnitude slices used to encode a value. In the present work the main GPU operating point uses a 7-bit query budget and a 6-bit key budget, while the earlier CPU study is described through 6-bit and 9-bit operating points.
 
-    \item[\textbf{Fixed-Bit Regime}]
+    \item[\textbf{Fixed-Point Mapping}]
+    The preprocessing step that maps floating-point values into integers before bit slicing. The software implementation exposes this through decimal-shift parameters, but the thesis reports the resulting bit budget because it determines both storage cost and arithmetic cost.
+
+    \item[\textbf{Fixed Bit-Budget Regime}]
     An operating point in which the number of query slices and key slices is fixed in advance rather than chosen adaptively for each tensor.
 
     \item[\textbf{Query Slices}]
@@ -44,13 +47,13 @@
     The position-wise two-layer projection block in a transformer, typically consisting of an expansion projection, a nonlinearity, and a contraction projection.
 
     \item[\textbf{Slice Pair}]
-    A pair consisting of one query slice and one key slice. In the same-bit dot kernel, each slice pair contributes a weighted overlap count to the final output.
+    A pair consisting of one query slice and one key slice. In the fixed-budget dot kernel, each slice pair contributes a weighted overlap count to the final output.
 
     \item[\textbf{Weighted Popcount}]
-    The accumulation rule used in BSI dot product, where overlap counts between slices are multiplied by slice-dependent significance weights before accumulation.
+    The accumulation rule used in BSV dot product, where overlap counts between slices are multiplied by slice-dependent significance weights before accumulation.
 
     \item[\textbf{Scope = all}]
-    The policy that replaces all eligible transformer linear layers, except the language-model head, with BSI-based linear operators.
+    The policy that replaces all eligible transformer linear layers, except the language-model head, with BSV-based linear operators.
 
     \item[\textbf{Scope = attention}]
     The policy that replaces only the attention-related linear projections and leaves feed-forward layers dense.
@@ -73,9 +76,6 @@
     \item[\textbf{PTQ}]
     Post-training quantization, in which model parameters are quantized after training without retraining the full model.
 
-    \item[\textbf{Eligible Warp}]
-    A warp that is ready to issue work on a scheduler cycle. Low eligible-warp count indicates scheduling and dependency inefficiency inside the kernel.
-
-    \item[\textbf{Same-Bit Configuration}]
-    The stable fixed-slice operating point used in the thesis, centered on seven query slices, six key slices, chunk scaling, and tensor-core-oriented dot kernels.
+    \item[\textbf{Fixed Bit-Budget Baseline}]
+    The stable fixed bit-budget operating point used in the thesis, centered on a 7-bit query budget, a 6-bit key budget, chunk-local rescaling, and tensor-core-oriented dot kernels.
 \end{description}

@@ -12,11 +12,15 @@
 \usepackage{amsmath, amsthm, amsfonts, amssymb, amsxtra, amsopn}
 \usepackage{mathptmx}
 \usepackage{float}
+\usepackage{tikz}
+\usetikzlibrary{positioning,fit,arrows.meta,calc}
+\usepackage{pdflscape}
 \usepackage{tabularx, booktabs, longtable, makecell}
 \usepackage{xcolor, colortbl}
 \usepackage{cmap}
 \usepackage{textcomp}
 \usepackage{listings}
+\lstset{basicstyle=\ttfamily\footnotesize,breaklines=true,breakatwhitespace=false,breakindent=0pt,columns=fullflexible,keepspaces=true,showstringspaces=false}
 \usepackage[shortcuts]{extdash}
 \usepackage{gensymb}
 \usepackage{enumitem}
@@ -32,7 +36,7 @@
 \newcommand{\ThesisCommitteeB}{Committee Member Name, Ph.D.}
 \newcommand{\ThesisCommitteeC}{Committee Member Name, Ph.D.}
 
-\title{BSI-Native Tensor-Core Kernels for Compressed LLM Inference}
+\title{BSV-Native Tensor-Core Kernels for Compressed LLM Inference}
 \author{Poorna Ravuri}
 
 \committee{\ThesisAdvisor}{Department of Computer Engineering}
