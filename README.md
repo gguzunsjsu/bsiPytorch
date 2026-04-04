@@ -53,36 +53,85 @@ Notes:
 - This uninstalls any existing `bsi_ops`, cleans build artifacts, and reinstalls via `pip install . -v`.
 - Build logs are written to `bsi_ops/install.log`.
 
-## 3) End-to-End LLM Benchmark (BSI in OPT Linear Layers)
-
-Run LAMBADA next-token eval + timing breakdown (examples):
+## 3) Stable Branch Quickstart (Build + Env + Benchmarks)
 
 > NOTE: The commands in sections 3-6 assume you are running from the `bsi_ops/` directory (i.e., `cd bsi_ops`).
 
+Rebuild the extension:
+
 ```bash
-# OPT-125M
-BSI_TC_DOT=1 BSI_Q_TILE=8 BSI_R_TILE=4 \
-  python benchmarks/benchmark_performance_bsi.py \
+cd bsi_ops
+bash rebuild_local.sh
+```
+
+Set the validated env for the stable SM90 fixed76 branch:
+
+```bash
+export BSI_TC_DOT=1
+export BSI_TC_FIXED_INT=1
+export BSI_TC_CPASYNC=1
+export BSI_FIXED_BITS_KEYS=6
+export BSI_FIXED_BITS_QUERIES=7
+export BSI_FIXED_CHUNK_SCALE=1
+export BSI_TC_R_SWEEP=4
+export BSI_PROFILE=1
+export BSI_DOT_DEBUG=1
+unset BSI_TC_TM
+unset BSI_TC_X_REPEAT
+```
+
+Kernel sanity sweep for the stable fixed76 path:
+
+```bash
+for TMA in 0 1 2; do
+  export BSI_TC_TMA=$TMA
+  for R in 4096 16384 50272 16512 16416; do
+    python benchmarks/benchmark_apples_to_apples_bsi.py \
+      --modes kernel_only \
+      --Q 512 --R $R --D 4096 \
+      --decimal_places 2 --compress_threshold 0.5 \
+      --torch_dtype fp16 --bsi_profile 0 --base_dtype fp16
+  done
+done
+```
+
+Model validation for the stable branch:
+
+```bash
+export BSI_TC_TMA=0
+python benchmarks/benchmark_apples_to_apples_bsi.py \
+  --modes model_e2e \
+  --model_name facebook/opt-125m \
+  --dataset lambada --split validation --num_samples 200 \
+  --decimal_places 2 --compress_threshold 0.5 \
+  --scope all --bsi_device cuda --bsi_profile 1 --base_dtype fp16
+```
+
+```bash
+for TMA in 1 2; do
+  export BSI_TC_TMA=$TMA
+
+  python benchmarks/benchmark_apples_to_apples_bsi.py \
+    --modes model_e2e \
     --model_name facebook/opt-125m \
-    --datasets lambada --split validation --num_samples 200 \
+    --dataset lambada --split validation --num_samples 200 \
     --decimal_places 2 --compress_threshold 0.5 \
-    --scope all --bsi_device cuda
+    --scope all --bsi_device cuda --bsi_profile 1 --base_dtype fp16
 
-# OPT-1.3B
-BSI_TC_DOT=1 BSI_Q_TILE=8 BSI_R_TILE=4 \
-  python benchmarks/benchmark_performance_bsi.py \
+  python benchmarks/benchmark_apples_to_apples_bsi.py \
+    --modes model_e2e \
     --model_name facebook/opt-1.3b \
-    --datasets lambada --split validation --num_samples 200 \
+    --dataset lambada --split validation --num_samples 200 \
     --decimal_places 2 --compress_threshold 0.5 \
-    --scope all --bsi_device cuda
+    --scope all --bsi_device cuda --bsi_profile 1 --base_dtype fp16
 
-# OPT-6.7B
-BSI_TC_DOT=1 BSI_Q_TILE=8 BSI_R_TILE=4 \
-  python benchmarks/benchmark_performance_bsi.py \
+  python benchmarks/benchmark_apples_to_apples_bsi.py \
+    --modes model_e2e \
     --model_name facebook/opt-6.7b \
-    --datasets lambada --split validation --num_samples 200 \
+    --dataset lambada --split validation --num_samples 200 \
     --decimal_places 2 --compress_threshold 0.5 \
-    --scope all --bsi_device cuda
+    --scope all --bsi_device cuda --bsi_profile 1 --base_dtype fp16
+done
 ```
 
 ### Stable SM90 fixed76 dot path (baseline)
