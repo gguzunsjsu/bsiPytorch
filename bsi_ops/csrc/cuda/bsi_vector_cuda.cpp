@@ -208,6 +208,14 @@ extern "C" void launch_quantize_shift_pack_chunk_batch(
     unsigned long long* out,
     cudaStream_t stream);
 
+extern "C" void launch_reorder_query_words_tc_fixed76(
+    const unsigned long long* src,
+    int64_t Q,
+    int slices,
+    int words_per_slice,
+    unsigned long long* dst,
+    cudaStream_t stream);
+
 extern "C" void launch_slice_popcount_sum(
     const unsigned long long* words,
     int S,
@@ -249,6 +257,60 @@ bool bsi_cuda_should_log() {
         return flag != nullptr;
     }();
     return cached;
+}
+
+static bool bsi_cuda_sm90_or_newer_local() {
+    static int cached = -1;
+    if (cached >= 0) return cached != 0;
+    int dev = 0;
+    cudaGetDevice(&dev);
+    int major = 0;
+    cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, dev);
+    cached = (major >= 9) ? 1 : 0;
+    return cached != 0;
+}
+
+static bool bsi_cuda_should_build_words_tc_fixed76(const torch::Tensor& input,
+                                                   bool for_keys,
+                                                   int fixed_bits,
+                                                   bool chunk_scale,
+                                                   bool build_tc_fixed76_packed,
+                                                   int64_t Q,
+                                                   int words_per_slice) {
+    if (!build_tc_fixed76_packed || for_keys) return false;
+    if (fixed_bits != 7 || !chunk_scale) return false;
+    if (!input.is_cuda()) return false;
+    if (Q <= 0 || (Q & 31) != 0) return false;
+    if (words_per_slice <= 0 || (words_per_slice & 3) != 0) return false;
+    return bsi_cuda_sm90_or_newer_local();
+}
+
+static torch::Tensor bsi_cuda_build_words_tc_fixed76_tensor(const torch::Tensor& words,
+                                                            int slices,
+                                                            int words_per_slice,
+                                                            const torch::Device& device) {
+    TORCH_CHECK(words.defined(), "words must be defined for fixed76 packed-A reorder");
+    TORCH_CHECK(words.is_cuda(), "fixed76 packed-A reorder expects CUDA words tensor");
+    TORCH_CHECK(words.dim() == 3, "fixed76 packed-A reorder expects [Q, slices, W]");
+    TORCH_CHECK((words.size(0) & 31) == 0, "fixed76 packed-A reorder requires Q multiple of 32");
+    TORCH_CHECK((words_per_slice & 3) == 0, "fixed76 packed-A reorder requires W64 multiple of 4");
+
+    const int64_t Q = words.size(0);
+    const int64_t q_tiles = Q / 32;
+    const int chunks = words_per_slice / 4;
+    auto packed = torch::empty(
+        {q_tiles, chunks, slices, 32, 4},
+        torch::TensorOptions().dtype(torch::kInt64).device(device));
+
+    auto stream = at::cuda::getCurrentCUDAStream();
+    launch_reorder_query_words_tc_fixed76(
+        reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words)),
+        Q,
+        slices,
+        words_per_slice,
+        reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(packed)),
+        stream.stream());
+    return packed;
 }
 
 static int bsi_cuda_fixed_bits() {
@@ -972,7 +1034,8 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& inp
                                                         int decimal_places,
                                                         const torch::Device& device,
                                                         bool verbose,
-                                                        bool for_keys) {
+                                                        bool for_keys,
+                                                        bool build_tc_fixed76_packed) {
     TORCH_CHECK(input.dim() == 2, "build_bsi_queries_cuda_batch_data expects 2D tensor [Q, d]");
     const int fixed_bits = for_keys ? bsi_cuda_fixed_bits_keys() : bsi_cuda_fixed_bits_queries();
     // Optional per-256-element chunk scaling for queries (activations) in fixed-bit mode.
@@ -1040,6 +1103,11 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& inp
             } else {
                 TORCH_CHECK(scale.defined() && scale.dim() == 1, "Expected [Q] row scales");
                 out.slice_weights = (slice_weights * scale.unsqueeze(1)).contiguous();
+            }
+            if (bsi_cuda_should_build_words_tc_fixed76(
+                    input, for_keys, fixed_bits, chunk_scale, build_tc_fixed76_packed, Q_input, words_per_slice)) {
+                out.words_tc_fixed76 =
+                    bsi_cuda_build_words_tc_fixed76_tensor(out.words, slices, words_per_slice, device);
             }
 
             if (profile_cuda) {
@@ -1174,6 +1242,11 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& inp
     out.slice_weights = slice_weights.contiguous();
     if (fixed_bits > 0 && chunk_scale) {
         out.chunk_scales = q.scale.contiguous();
+    }
+    if (bsi_cuda_should_build_words_tc_fixed76(
+            input, for_keys, fixed_bits, chunk_scale, build_tc_fixed76_packed, Q, words_per_slice)) {
+        out.words_tc_fixed76 =
+            bsi_cuda_build_words_tc_fixed76_tensor(out.words, slices, words_per_slice, device);
     }
 
     if (profile_cuda) {

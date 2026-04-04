@@ -88,8 +88,9 @@ BSI_TC_DOT=1 BSI_Q_TILE=8 BSI_R_TILE=4 \
 ### Stable SM90 fixed76 dot path (baseline)
 
 On SM90/H100, the current stable baseline dot path for fixed-bit BSI (Sa=7, Sb=6) with chunk scaling is:
-- `popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_tma_tensorB` (preferred, if TMA descriptor creation succeeds)
-- Fallback: `popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4` (cp.async staging)
+- `popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_packedA_tma_tensorB` when the packed-A query layout is available and the TMA path is selected
+- `popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_tma_tensorB` for the generic query layout when TMA is selected
+- Fallback: `popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_packedA` or `popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4` (cp.async staging)
 - Tail fallback (if `R` not divisible by `32*BSI_TC_R_SWEEP`): `popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale`
 
 Recommended env vars for reproducing the fixed76 chunk-scale path:
@@ -109,6 +110,7 @@ export BSI_DOT_DEBUG=1
 ```
 
 Notes:
+- `BSI_TC_TMA=2` now uses a fixed76 auto-policy: `W64==64` and `R>=8192` for the packed-A rsweep4 path, otherwise `W64==64` and `R>=16384`.
 - `BSI_TC_TM` is not currently an active tuning knob in this code path; TM32 is hardcoded for the fixed76 Hopper kernels.
 
 ## 4) Tensor-Core Dot Correctness (TC vs Baseline)

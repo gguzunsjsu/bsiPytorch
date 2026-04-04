@@ -1555,7 +1555,43 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
 #endif
 }
 
-template <int R_SWEEP>
+template <bool PACKED_A>
+__device__ __forceinline__ const unsigned long long* bsi_fixed76_a_chunk_base_ptr(
+    const unsigned long long* __restrict__ A,
+    int q0,
+    int q_tile,
+    int chunks,
+    int W64,
+    int chunk,
+    int i,
+    int m)
+{
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900)
+    constexpr int SA = 7;
+    constexpr int TM_TOTAL = 32;
+    constexpr int K_WORDS64 = 4;
+    if constexpr (PACKED_A) {
+        return A + (((((size_t)q_tile * (size_t)chunks + (size_t)chunk) * (size_t)SA + (size_t)i) *
+                      (size_t)TM_TOTAL +
+                      (size_t)m) *
+                     (size_t)K_WORDS64);
+    }
+    const int q = q0 + m;
+    return A + (((size_t)q * (size_t)SA + (size_t)i) * (size_t)W64 +
+                (size_t)chunk * (size_t)K_WORDS64);
+#else
+    (void)q0;
+    (void)q_tile;
+    (void)chunks;
+    (void)W64;
+    (void)chunk;
+    (void)i;
+    (void)m;
+    return A;
+#endif
+}
+
+template <int R_SWEEP, bool PACKED_A>
 __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
     unsigned char* __restrict__ smem_raw,
     const unsigned long long* __restrict__ A, // [Q, 7, W64]
@@ -1591,6 +1627,7 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
     const int warp_in_tile = warp_id & (WARPS_PER_QTILE - 1);
 
     const int q0 = blockIdx.y * TM_TOTAL;
+    const int q_tile = blockIdx.y;
     const int r_base = blockIdx.x * (TN * R_SWEEP);
 
     uintptr_t p = reinterpret_cast<uintptr_t>(smem_raw);
@@ -1653,11 +1690,11 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
             t >>= 1;
             const int m = t & (TM_TOTAL - 1);
             const int i = t >> 5;
-            const int q = q0 + m;
-            const unsigned long long* a_slice = A + ((size_t)q * (size_t)SA + (size_t)i) * (size_t)W64;
+            const unsigned long long* a_chunk = bsi_fixed76_a_chunk_base_ptr<PACKED_A>(
+                A, q0, q_tile, chunks, W64, /*chunk=*/0, i, m);
             const int w64_i = w64_pair << 1;
             const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + (w64_i << 1);
-            bsi_cp_async_cg_16B(A_bits + base, &a_slice[(size_t)0 * (size_t)K_WORDS64 + (size_t)w64_i]);
+            bsi_cp_async_cg_16B(A_bits + base, &a_chunk[(size_t)w64_i]);
         }
         constexpr int B_CHUNK_ELEMS = TN * SB * K_WORDS64_16B;
 #pragma unroll
@@ -1697,13 +1734,13 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
                 t >>= 1;
                 const int m = t & (TM_TOTAL - 1);
                 const int i = t >> 5;
-                const int q = q0 + m;
-                const unsigned long long* a_slice = A + ((size_t)q * (size_t)SA + (size_t)i) * (size_t)W64;
+                const unsigned long long* a_chunk = bsi_fixed76_a_chunk_base_ptr<PACKED_A>(
+                    A, q0, q_tile, chunks, W64, next_chunk, i, m);
                 const int w64_i = w64_pair << 1;
                 const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + (w64_i << 1);
                 bsi_cp_async_cg_16B(
                     A_bits_next + base,
-                    &a_slice[(size_t)next_chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+                    &a_chunk[(size_t)w64_i]);
             }
             constexpr int B_CHUNK_ELEMS = TN * SB * K_WORDS64_16B;
 #pragma unroll
@@ -1926,7 +1963,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
     float* __restrict__ out_global)
 {
     extern __shared__ unsigned char smem_raw[];
-    bsi_fixed76_tm32_chunkscale_rsweep_body<2>(
+    bsi_fixed76_tm32_chunkscale_rsweep_body<2, false>(
         smem_raw, A, A_chunk_scales, A_scale_stride, W64, B, Bw, R, Q, scale_inv, R_total, out_global);
 }
 
@@ -1945,11 +1982,30 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
     float* __restrict__ out_global)
 {
     extern __shared__ unsigned char smem_raw[];
-    bsi_fixed76_tm32_chunkscale_rsweep_body<4>(
+    bsi_fixed76_tm32_chunkscale_rsweep_body<4, false>(
         smem_raw, A, A_chunk_scales, A_scale_stride, W64, B, Bw, R, Q, scale_inv, R_total, out_global);
 }
 
-template <int R_SWEEP>
+extern "C" __global__ __launch_bounds__(256, 2)
+void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_packedA(
+    const unsigned long long* __restrict__ A,
+    const float* __restrict__ A_chunk_scales,
+    int A_scale_stride,
+    int W64,
+    const unsigned long long* __restrict__ B,
+    const float* __restrict__ Bw,
+    int R,
+    int Q,
+    float scale_inv,
+    int R_total,
+    float* __restrict__ out_global)
+{
+    extern __shared__ unsigned char smem_raw[];
+    bsi_fixed76_tm32_chunkscale_rsweep_body<4, true>(
+        smem_raw, A, A_chunk_scales, A_scale_stride, W64, B, Bw, R, Q, scale_inv, R_total, out_global);
+}
+
+template <int R_SWEEP, bool PACKED_A>
 __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tensorB(
     unsigned char* __restrict__ smem_raw,
     const unsigned long long* __restrict__ A, // [Q, 7, W64]
@@ -1989,6 +2045,7 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
     const int warp_in_tile = warp_id & (WARPS_PER_QTILE - 1);
 
     const int q0 = blockIdx.y * TM_TOTAL;
+    const int q_tile = blockIdx.y;
     const int r_base = blockIdx.x * (TN * R_SWEEP);
     const int tile_base = blockIdx.x * R_SWEEP;
 
@@ -2099,11 +2156,11 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
             t >>= 1;
             const int m = t & (TM_TOTAL - 1);
             const int i = t >> 5;
-            const int q = q0 + m;
-            const unsigned long long* a_slice = A + ((size_t)q * (size_t)SA + (size_t)i) * (size_t)W64;
+            const unsigned long long* a_chunk = bsi_fixed76_a_chunk_base_ptr<PACKED_A>(
+                A, q0, q_tile, chunks, W64, /*chunk=*/0, i, m);
             const int w64_i = w64_pair << 1;
             const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + (w64_i << 1);
-            bsi_cp_async_cg_16B(A_bits + base, &a_slice[(size_t)0 * (size_t)K_WORDS64 + (size_t)w64_i]);
+            bsi_cp_async_cg_16B(A_bits + base, &a_chunk[(size_t)w64_i]);
         }
         bsi_cp_async_commit_group();
         prefetch_b_stage(0, 0, B_bits0);
@@ -2130,13 +2187,13 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
                 t >>= 1;
                 const int m = t & (TM_TOTAL - 1);
                 const int i = t >> 5;
-                const int q = q0 + m;
-                const unsigned long long* a_slice = A + ((size_t)q * (size_t)SA + (size_t)i) * (size_t)W64;
+                const unsigned long long* a_chunk = bsi_fixed76_a_chunk_base_ptr<PACKED_A>(
+                    A, q0, q_tile, chunks, W64, next_chunk, i, m);
                 const int w64_i = w64_pair << 1;
                 const int base = ((i * TM_TOTAL + m) * K_STRIDE32) + (w64_i << 1);
                 bsi_cp_async_cg_16B(
                     A_bits_next + base,
-                    &a_slice[(size_t)next_chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
+                    &a_chunk[(size_t)w64_i]);
             }
             bsi_cp_async_commit_group();
             prefetch_b_stage(next_stage, next_chunk, B_bits_next);
@@ -2346,7 +2403,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
     float* __restrict__ out_global)
 {
     extern __shared__ unsigned char smem_raw[];
-    bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tensorB<2>(
+    bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tensorB<2, false>(
         smem_raw, A, A_chunk_scales, A_scale_stride, W64, B, Bw, B_tensor_map, R, Q, scale_inv, R_total, out_global);
 }
 
@@ -2366,7 +2423,27 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
     float* __restrict__ out_global)
 {
     extern __shared__ unsigned char smem_raw[];
-    bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tensorB<4>(
+    bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tensorB<4, false>(
+        smem_raw, A, A_chunk_scales, A_scale_stride, W64, B, Bw, B_tensor_map, R, Q, scale_inv, R_total, out_global);
+}
+
+extern "C" __global__ __launch_bounds__(256, 2)
+void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_packedA_tma_tensorB(
+    const unsigned long long* __restrict__ A,
+    const float* __restrict__ A_chunk_scales,
+    int A_scale_stride,
+    int W64,
+    const unsigned long long* __restrict__ B,
+    const float* __restrict__ Bw,
+    const void* __restrict__ B_tensor_map,
+    int R,
+    int Q,
+    float scale_inv,
+    int R_total,
+    float* __restrict__ out_global)
+{
+    extern __shared__ unsigned char smem_raw[];
+    bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tensorB<4, true>(
         smem_raw, A, A_chunk_scales, A_scale_stride, W64, B, Bw, B_tensor_map, R, Q, scale_inv, R_total, out_global);
 }
 
@@ -2679,6 +2756,7 @@ static inline void* bsi_get_or_create_b_fixed76_rsweep_tensor_map(
 
 extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     const unsigned long long* A,
+    const unsigned long long* A_tc_fixed76,
     const float* Aw,
     const float* A_chunk_scales,
     int A_scale_stride,
@@ -2698,6 +2776,7 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     float* out_global,
     cudaStream_t stream)
 {
+    (void)A_tc_fixed76;
     // Optional SM90+ tensor-core (BMMA) path (guarded by BSI_TC_DOT).
     int use_tc = 0;
     // Chunk-scale mode requires BMMA for correctness; force the TC path when scales are provided.
@@ -2801,14 +2880,14 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                 }
 	            }
 	            static int debug_printed = 0;
-	            auto maybe_debug_print_fixed_int = [&](int tm, int r_sweep, int r_tail, int tma) {
+	            auto maybe_debug_print_fixed_int = [&](int tm, int r_sweep, int r_tail, int tma, int packed_a) {
 	                if (!debug || debug_printed) return;
 	                debug_printed = 1;
 	                const int chunks = W >> 2;
 	                const long long work = (long long)chunks * 7ll * 6ll;
 	                fprintf(
 	                    stderr,
-	                    "[BSI_DOT] tc_fixed_int=1 tm=%d cpasync=1 Sa=7 Sb=6 Q=%d R=%d W64=%d chunks=%d work=%lld rsweep=%d rtail=%d tma=%d\n",
+	                    "[BSI_DOT] tc_fixed_int=1 tm=%d cpasync=1 Sa=7 Sb=6 Q=%d R=%d W64=%d chunks=%d work=%lld rsweep=%d rtail=%d tma=%d packed_a=%d\n",
 	                    tm,
 	                    Q,
 	                    R,
@@ -2817,7 +2896,8 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
 	                    work,
 	                    r_sweep,
 	                    r_tail,
-	                    tma);
+	                    tma,
+                        packed_a);
 	            };
 
             auto try_tm32 = [&]() -> bool {
@@ -2830,11 +2910,13 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
 	                    constexpr int K_STRIDE32 = K_WORDS32 + 4;
 	                    constexpr int stages = 2;
 	                    const int r_sweep = cached_tc_r_sweep;
+                        const bool use_packed_a = (r_sweep == 4) && (A_tc_fixed76 != nullptr);
 	                    int use_tma = 0;
 	                    void* B_tensor_map = nullptr;
 #if defined(__cccl_lib_local_barrier_arrive_tx)
+	                    const int tma_auto_r_min = use_packed_a ? 8192 : 16384;
 	                    const bool want_tma = (cached_tc_tma == 1) ||
-	                        (cached_tc_tma == 2 && W == 64 && R >= 16384);
+	                        (cached_tc_tma == 2 && W == 64 && R >= tma_auto_r_min);
 	                    if (want_tma) {
 	                        B_tensor_map = bsi_tma::bsi_get_or_create_b_fixed76_rsweep_tensor_map(
 	                            B, W, R_total, r_sweep, stream);
@@ -2898,22 +2980,44 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                                 }
                             } else if (r_sweep == 4) {
                                 if (use_tma_launch) {
-                                    static size_t configured_shared_rsweep4_tma = 0;
-                                    if (shared_bytes > configured_shared_rsweep4_tma) {
-                                        cudaFuncSetAttribute(
-                                            popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_tma_tensorB,
-                                            cudaFuncAttributeMaxDynamicSharedMemorySize,
-                                            (int)shared_bytes);
-                                        configured_shared_rsweep4_tma = shared_bytes;
+                                    if (use_packed_a) {
+                                        static size_t configured_shared_rsweep4_packed_tma = 0;
+                                        if (shared_bytes > configured_shared_rsweep4_packed_tma) {
+                                            cudaFuncSetAttribute(
+                                                popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_packedA_tma_tensorB,
+                                                cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                                (int)shared_bytes);
+                                            configured_shared_rsweep4_packed_tma = shared_bytes;
+                                        }
+                                    } else {
+                                        static size_t configured_shared_rsweep4_tma = 0;
+                                        if (shared_bytes > configured_shared_rsweep4_tma) {
+                                            cudaFuncSetAttribute(
+                                                popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_tma_tensorB,
+                                                cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                                (int)shared_bytes);
+                                            configured_shared_rsweep4_tma = shared_bytes;
+                                        }
                                     }
                                 } else {
-                                    static size_t configured_shared_rsweep4 = 0;
-                                    if (shared_bytes > configured_shared_rsweep4) {
-                                        cudaFuncSetAttribute(
-                                            popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4,
-                                            cudaFuncAttributeMaxDynamicSharedMemorySize,
-                                            (int)shared_bytes);
-                                        configured_shared_rsweep4 = shared_bytes;
+                                    if (use_packed_a) {
+                                        static size_t configured_shared_rsweep4_packed = 0;
+                                        if (shared_bytes > configured_shared_rsweep4_packed) {
+                                            cudaFuncSetAttribute(
+                                                popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_packedA,
+                                                cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                                (int)shared_bytes);
+                                            configured_shared_rsweep4_packed = shared_bytes;
+                                        }
+                                    } else {
+                                        static size_t configured_shared_rsweep4 = 0;
+                                        if (shared_bytes > configured_shared_rsweep4) {
+                                            cudaFuncSetAttribute(
+                                                popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4,
+                                                cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                                (int)shared_bytes);
+                                            configured_shared_rsweep4 = shared_bytes;
+                                        }
                                     }
                                 }
                             }
@@ -2952,34 +3056,67 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                             }
                         } else {
                             if (use_tma_launch) {
-                                popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_tma_tensorB<<<
-                                    grid_fixed, block_tc, shared_bytes, stream>>>(
-                                    A,
-                                    A_chunk_scales,
-                                    A_scale_stride,
-                                    W,
-                                    B_launch,
-                                    Bw_launch,
-                                    B_tensor_map_launch,
-                                    R_launch,
-                                    Q,
-                                    scale_inv,
-                                    R_total,
-                                    out_launch);
+                                if (use_packed_a) {
+                                    popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_packedA_tma_tensorB<<<
+                                        grid_fixed, block_tc, shared_bytes, stream>>>(
+                                        A_tc_fixed76,
+                                        A_chunk_scales,
+                                        A_scale_stride,
+                                        W,
+                                        B_launch,
+                                        Bw_launch,
+                                        B_tensor_map_launch,
+                                        R_launch,
+                                        Q,
+                                        scale_inv,
+                                        R_total,
+                                        out_launch);
+                                } else {
+                                    popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_tma_tensorB<<<
+                                        grid_fixed, block_tc, shared_bytes, stream>>>(
+                                        A,
+                                        A_chunk_scales,
+                                        A_scale_stride,
+                                        W,
+                                        B_launch,
+                                        Bw_launch,
+                                        B_tensor_map_launch,
+                                        R_launch,
+                                        Q,
+                                        scale_inv,
+                                        R_total,
+                                        out_launch);
+                                }
                             } else {
-                                popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4<<<
-                                    grid_fixed, block_tc, shared_bytes, stream>>>(
-                                    A,
-                                    A_chunk_scales,
-                                    A_scale_stride,
-                                    W,
-                                    B_launch,
-                                    Bw_launch,
-                                    R_launch,
-                                    Q,
-                                    scale_inv,
-                                    R_total,
-                                    out_launch);
+                                if (use_packed_a) {
+                                    popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_packedA<<<
+                                        grid_fixed, block_tc, shared_bytes, stream>>>(
+                                        A_tc_fixed76,
+                                        A_chunk_scales,
+                                        A_scale_stride,
+                                        W,
+                                        B_launch,
+                                        Bw_launch,
+                                        R_launch,
+                                        Q,
+                                        scale_inv,
+                                        R_total,
+                                        out_launch);
+                                } else {
+                                    popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4<<<
+                                        grid_fixed, block_tc, shared_bytes, stream>>>(
+                                        A,
+                                        A_chunk_scales,
+                                        A_scale_stride,
+                                        W,
+                                        B_launch,
+                                        Bw_launch,
+                                        R_launch,
+                                        Q,
+                                        scale_inv,
+                                        R_total,
+                                        out_launch);
+                                }
                             }
                         }
                         return true;
@@ -3028,7 +3165,7 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                                 return false;
                             }
                         }
-                        maybe_debug_print_fixed_int(32, r_sweep, r_tail, use_tma);
+                        maybe_debug_print_fixed_int(32, r_sweep, r_tail, use_tma, use_packed_a ? 1 : 0);
                         return true;
                     }
 
@@ -3051,9 +3188,9 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                             scale_inv,
                             R_total,
                             out_global);
-	                        maybe_debug_print_fixed_int(32, 1, 0, 0);
-	                        return true;
-	                    }
+                        maybe_debug_print_fixed_int(32, 1, 0, 0, 0);
+                        return true;
+                    }
 	                }
 
                 int use_cpasync = use_cpasync_requested;

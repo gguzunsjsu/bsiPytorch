@@ -120,6 +120,39 @@ __global__ void quantize_round_to_int64_batch_kernel(
     out_ints[idx] = bsi_round_half_away_to_ll(scaled);
 }
 
+__global__ void reorder_query_words_tc_fixed76_kernel(
+    const unsigned long long* __restrict__ src,
+    int64_t Q,
+    int slices,
+    int words_per_slice,
+    unsigned long long* __restrict__ dst) {
+    constexpr int TM_TOTAL = 32;
+    constexpr int K_WORDS64 = 4;
+    const int64_t total = Q * static_cast<int64_t>(slices) * static_cast<int64_t>(words_per_slice);
+    const int64_t idx = static_cast<int64_t>(blockIdx.x) * static_cast<int64_t>(blockDim.x) + threadIdx.x;
+    if (idx >= total) return;
+
+    int64_t t = idx;
+    const int word_idx = static_cast<int>(t % words_per_slice);
+    t /= words_per_slice;
+    const int slice = static_cast<int>(t % slices);
+    const int64_t q = t / slices;
+
+    const int chunk = word_idx / K_WORDS64;
+    const int k64 = word_idx & (K_WORDS64 - 1);
+    const int64_t q_tile = q / TM_TOTAL;
+    const int m = static_cast<int>(q & (TM_TOTAL - 1));
+    const int chunks = words_per_slice / K_WORDS64;
+
+    const int64_t dst_idx =
+        (((((q_tile * static_cast<int64_t>(chunks) + chunk) * static_cast<int64_t>(slices) + slice) *
+           static_cast<int64_t>(TM_TOTAL)) +
+          m) *
+         static_cast<int64_t>(K_WORDS64)) +
+        k64;
+    dst[dst_idx] = src[idx];
+}
+
 template <int BLOCK_SIZE>
 __global__ void compute_row_shift_scale_kernel(
     const long long* __restrict__ ints,
@@ -633,6 +666,21 @@ extern "C" void launch_quantize_shift_pack_chunk_batch(
                 Q, d, chunks, slices, words_per_slice, value_mask, dec_scale, fixed_bits, shifts, out);
             break;
     }
+}
+
+extern "C" void launch_reorder_query_words_tc_fixed76(
+    const unsigned long long* src,
+    int64_t Q,
+    int slices,
+    int words_per_slice,
+    unsigned long long* dst,
+    cudaStream_t stream) {
+    if (src == nullptr || dst == nullptr || Q <= 0 || slices <= 0 || words_per_slice <= 0) return;
+    if ((Q & 31) != 0 || (words_per_slice & 3) != 0) return;
+    constexpr int BLOCK = 256;
+    const int64_t total = Q * static_cast<int64_t>(slices) * static_cast<int64_t>(words_per_slice);
+    const int grid = static_cast<int>((total + BLOCK - 1) / BLOCK);
+    reorder_query_words_tc_fixed76_kernel<<<grid, BLOCK, 0, stream>>>(src, Q, slices, words_per_slice, dst);
 }
 
 extern "C" void launch_quantize_round_to_int64_batch(
