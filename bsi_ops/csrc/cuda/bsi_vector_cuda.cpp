@@ -576,7 +576,6 @@ static bool bsi_cuda_build_fixed_query_words_fused(const torch::Tensor& input,
             fixed_bits,
             shifts.data_ptr<int>(),
             reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(words_out)),
-            nullptr,
             stream.stream());
         if (profile_cuda) {
             cudaEventRecord(pack_end_evt, stream.stream());
