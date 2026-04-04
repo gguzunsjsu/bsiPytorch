@@ -30,8 +30,14 @@ echo "[Env]"
 echo "  BSI_TC_POLICY=${BSI_TC_POLICY}"
 echo "  BSI_TC_TMA=${BSI_TC_TMA}"
 echo "  BSI_HOT_LAYOUT_BUDGET_PCT=${BSI_HOT_LAYOUT_BUDGET_PCT}"
+echo "  SKIP_BUILD=${SKIP_BUILD:-0}"
 
 run_rebuild() {
+  if [[ "${SKIP_BUILD:-0}" == "1" ]]; then
+    echo
+    echo "[Rebuild] skipped"
+    return
+  fi
   echo
   echo "[Rebuild]"
   bash rebuild_local.sh

@@ -3315,19 +3315,17 @@ enum class BsiSm90Fixed76Variant : int {
 };
 
 static inline BsiTcPolicy bsi_get_tc_policy_cached() {
-    static int cached = -1;
-    if (cached >= 0) return static_cast<BsiTcPolicy>(cached);
-    cached = static_cast<int>(BsiTcPolicy::Auto);
+    int value = static_cast<int>(BsiTcPolicy::Auto);
     if (const char* s = getenv("BSI_TC_POLICY")) {
         if (strcmp(s, "legacy") == 0) {
-            cached = static_cast<int>(BsiTcPolicy::Legacy);
+            value = static_cast<int>(BsiTcPolicy::Legacy);
         } else if (strcmp(s, "sm90_persistent") == 0 || strcmp(s, "sm90_aggressive") == 0) {
-            cached = static_cast<int>(BsiTcPolicy::Sm90Persistent);
+            value = static_cast<int>(BsiTcPolicy::Sm90Persistent);
         } else {
-            cached = static_cast<int>(BsiTcPolicy::Auto);
+            value = static_cast<int>(BsiTcPolicy::Auto);
         }
     }
-    return static_cast<BsiTcPolicy>(cached);
+    return static_cast<BsiTcPolicy>(value);
 }
 
 static inline BsiSm90Fixed76Variant bsi_get_tc_force_variant_cached() {

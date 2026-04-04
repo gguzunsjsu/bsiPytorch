@@ -120,17 +120,15 @@ enum class BsiTcPolicyHost : int {
 };
 
 static BsiTcPolicyHost bsi_cuda_tc_policy_host() {
-    static int cached = -1;
-    if (cached >= 0) return static_cast<BsiTcPolicyHost>(cached);
-    cached = static_cast<int>(BsiTcPolicyHost::Auto);
+    int value = static_cast<int>(BsiTcPolicyHost::Auto);
     if (const char* s = std::getenv("BSI_TC_POLICY")) {
         if (std::strcmp(s, "legacy") == 0) {
-            cached = static_cast<int>(BsiTcPolicyHost::Legacy);
+            value = static_cast<int>(BsiTcPolicyHost::Legacy);
         } else if (std::strcmp(s, "sm90_persistent") == 0 || std::strcmp(s, "sm90_aggressive") == 0) {
-            cached = static_cast<int>(BsiTcPolicyHost::Sm90Persistent);
+            value = static_cast<int>(BsiTcPolicyHost::Sm90Persistent);
         }
     }
-    return static_cast<BsiTcPolicyHost>(cached);
+    return static_cast<BsiTcPolicyHost>(value);
 }
 
 static bool bsi_cuda_sm90_or_newer_host() {
