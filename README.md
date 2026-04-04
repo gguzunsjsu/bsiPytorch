@@ -112,6 +112,14 @@ export BSI_DOT_DEBUG=1
 Notes:
 - `BSI_TC_TMA=2` now prefers TMA automatically for the packed-A fixed76 rsweep4 path whenever tensor-map creation succeeds; the generic fixed76 path still uses the `W64==64` and `R>=16384` auto threshold.
 - `BSI_TC_TM` is not currently an active tuning knob in this code path; TM32 is hardcoded for the fixed76 Hopper kernels.
+- The stable retained optimization is the packed-A query layout plus the fixed76 rsweep4 TMA path. The later packed-B experiment was rolled back and is not part of this baseline.
+
+Validated reference numbers on the stable rollback branch (`locality`, April 2026):
+- `kernel_only`, `Q=512 R=4096 D=4096`: `TMA=0` about `0.214 ms`; `TMA=1/2` about `0.177 ms`.
+- `model_e2e`, `facebook/opt-125m`: `TMA=0` `top1/top5=0.625/0.750`, `dot=2.175 ms`; `TMA=1/2` `top1/top5=0.625/0.750`, `dot=1.84-1.86 ms`.
+- `model_e2e`, `facebook/opt-1.3b`: `TMA=1/2` `top1/top5=0.670/0.785`, `dot=13.3-13.4 ms`.
+- `model_e2e`, `facebook/opt-6.7b`: `TMA=1/2` `top1/top5=0.745/0.920`, `dot=64.1-64.3 ms`.
+- Resident key storage is not duplicated in this stable baseline. The remaining extra layout is query-side packed-A staging for the packed batch path.
 
 ## 4) Tensor-Core Dot Correctness (TC vs Baseline)
 
