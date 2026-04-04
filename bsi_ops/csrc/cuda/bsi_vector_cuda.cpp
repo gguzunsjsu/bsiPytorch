@@ -191,7 +191,6 @@ extern "C" void launch_quantize_shift_pack_row_batch(
     int fixed_bits,
     const int* shifts,
     unsigned long long* out,
-    unsigned long long* out_tc_fixed76_b,
     cudaStream_t stream);
 
 extern "C" void launch_quantize_shift_pack_chunk_batch(
@@ -272,20 +271,6 @@ static bool bsi_cuda_should_build_words_tc_fixed76(const torch::Tensor& input,
                                                    int words_per_slice) {
     if (for_keys) return false;
     if (fixed_bits != 7 || !chunk_scale) return false;
-    if (!input.is_cuda()) return false;
-    if (Q <= 0 || (Q & 31) != 0) return false;
-    if (words_per_slice <= 0 || (words_per_slice & 3) != 0) return false;
-    return bsi_cuda_sm90_or_newer_local();
-}
-
-static bool bsi_cuda_should_build_words_tc_fixed76_b(const torch::Tensor& input,
-                                                     bool for_keys,
-                                                     int fixed_bits,
-                                                     bool chunk_scale,
-                                                     int64_t Q,
-                                                     int words_per_slice) {
-    if (!for_keys) return false;
-    if (fixed_bits != 6 || chunk_scale) return false;
     if (!input.is_cuda()) return false;
     if (Q <= 0 || (Q & 31) != 0) return false;
     if (words_per_slice <= 0 || (words_per_slice & 3) != 0) return false;
@@ -443,18 +428,15 @@ static bool bsi_cuda_build_fixed_query_words_fused(const torch::Tensor& input,
                                                    int decimal_places,
                                                    int fixed_bits,
                                                    bool chunk_scale,
-                                                   bool for_keys,
                                                    const torch::Device& device,
                                                    bool profile_cuda,
                                                    bool materialize_tc_fixed76,
-                                                   bool materialize_tc_fixed76_b,
                                                    torch::Tensor& words_out,
                                                    torch::Tensor& words_tc_fixed76_out,
-                                                   torch::Tensor& words_tc_fixed76_b_out,
                                                    torch::Tensor& scale_out,
                                                    float& quantize_ms,
                                                    float& pack_ms) {
-    if (fixed_bits <= 0 || device.type() != torch::kCUDA) {
+    if (fixed_bits <= 0 || !input.is_cuda()) {
         return false;
     }
     auto values = input.to(device, input.scalar_type(), /*non_blocking=*/true).contiguous();
@@ -470,10 +452,7 @@ static bool bsi_cuda_build_fixed_query_words_fused(const torch::Tensor& input,
     const int words_per_slice = (d > 0) ? static_cast<int>((d + 63) / 64) : 1;
     const bool emit_tc_fixed76 =
         materialize_tc_fixed76 && bsi_cuda_should_build_words_tc_fixed76(
-            values, for_keys, fixed_bits, chunk_scale, Q, words_per_slice);
-    const bool emit_tc_fixed76_b =
-        materialize_tc_fixed76_b && bsi_cuda_should_build_words_tc_fixed76_b(
-            values, for_keys, fixed_bits, chunk_scale, Q, words_per_slice);
+            input, /*for_keys=*/false, fixed_bits, chunk_scale, Q, words_per_slice);
     auto stream = at::cuda::getCurrentCUDAStream();
 
     words_out = torch::zeros({Q, slices, words_per_slice},
@@ -484,13 +463,6 @@ static bool bsi_cuda_build_fixed_query_words_fused(const torch::Tensor& input,
             torch::TensorOptions().dtype(torch::kInt64).device(device));
     } else {
         words_tc_fixed76_out = torch::Tensor();
-    }
-    if (emit_tc_fixed76_b) {
-        words_tc_fixed76_b_out = torch::zeros(
-            {Q / 32, words_per_slice / 4, slices, 32, 4},
-            torch::TensorOptions().dtype(torch::kInt64).device(device));
-    } else {
-        words_tc_fixed76_b_out = torch::Tensor();
     }
 
     if (Q <= 0 || d <= 0) {
@@ -604,7 +576,6 @@ static bool bsi_cuda_build_fixed_query_words_fused(const torch::Tensor& input,
             fixed_bits,
             shifts.data_ptr<int>(),
             reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(words_out)),
-            emit_tc_fixed76_b ? reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(words_tc_fixed76_b_out)) : nullptr,
             stream.stream());
         if (profile_cuda) {
             cudaEventRecord(pack_end_evt, stream.stream());
@@ -1041,8 +1012,7 @@ static BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data_impl(const torch:
                                                                     const torch::Device& device,
                                                                     bool verbose,
                                                                     bool for_keys,
-                                                                    bool materialize_tc_fixed76,
-                                                                    bool materialize_tc_fixed76_b) {
+                                                                    bool materialize_tc_fixed76) {
     TORCH_CHECK(input.dim() == 2, "build_bsi_queries_cuda_batch_data expects 2D tensor [Q, d]");
     const int fixed_bits = for_keys ? bsi_cuda_fixed_bits_keys() : bsi_cuda_fixed_bits_queries();
     // Optional per-256-element chunk scaling for queries (activations) in fixed-bit mode.
@@ -1063,16 +1033,17 @@ static BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data_impl(const torch:
         }
     }
     const bool profile = bsi_cuda_profile_enabled_local();
-    const bool profile_cuda = profile && (device.type() == torch::kCUDA);
+    const bool profile_cuda = profile && input.is_cuda();
     float quantize_ms = 0.0f;
     float pack_ms = 0.0f;
     const int64_t Q_input = input.size(0);
     const int64_t d_input = input.size(1);
 
-    // Fused fixed-bit builder: compute shifts/scales directly from input and
+    // Fused fixed-bit query builder: compute shifts/scales directly from input and
     // quantize+pack directly into bitplanes (no intermediate int64 staging tensor).
-    if (fixed_bits > 0 &&
-        device.type() == torch::kCUDA &&
+    if (!for_keys &&
+        fixed_bits > 0 &&
+        input.is_cuda() &&
         bsi_cuda_custom_quant_enabled() &&
         bsi_cuda_fused_qpack_enabled()) {
         const int offset = 0;
@@ -1081,21 +1052,17 @@ static BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data_impl(const torch:
 
         torch::Tensor words;
         torch::Tensor words_tc_fixed76;
-        torch::Tensor words_tc_fixed76_b;
         torch::Tensor scale;
         const bool fused_ok = bsi_cuda_build_fixed_query_words_fused(
             input,
             decimal_places,
             fixed_bits,
             chunk_scale,
-            for_keys,
             device,
             profile_cuda,
             materialize_tc_fixed76,
-            materialize_tc_fixed76_b,
             words,
             words_tc_fixed76,
-            words_tc_fixed76_b,
             scale,
             quantize_ms,
             pack_ms);
@@ -1117,11 +1084,8 @@ static BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data_impl(const torch:
                 TORCH_CHECK(scale.defined() && scale.dim() == 1, "Expected [Q] row scales");
                 out.slice_weights = (slice_weights * scale.unsqueeze(1)).contiguous();
             }
-            if (!for_keys && materialize_tc_fixed76 && words_tc_fixed76.defined() && words_tc_fixed76.numel() > 0) {
+            if (materialize_tc_fixed76 && words_tc_fixed76.defined() && words_tc_fixed76.numel() > 0) {
                 out.words_tc_fixed76 = words_tc_fixed76.contiguous();
-            }
-            if (for_keys && materialize_tc_fixed76_b && words_tc_fixed76_b.defined() && words_tc_fixed76_b.numel() > 0) {
-                out.words_tc_fixed76_b = words_tc_fixed76_b.contiguous();
             }
 
             if (profile_cuda) {
@@ -1284,13 +1248,7 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& inp
                                                         bool verbose,
                                                         bool for_keys) {
     return build_bsi_queries_cuda_batch_data_impl(
-        input,
-        decimal_places,
-        device,
-        verbose,
-        for_keys,
-        /*materialize_tc_fixed76=*/false,
-        /*materialize_tc_fixed76_b=*/false);
+        input, decimal_places, device, verbose, for_keys, /*materialize_tc_fixed76=*/false);
 }
 
 BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data_packed(const torch::Tensor& input,
@@ -1298,27 +1256,7 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data_packed(const torch::Tens
                                                                const torch::Device& device,
                                                                bool verbose) {
     return build_bsi_queries_cuda_batch_data_impl(
-        input,
-        decimal_places,
-        device,
-        verbose,
-        /*for_keys=*/false,
-        /*materialize_tc_fixed76=*/true,
-        /*materialize_tc_fixed76_b=*/false);
-}
-
-BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data_packed_keys(const torch::Tensor& input,
-                                                                    int decimal_places,
-                                                                    const torch::Device& device,
-                                                                    bool verbose) {
-    return build_bsi_queries_cuda_batch_data_impl(
-        input,
-        decimal_places,
-        device,
-        verbose,
-        /*for_keys=*/true,
-        /*materialize_tc_fixed76=*/false,
-        /*materialize_tc_fixed76_b=*/true);
+        input, decimal_places, device, verbose, /*for_keys=*/false, /*materialize_tc_fixed76=*/true);
 }
 BsiVectorCudaData create_bsi_vector_cuda_from_cpu(const BsiVector<uint64_t>& src,
                                                   const torch::Device& device,

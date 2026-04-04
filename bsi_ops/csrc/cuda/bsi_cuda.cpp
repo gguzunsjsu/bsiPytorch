@@ -44,7 +44,6 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     int Sa,
     int W,
     const unsigned long long* B,
-    const unsigned long long* B_tc_fixed76,
     const float* Bw,
     int Sb,
     int R,
@@ -122,65 +121,6 @@ static int bsi_cuda_fixed_bits_keys_env() {
     return cached;
 }
 
-static int bsi_cuda_fixed_bits_queries_env() {
-    static int cached = -1;
-    if (cached >= 0) return cached;
-    const char* s = std::getenv("BSI_FIXED_BITS_QUERIES");
-    if (s == nullptr) {
-        s = std::getenv("BSI_FIXED_BITS");
-    }
-    int v = (s != nullptr) ? std::atoi(s) : 0;
-    if (v <= 0) v = 0;
-    if (v > 0 && v < 2) v = 2;
-    if (v > 63) v = 63;
-    cached = v;
-    return cached;
-}
-
-static bool bsi_cuda_sm90_or_newer() {
-    static int cached = -1;
-    if (cached >= 0) return cached != 0;
-    int dev = 0;
-    cudaGetDevice(&dev);
-    int major = 0;
-    cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, dev);
-    cached = (major >= 9) ? 1 : 0;
-    return cached != 0;
-}
-
-static bool bsi_cuda_tc_fixed_int_enabled() {
-    static int cached = -1;
-    if (cached >= 0) return cached != 0;
-    int v = 1;
-    if (const char* s = std::getenv("BSI_TC_FIXED_INT")) {
-        v = (std::atoi(s) != 0) ? 1 : 0;
-    }
-    cached = v;
-    return cached != 0;
-}
-
-static bool bsi_cuda_tc_cpasync_enabled() {
-    static int cached = -1;
-    if (cached >= 0) return cached != 0;
-    int v = 1;
-    if (const char* s = std::getenv("BSI_TC_CPASYNC")) {
-        v = (std::atoi(s) != 0) ? 1 : 0;
-    }
-    cached = v;
-    return cached != 0;
-}
-
-static int bsi_cuda_tc_r_sweep_env() {
-    static int cached = -1;
-    if (cached >= 0) return cached;
-    int v = 1;
-    if (const char* s = std::getenv("BSI_TC_R_SWEEP")) {
-        v = std::atoi(s);
-    }
-    cached = (v == 2 || v == 4) ? v : 1;
-    return cached;
-}
-
 static bool bsi_cuda_profile_enabled() {
     static int cached = -1;
     if (cached >= 0) return cached != 0;
@@ -228,7 +168,6 @@ struct PrebuiltBSIKeysCUDA {
     int single_rg = 0;
     bool single_indices_identity = true;
     at::Tensor single_words;   // [Rg, Sb, W]
-    at::Tensor single_words_tc_fixed76_b; // [R_tiles, chunks, Sb, 32, 4] int64 cuda or undefined
     at::Tensor single_weights; // [Rg, Sb]
     at::Tensor single_indices_dev; // [Rg] int64 cuda if non-identity
     int W = 0;
@@ -240,60 +179,6 @@ struct PrebuiltBSIKeysCUDA {
 
 static PrebuiltBSIKeysCUDA* capsule_to_keys_cuda(const pybind11::capsule& cap) {
     return reinterpret_cast<PrebuiltBSIKeysCUDA*>(cap.get_pointer());
-}
-
-static at::Tensor bsi_cuda_materialize_words_from_packed_b(const at::Tensor& packed_words,
-                                                           int64_t R,
-                                                           int Sb,
-                                                           int W) {
-    TORCH_CHECK(packed_words.defined() && packed_words.numel() > 0,
-                "Packed-B tensor is not available");
-    TORCH_CHECK(packed_words.dim() == 5, "Packed-B tensor must be [R_tiles, chunks, Sb, 32, 4]");
-    TORCH_CHECK((R & 31) == 0, "Packed-B rematerialization requires R multiple of 32");
-    TORCH_CHECK((W & 3) == 0, "Packed-B rematerialization requires W64 multiple of 4");
-    TORCH_CHECK(packed_words.size(0) == (R / 32), "Packed-B R_tiles mismatch");
-    TORCH_CHECK(packed_words.size(1) == (W / 4), "Packed-B chunk count mismatch");
-    TORCH_CHECK(packed_words.size(2) == Sb, "Packed-B slice count mismatch");
-    auto permuted = packed_words.permute({0, 3, 2, 1, 4}).contiguous();
-    return permuted.view({R, Sb, W}).contiguous();
-}
-
-static void bsi_cuda_ensure_generic_words_from_packed_b(PrebuiltBSIKeysCUDA* keys) {
-    if (keys == nullptr) return;
-    if (keys->single_words.defined() && keys->single_words.numel() > 0) return;
-    if (!(keys->single_group && keys->single_words_tc_fixed76_b.defined() && keys->single_words_tc_fixed76_b.numel() > 0)) {
-        return;
-    }
-    TORCH_CHECK(keys->single_sb > 0, "Packed-B rematerialization requires a valid single_sb");
-    auto generic_words = bsi_cuda_materialize_words_from_packed_b(
-        keys->single_words_tc_fixed76_b,
-        keys->num_keys,
-        keys->single_sb,
-        keys->W);
-    keys->single_words = generic_words;
-    keys->grouped_words[keys->single_sb] = generic_words;
-}
-
-static bool bsi_cuda_fixed76_packed_b_hot_path_eligible(const PrebuiltBSIKeysCUDA* keys,
-                                                        int64_t Q,
-                                                        int Sa,
-                                                        const float* A_chunk_scales,
-                                                        int A_scale_stride,
-                                                        const long long* indices_r,
-                                                        const long long* indices_q) {
-    if (keys == nullptr) return false;
-    if (!(keys->single_group && keys->single_indices_identity)) return false;
-    if (!(keys->single_words_tc_fixed76_b.defined() && keys->single_words_tc_fixed76_b.numel() > 0)) return false;
-    if (A_chunk_scales == nullptr || A_scale_stride <= 0) return false;
-    if (indices_r != nullptr || indices_q != nullptr) return false;
-    if (!bsi_cuda_sm90_or_newer()) return false;
-    if (!bsi_cuda_tc_fixed_int_enabled() || !bsi_cuda_tc_cpasync_enabled()) return false;
-    if (bsi_cuda_tc_r_sweep_env() != 4) return false;
-    if (bsi_cuda_fixed_bits_queries_env() != 7 || bsi_cuda_fixed_bits_keys_env() != 6) return false;
-    if (Sa != 7 || keys->single_sb != 6) return false;
-    if ((Q & 31) != 0 || (keys->num_keys & 31) != 0) return false;
-    if ((keys->W & 3) != 0) return false;
-    return true;
 }
 
 struct PrebuiltBSIQueryCUDA {
@@ -650,12 +535,6 @@ struct TempGroup {
     const int totalDecimals = common_decimals + keys->decimals;
     const double scale_inv = (totalDecimals > 0) ? (1.0 / std::pow(10.0, totalDecimals)) : 1.0;
 
-    if (keys->single_group &&
-        !(keys->single_words.defined() && keys->single_words.numel() > 0) &&
-        keys->single_words_tc_fixed76_b.defined() && keys->single_words_tc_fixed76_b.numel() > 0) {
-        bsi_cuda_ensure_generic_words_from_packed_b(keys);
-    }
-
     auto stream = at::cuda::getCurrentCUDAStream();
     float kernel_ms = 0.0f;
     const bool profile = bsi_cuda_profile_enabled();
@@ -695,11 +574,6 @@ struct TempGroup {
             const int Sb = keys->single_sb;
             const int Rg = keys->single_rg;
             const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(keys->single_words));
-            const unsigned long long* B_words_tc_fixed76 = nullptr;
-            if (keys->single_words_tc_fixed76_b.defined() && keys->single_words_tc_fixed76_b.numel() > 0) {
-                B_words_tc_fixed76 =
-                    reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(keys->single_words_tc_fixed76_b));
-            }
             const auto* Bw_ptr = tensor_data_ptr<float>(keys->single_weights);
             const long long* r_idx_ptr = nullptr;
             if (!keys->single_indices_identity) {
@@ -714,7 +588,6 @@ struct TempGroup {
                 pg.S,
                 keys->W,
                 B_words,
-                B_words_tc_fixed76,
                 Bw_ptr,
                 Sb,
                 Rg,
@@ -754,7 +627,6 @@ struct TempGroup {
                     pg.S,
                     keys->W,
                     B_words,
-                    nullptr,
                     Bw_ptr,
                     Sb,
                     Rg,
@@ -880,27 +752,11 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
     const auto* A = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(qb->words));
     const auto* Aw = tensor_data_ptr<float>(qb->slice_weights);
     const long long* indices_q = nullptr; // identity mapping in packed batch mode
-    const bool packed_b_hot_path =
-        bsi_cuda_fixed76_packed_b_hot_path_eligible(keys, Q, static_cast<int>(Sa), A_chunk_scales, A_scale_stride, nullptr, indices_q);
-    if (keys->single_group &&
-        !(keys->single_words.defined() && keys->single_words.numel() > 0) &&
-        keys->single_words_tc_fixed76_b.defined() && keys->single_words_tc_fixed76_b.numel() > 0 &&
-        !packed_b_hot_path) {
-        bsi_cuda_ensure_generic_words_from_packed_b(keys);
-    }
 
     if (keys->single_group) {
         const int Sb = keys->single_sb;
         const int Rg = keys->single_rg;
-        const unsigned long long* B_words = nullptr;
-        if (keys->single_words.defined() && keys->single_words.numel() > 0) {
-            B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(keys->single_words));
-        }
-        const unsigned long long* B_words_tc_fixed76 = nullptr;
-        if (keys->single_words_tc_fixed76_b.defined() && keys->single_words_tc_fixed76_b.numel() > 0) {
-            B_words_tc_fixed76 =
-                reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(keys->single_words_tc_fixed76_b));
-        }
+        const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(keys->single_words));
         const auto* Bw_ptr = tensor_data_ptr<float>(keys->single_weights);
         const long long* r_idx_ptr = nullptr;
         if (!keys->single_indices_identity) {
@@ -915,7 +771,6 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
             static_cast<int>(Sa),
             keys->W,
             B_words,
-            B_words_tc_fixed76,
             Bw_ptr,
             Sb,
             Rg,
@@ -955,7 +810,6 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
                 static_cast<int>(Sa),
                 keys->W,
                 B_words,
-                nullptr,
                 Bw_ptr,
                 Sb,
                 Rg,
@@ -1003,8 +857,6 @@ static pybind11::dict bsi_keys_cuda_stats(pybind11::capsule keyset_cuda_cap) {
     out["num_keys"] = pybind11::int_(keys->num_keys);
     out["decimals"] = pybind11::int_(keys->decimals);
     out["threshold"] = pybind11::float_(keys->threshold);
-    out["packed_b"] = pybind11::bool_(
-        keys->single_words_tc_fixed76_b.defined() && keys->single_words_tc_fixed76_b.numel() > 0);
     out["Sb_counts"] = sb_counts;
     return out;
 }
@@ -1048,8 +900,8 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
         auto device = torch::Device(torch::kCUDA, c10::cuda::current_device());
         bool verbose = bsi_cuda_should_log();
 
-        auto batch = build_bsi_queries_cuda_batch_data_packed_keys(
-            K.detach(), decimalPlaces, device, verbose);
+        auto batch = build_bsi_queries_cuda_batch_data(
+            K.detach(), decimalPlaces, device, verbose, /*for_keys=*/true);
         TORCH_CHECK(batch.rows == num_keys, "CUDA fixed-bit key build row mismatch");
         TORCH_CHECK(batch.words_per_slice == static_cast<int>((d + 63) / 64),
                     "CUDA fixed-bit key build word count mismatch");
@@ -1062,14 +914,8 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
         holder->threshold = compress_threshold;
 
         const int Sb = batch.slices;
+        holder->grouped_words[Sb] = batch.words.contiguous();
         holder->grouped_weights[Sb] = batch.slice_weights.contiguous();
-        const bool use_packed_b =
-            batch.words_tc_fixed76_b.defined() && batch.words_tc_fixed76_b.numel() > 0;
-        if (use_packed_b) {
-            holder->single_words_tc_fixed76_b = batch.words_tc_fixed76_b.contiguous();
-        } else {
-            holder->grouped_words[Sb] = batch.words.contiguous();
-        }
 
         std::vector<int64_t> idxs(static_cast<size_t>(num_keys));
         for (int64_t i = 0; i < num_keys; ++i) idxs[static_cast<size_t>(i)] = i;
@@ -1079,21 +925,11 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
         holder->single_sb = Sb;
         holder->single_rg = static_cast<int>(num_keys);
         holder->single_indices_identity = true;
+        holder->single_words = holder->grouped_words[Sb];
         holder->single_weights = holder->grouped_weights[Sb];
-        if (!use_packed_b) {
-            holder->single_words = holder->grouped_words[Sb];
-        }
 
-        uint64_t total_mem_bytes = 0;
-        if (use_packed_b) {
-            total_mem_bytes += static_cast<uint64_t>(
-                holder->single_words_tc_fixed76_b.numel() * holder->single_words_tc_fixed76_b.element_size());
-        } else {
-            total_mem_bytes += static_cast<uint64_t>(
-                holder->grouped_words[Sb].numel() * holder->grouped_words[Sb].element_size());
-        }
-        total_mem_bytes += static_cast<uint64_t>(
-            holder->grouped_weights[Sb].numel() * holder->grouped_weights[Sb].element_size());
+        uint64_t total_mem_bytes = static_cast<uint64_t>(
+            holder->grouped_words[Sb].numel() * holder->grouped_words[Sb].element_size());
 
         pybind11::capsule cap(holder, "PrebuiltBSIKeysCUDA",
             [](PyObject* capsule){

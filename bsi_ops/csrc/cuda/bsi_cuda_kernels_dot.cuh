@@ -1289,7 +1289,6 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
     int A_scale_stride,
     int W64,
     const unsigned long long* __restrict__ B, // [R, 6, W64]
-    const unsigned long long* __restrict__ B_tc_fixed76, // [R_tiles, chunks, 6, 32, 4] or nullptr
     const float* __restrict__ Bw,             // [R, 6]
     int R,
     int Q,
@@ -1346,7 +1345,6 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
     const float bscale1 = __ldg(&Bw[((size_t)(r0 + col1) * (size_t)SB) + 0]);
 
     const int chunks = W64 / K_WORDS64;
-    const bool use_packed_b = (B_tc_fixed76 != nullptr);
 
     {
         uint32_t* A_bits = A_bits0;
@@ -1370,20 +1368,11 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
             t >>= 1;
             const int n = t & (TN - 1);
             const int j = t >> 5;
-            const unsigned long long* b_slice = nullptr;
-            if (use_packed_b) {
-                b_slice = B_tc_fixed76 +
-                    (((((size_t)blockIdx.x * (size_t)chunks + (size_t)0) * (size_t)SB + (size_t)j) *
-                      (size_t)TN +
-                      (size_t)n) *
-                     (size_t)K_WORDS64);
-            } else {
-                const int r = r0 + n;
-                b_slice = B + ((size_t)r * (size_t)SB + (size_t)j) * (size_t)W64;
-            }
+            const int r = r0 + n;
+            const unsigned long long* b_slice = B + ((size_t)r * (size_t)SB + (size_t)j) * (size_t)W64;
             const int w64_i = w64_pair << 1;
             const int base = ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
-            bsi_cp_async_cg_16B(B_bits + base, &b_slice[(size_t)w64_i]);
+            bsi_cp_async_cg_16B(B_bits + base, &b_slice[(size_t)0 * (size_t)K_WORDS64 + (size_t)w64_i]);
         }
         bsi_cp_async_commit_group();
         bsi_cp_async_wait_all();
@@ -1422,25 +1411,13 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
                 t >>= 1;
                 const int n = t & (TN - 1);
                 const int j = t >> 5;
-                const unsigned long long* b_slice = nullptr;
-                if (use_packed_b) {
-                    b_slice = B_tc_fixed76 +
-                        (((((size_t)blockIdx.x * (size_t)chunks + (size_t)next_chunk) * (size_t)SB + (size_t)j) *
-                          (size_t)TN +
-                          (size_t)n) *
-                         (size_t)K_WORDS64);
-                } else {
-                    const int r = r0 + n;
-                    b_slice = B + ((size_t)r * (size_t)SB + (size_t)j) * (size_t)W64;
-                }
+                const int r = r0 + n;
+                const unsigned long long* b_slice = B + ((size_t)r * (size_t)SB + (size_t)j) * (size_t)W64;
                 const int w64_i = w64_pair << 1;
                 const int base = ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
-                const size_t b_word_off = use_packed_b
-                    ? static_cast<size_t>(w64_i)
-                    : (static_cast<size_t>(next_chunk) * static_cast<size_t>(K_WORDS64) + static_cast<size_t>(w64_i));
                 bsi_cp_async_cg_16B(
                     B_bits_next + base,
-                    &b_slice[b_word_off]);
+                    &b_slice[(size_t)next_chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
             }
             bsi_cp_async_commit_group();
         }
@@ -1569,7 +1546,6 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
     (void)A_scale_stride;
     (void)W64;
     (void)B;
-    (void)B_tc_fixed76;
     (void)Bw;
     (void)R;
     (void)Q;
@@ -1623,7 +1599,6 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
     int A_scale_stride,
     int W64,
     const unsigned long long* __restrict__ B, // [R, 6, W64]
-    const unsigned long long* __restrict__ B_tc_fixed76, // [R_tiles, chunks, 6, 32, 4] or nullptr
     const float* __restrict__ Bw,             // [R, 6]
     int R,
     int Q,
@@ -1654,7 +1629,6 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
     const int q0 = blockIdx.y * TM_TOTAL;
     const int q_tile = blockIdx.y;
     const int r_base = blockIdx.x * (TN * R_SWEEP);
-    const int tile_base = blockIdx.x * R_SWEEP;
 
     uintptr_t p = reinterpret_cast<uintptr_t>(smem_raw);
     p = (p + 15u) & ~uintptr_t(15u);
@@ -1705,7 +1679,6 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
     }
 
     const int chunks = W64 / K_WORDS64;
-    const bool use_packed_b = (B_tc_fixed76 != nullptr);
 
     {
         uint32_t* A_bits = A_bits0;
@@ -1732,20 +1705,11 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
                 u >>= 1;
                 const int n = u & (TN - 1);
                 const int j = u >> 5;
-                const unsigned long long* b_slice = nullptr;
-                if (use_packed_b) {
-                    b_slice = B_tc_fixed76 +
-                        ((((((size_t)(tile_base + t) * (size_t)chunks + (size_t)0) * (size_t)SB + (size_t)j) *
-                           (size_t)TN +
-                           (size_t)n) *
-                          (size_t)K_WORDS64));
-                } else {
-                    const int r = r_base + t * TN + n;
-                    b_slice = B + ((size_t)r * (size_t)SB + (size_t)j) * (size_t)W64;
-                }
+                const int r = r_base + t * TN + n;
+                const unsigned long long* b_slice = B + ((size_t)r * (size_t)SB + (size_t)j) * (size_t)W64;
                 const int w64_i = w64_pair << 1;
                 const size_t base = (size_t)t * B_words + ((size_t)j * (size_t)TN + (size_t)n) * (size_t)K_STRIDE32 + (size_t)(w64_i << 1);
-                bsi_cp_async_cg_16B(B_bits + base, &b_slice[(size_t)w64_i]);
+                bsi_cp_async_cg_16B(B_bits + base, &b_slice[(size_t)0 * (size_t)K_WORDS64 + (size_t)w64_i]);
             }
         }
         bsi_cp_async_commit_group();
@@ -1787,25 +1751,13 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
                     u >>= 1;
                     const int n = u & (TN - 1);
                     const int j = u >> 5;
-                    const unsigned long long* b_slice = nullptr;
-                    if (use_packed_b) {
-                        b_slice = B_tc_fixed76 +
-                            ((((((size_t)(tile_base + t) * (size_t)chunks + (size_t)next_chunk) * (size_t)SB + (size_t)j) *
-                               (size_t)TN +
-                               (size_t)n) *
-                              (size_t)K_WORDS64));
-                    } else {
-                        const int r = r_base + t * TN + n;
-                        b_slice = B + ((size_t)r * (size_t)SB + (size_t)j) * (size_t)W64;
-                    }
+                    const int r = r_base + t * TN + n;
+                    const unsigned long long* b_slice = B + ((size_t)r * (size_t)SB + (size_t)j) * (size_t)W64;
                     const int w64_i = w64_pair << 1;
                     const size_t base = (size_t)t * B_words + ((size_t)j * (size_t)TN + (size_t)n) * (size_t)K_STRIDE32 + (size_t)(w64_i << 1);
-                    const size_t b_word_off = use_packed_b
-                        ? static_cast<size_t>(w64_i)
-                        : (static_cast<size_t>(next_chunk) * static_cast<size_t>(K_WORDS64) + static_cast<size_t>(w64_i));
                     bsi_cp_async_cg_16B(
                         B_bits_next + base,
-                        &b_slice[b_word_off]);
+                        &b_slice[(size_t)next_chunk * (size_t)K_WORDS64 + (size_t)w64_i]);
                 }
             }
             bsi_cp_async_commit_group();
@@ -1987,7 +1939,6 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
     (void)A_scale_stride;
     (void)W64;
     (void)B;
-    (void)B_tc_fixed76;
     (void)Bw;
     (void)R;
     (void)Q;
@@ -2004,7 +1955,6 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
     int A_scale_stride,
     int W64,
     const unsigned long long* __restrict__ B,
-    const unsigned long long* __restrict__ B_tc_fixed76,
     const float* __restrict__ Bw,
     int R,
     int Q,
@@ -2014,7 +1964,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
 {
     extern __shared__ unsigned char smem_raw[];
     bsi_fixed76_tm32_chunkscale_rsweep_body<2, false>(
-        smem_raw, A, A_chunk_scales, A_scale_stride, W64, B, B_tc_fixed76, Bw, R, Q, scale_inv, R_total, out_global);
+        smem_raw, A, A_chunk_scales, A_scale_stride, W64, B, Bw, R, Q, scale_inv, R_total, out_global);
 }
 
 extern "C" __global__ __launch_bounds__(256, 2)
@@ -2024,7 +1974,6 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
     int A_scale_stride,
     int W64,
     const unsigned long long* __restrict__ B,
-    const unsigned long long* __restrict__ B_tc_fixed76,
     const float* __restrict__ Bw,
     int R,
     int Q,
@@ -2034,7 +1983,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
 {
     extern __shared__ unsigned char smem_raw[];
     bsi_fixed76_tm32_chunkscale_rsweep_body<4, false>(
-        smem_raw, A, A_chunk_scales, A_scale_stride, W64, B, B_tc_fixed76, Bw, R, Q, scale_inv, R_total, out_global);
+        smem_raw, A, A_chunk_scales, A_scale_stride, W64, B, Bw, R, Q, scale_inv, R_total, out_global);
 }
 
 extern "C" __global__ __launch_bounds__(256, 2)
@@ -2044,7 +1993,6 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
     int A_scale_stride,
     int W64,
     const unsigned long long* __restrict__ B,
-    const unsigned long long* __restrict__ B_tc_fixed76,
     const float* __restrict__ Bw,
     int R,
     int Q,
@@ -2054,7 +2002,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
 {
     extern __shared__ unsigned char smem_raw[];
     bsi_fixed76_tm32_chunkscale_rsweep_body<4, true>(
-        smem_raw, A, A_chunk_scales, A_scale_stride, W64, B, B_tc_fixed76, Bw, R, Q, scale_inv, R_total, out_global);
+        smem_raw, A, A_chunk_scales, A_scale_stride, W64, B, Bw, R, Q, scale_inv, R_total, out_global);
 }
 
 template <int R_SWEEP, bool PACKED_A>
@@ -2067,7 +2015,6 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
     const unsigned long long* __restrict__ B, // [R, 6, W64]
     const float* __restrict__ Bw,             // [R, 6]
     const void* __restrict__ B_tensor_map,
-    bool packed_b,
     int R,
     int Q,
     float scale_inv,
@@ -2188,26 +2135,14 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
             // NVHPC's CUDA 12.6 CCCL only provides the mbarrier completion overload for
             // shared::cluster -> global. With cluster size 1, shared::cluster behaves
             // like regular shared memory, so this is safe.
-            if (packed_b) {
-                const int32_t coords[5] = {
-                    0,
-                    0,
-                    0,
-                    (int32_t)chunk,
-                    (int32_t)tile_base,
-                };
-                ptx::cp_async_bulk_tensor(
-                    ptx::space_cluster, ptx::space_global, B_dst_bytes, B_tensor_map, coords, handle);
-            } else {
-                const int32_t coords[4] = {
-                    (int32_t)(chunk * (int)ROW_BYTES),
-                    0,
-                    0,
-                    (int32_t)tile_base,
-                };
-                ptx::cp_async_bulk_tensor(
-                    ptx::space_cluster, ptx::space_global, B_dst_bytes, B_tensor_map, coords, handle);
-            }
+            const int32_t coords[4] = {
+                (int32_t)(chunk * (int)ROW_BYTES),
+                0,
+                0,
+                (int32_t)tile_base,
+            };
+            ptx::cp_async_bulk_tensor(
+                ptx::space_cluster, ptx::space_global, B_dst_bytes, B_tensor_map, coords, handle);
         }
     };
 
@@ -2444,7 +2379,6 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tens
     (void)B;
     (void)Bw;
     (void)B_tensor_map;
-    (void)packed_b;
     (void)R;
     (void)Q;
     (void)scale_inv;
@@ -2462,7 +2396,6 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
     const unsigned long long* __restrict__ B,
     const float* __restrict__ Bw,
     const void* __restrict__ B_tensor_map,
-    int packed_b,
     int R,
     int Q,
     float scale_inv,
@@ -2471,7 +2404,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
 {
     extern __shared__ unsigned char smem_raw[];
     bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tensorB<2, false>(
-        smem_raw, A, A_chunk_scales, A_scale_stride, W64, B, Bw, B_tensor_map, packed_b != 0, R, Q, scale_inv, R_total, out_global);
+        smem_raw, A, A_chunk_scales, A_scale_stride, W64, B, Bw, B_tensor_map, R, Q, scale_inv, R_total, out_global);
 }
 
 extern "C" __global__ __launch_bounds__(256, 2)
@@ -2483,7 +2416,6 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
     const unsigned long long* __restrict__ B,
     const float* __restrict__ Bw,
     const void* __restrict__ B_tensor_map,
-    int packed_b,
     int R,
     int Q,
     float scale_inv,
@@ -2492,7 +2424,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
 {
     extern __shared__ unsigned char smem_raw[];
     bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tensorB<4, false>(
-        smem_raw, A, A_chunk_scales, A_scale_stride, W64, B, Bw, B_tensor_map, packed_b != 0, R, Q, scale_inv, R_total, out_global);
+        smem_raw, A, A_chunk_scales, A_scale_stride, W64, B, Bw, B_tensor_map, R, Q, scale_inv, R_total, out_global);
 }
 
 extern "C" __global__ __launch_bounds__(256, 2)
@@ -2504,7 +2436,6 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
     const unsigned long long* __restrict__ B,
     const float* __restrict__ Bw,
     const void* __restrict__ B_tensor_map,
-    int packed_b,
     int R,
     int Q,
     float scale_inv,
@@ -2513,7 +2444,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
 {
     extern __shared__ unsigned char smem_raw[];
     bsi_fixed76_tm32_chunkscale_rsweep_body_tma_tensorB<4, true>(
-        smem_raw, A, A_chunk_scales, A_scale_stride, W64, B, Bw, B_tensor_map, packed_b != 0, R, Q, scale_inv, R_total, out_global);
+        smem_raw, A, A_chunk_scales, A_scale_stride, W64, B, Bw, B_tensor_map, R, Q, scale_inv, R_total, out_global);
 }
 
 
@@ -2666,7 +2597,6 @@ struct TmaTensorMapKey {
     int w64 = 0;
     int r_total = 0;
     int r_sweep = 0;
-    int packed_b = 0;
 };
 
 struct TmaTensorMapKeyHash {
@@ -2680,14 +2610,13 @@ struct TmaTensorMapKeyHash {
         mix(std::hash<int>()(k.w64));
         mix(std::hash<int>()(k.r_total));
         mix(std::hash<int>()(k.r_sweep));
-        mix(std::hash<int>()(k.packed_b));
         return h;
     }
 };
 
 static inline bool operator==(const TmaTensorMapKey& a, const TmaTensorMapKey& b) {
     return (a.base == b.base) && (a.device == b.device) && (a.w64 == b.w64) && (a.r_total == b.r_total) &&
-        (a.r_sweep == b.r_sweep) && (a.packed_b == b.packed_b);
+        (a.r_sweep == b.r_sweep);
 }
 
 struct TmaTensorMapValue {
@@ -2721,7 +2650,6 @@ static inline void* bsi_get_or_create_b_fixed76_rsweep_tensor_map(
     int W64,
     int R_total,
     int R_sweep,
-    bool packed_b,
     cudaStream_t stream)
 {
     constexpr int TN = 32;
@@ -2742,7 +2670,6 @@ static inline void* bsi_get_or_create_b_fixed76_rsweep_tensor_map(
         /*w64=*/W64,
         /*r_total=*/R_total,
         /*r_sweep=*/R_sweep,
-        /*packed_b=*/packed_b ? 1 : 0,
     };
 
     static std::mutex mu;
@@ -2759,77 +2686,42 @@ static inline void* bsi_get_or_create_b_fixed76_rsweep_tensor_map(
     BsiCuTensorMapEncodeTiledFn encode = bsi_get_encode_tiled_fn();
     if (!encode) return nullptr;
 
+    // Tensor map dims order is innermost->outermost.
+    // We encode B as: [w_bytes, n(32), sb, tile(R_total/32)].
+    //
+    // This makes the TMA destination shared layout (outermost->innermost):
+    //   [tile, sb, n, w_bytes]
+    // which matches the baseline cp.async staging layout but without needing
+    // padding in the innermost dimension.
+    const cuuint64_t w_bytes = static_cast<cuuint64_t>(W64) * 8ull;
+    const cuuint64_t tile_count = static_cast<cuuint64_t>(R_total / TN);
+
+    const cuuint64_t global_dim[4] = {w_bytes, (cuuint64_t)TN, (cuuint64_t)SB, tile_count};
+    const cuuint64_t global_strides[3] = {
+        // stride (bytes) for n (r within tile)
+        w_bytes * (cuuint64_t)SB,
+        // stride (bytes) for sb
+        w_bytes,
+        // stride (bytes) for tile
+        w_bytes * (cuuint64_t)SB * (cuuint64_t)TN,
+    };
+    const cuuint32_t box_dim[4] = {(cuuint32_t)BYTES_PER_CHUNK, (cuuint32_t)TN, (cuuint32_t)SB, (cuuint32_t)R_sweep};
+    const cuuint32_t elem_strides[4] = {1u, 1u, 1u, 1u};
+
     alignas(64) CUtensorMap tma;
-    CUresult res = CUDA_ERROR_INVALID_VALUE;
-    if (packed_b) {
-        const cuuint64_t tile_count = static_cast<cuuint64_t>(R_total / TN);
-        const cuuint64_t chunk_count = static_cast<cuuint64_t>(W64 / 4);
-        const cuuint64_t global_dim[5] = {
-            (cuuint64_t)BYTES_PER_CHUNK,
-            (cuuint64_t)TN,
-            (cuuint64_t)SB,
-            chunk_count,
-            tile_count,
-        };
-        const cuuint64_t global_strides[4] = {
-            (cuuint64_t)BYTES_PER_CHUNK,
-            (cuuint64_t)BYTES_PER_CHUNK * (cuuint64_t)TN,
-            (cuuint64_t)BYTES_PER_CHUNK * (cuuint64_t)TN * (cuuint64_t)SB,
-            (cuuint64_t)BYTES_PER_CHUNK * (cuuint64_t)TN * (cuuint64_t)SB * chunk_count,
-        };
-        const cuuint32_t box_dim[5] = {
-            (cuuint32_t)BYTES_PER_CHUNK,
-            (cuuint32_t)TN,
-            (cuuint32_t)SB,
-            1u,
-            (cuuint32_t)R_sweep,
-        };
-        const cuuint32_t elem_strides[5] = {1u, 1u, 1u, 1u, 1u};
-        res = encode(
-            &tma,
-            CU_TENSOR_MAP_DATA_TYPE_UINT8,
-            /*tensorRank=*/5,
-            /*globalAddress=*/(void*)B,
-            global_dim,
-            global_strides,
-            box_dim,
-            elem_strides,
-            CU_TENSOR_MAP_INTERLEAVE_NONE,
-            CU_TENSOR_MAP_SWIZZLE_NONE,
-            CU_TENSOR_MAP_L2_PROMOTION_NONE,
-            CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE);
-    } else {
-        // Tensor map dims order is innermost->outermost.
-        // We encode generic B as: [w_bytes, n(32), sb, tile(R_total/32)].
-        const cuuint64_t w_bytes = static_cast<cuuint64_t>(W64) * 8ull;
-        const cuuint64_t tile_count = static_cast<cuuint64_t>(R_total / TN);
-        const cuuint64_t global_dim[4] = {w_bytes, (cuuint64_t)TN, (cuuint64_t)SB, tile_count};
-        const cuuint64_t global_strides[3] = {
-            w_bytes * (cuuint64_t)SB,
-            w_bytes,
-            w_bytes * (cuuint64_t)SB * (cuuint64_t)TN,
-        };
-        const cuuint32_t box_dim[4] = {
-            (cuuint32_t)BYTES_PER_CHUNK,
-            (cuuint32_t)TN,
-            (cuuint32_t)SB,
-            (cuuint32_t)R_sweep,
-        };
-        const cuuint32_t elem_strides[4] = {1u, 1u, 1u, 1u};
-        res = encode(
-            &tma,
-            CU_TENSOR_MAP_DATA_TYPE_UINT8,
-            /*tensorRank=*/4,
-            /*globalAddress=*/(void*)B,
-            global_dim,
-            global_strides,
-            box_dim,
-            elem_strides,
-            CU_TENSOR_MAP_INTERLEAVE_NONE,
-            CU_TENSOR_MAP_SWIZZLE_NONE,
-            CU_TENSOR_MAP_L2_PROMOTION_NONE,
-            CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE);
-    }
+    const CUresult res = encode(
+        &tma,
+        CU_TENSOR_MAP_DATA_TYPE_UINT8,
+        /*tensorRank=*/4,
+        /*globalAddress=*/(void*)B,
+        global_dim,
+        global_strides,
+        box_dim,
+        elem_strides,
+        CU_TENSOR_MAP_INTERLEAVE_NONE,
+        CU_TENSOR_MAP_SWIZZLE_NONE,
+        CU_TENSOR_MAP_L2_PROMOTION_NONE,
+        CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE);
     if (res != CUDA_SUCCESS) return nullptr;
 
     void* d_tma = nullptr;
@@ -2854,7 +2746,6 @@ static inline void* bsi_get_or_create_b_fixed76_rsweep_tensor_map(
     int,
     int,
     int,
-    bool,
     cudaStream_t)
 {
     return nullptr;
@@ -2872,7 +2763,6 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     int Sa,
     int W,
     const unsigned long long* B,
-    const unsigned long long* B_tc_fixed76,
     const float* Bw,
     int Sb,
     int R,
@@ -2886,6 +2776,7 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     float* out_global,
     cudaStream_t stream)
 {
+    (void)A_tc_fixed76;
     // Optional SM90+ tensor-core (BMMA) path (guarded by BSI_TC_DOT).
     int use_tc = 0;
     // Chunk-scale mode requires BMMA for correctness; force the TC path when scales are provided.
@@ -2965,8 +2856,7 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
 	            // Optional TMA-based B staging for fixed76 rsweep TM32 kernels (H100+).
 	            // 0 (default): baseline cp.async staging
 	            // 1: force tensor-map TMA staging for B (fallback to baseline if descriptor creation fails)
-	            // 2: auto (prefer the packed fixed76 fast path when a tensor map is available;
-	            //    otherwise keep the generic large-R rule)
+	            // 2: auto (prefer packed-A fixed76 when a tensor map is available; otherwise keep the generic large-R rule)
 	            static int cached_tc_tma = -1;
 	            if (cached_tc_tma < 0) {
 	                int v = 0;
@@ -2990,14 +2880,14 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                 }
 	            }
 	            static int debug_printed = 0;
-	            auto maybe_debug_print_fixed_int = [&](int tm, int r_sweep, int r_tail, int tma, int packed_a, int packed_b) {
+	            auto maybe_debug_print_fixed_int = [&](int tm, int r_sweep, int r_tail, int tma, int packed_a) {
 	                if (!debug || debug_printed) return;
 	                debug_printed = 1;
 	                const int chunks = W >> 2;
 	                const long long work = (long long)chunks * 7ll * 6ll;
 	                fprintf(
 	                    stderr,
-	                    "[BSI_DOT] tc_fixed_int=1 tm=%d cpasync=1 Sa=7 Sb=6 Q=%d R=%d W64=%d chunks=%d work=%lld rsweep=%d rtail=%d tma=%d packed_a=%d packed_b=%d\n",
+	                    "[BSI_DOT] tc_fixed_int=1 tm=%d cpasync=1 Sa=7 Sb=6 Q=%d R=%d W64=%d chunks=%d work=%lld rsweep=%d rtail=%d tma=%d packed_a=%d\n",
 	                    tm,
 	                    Q,
 	                    R,
@@ -3007,8 +2897,7 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
 	                    r_sweep,
 	                    r_tail,
 	                    tma,
-                        packed_a,
-                        packed_b);
+                        packed_a);
 	            };
 
             auto try_tm32 = [&]() -> bool {
@@ -3022,15 +2911,14 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
 	                    constexpr int stages = 2;
 	                    const int r_sweep = cached_tc_r_sweep;
                         const bool use_packed_a = (r_sweep == 4) && (A_tc_fixed76 != nullptr);
-                        const bool use_packed_b = (B_tc_fixed76 != nullptr);
 	                    int use_tma = 0;
 	                    void* B_tensor_map = nullptr;
 #if defined(__cccl_lib_local_barrier_arrive_tx)
 	                    const bool want_tma = (cached_tc_tma == 1) ||
-	                        (cached_tc_tma == 2 && (use_packed_b || use_packed_a || (W == 64 && R >= 16384)));
+	                        (cached_tc_tma == 2 && (use_packed_a || (W == 64 && R >= 16384)));
 	                    if (want_tma) {
 	                        B_tensor_map = bsi_tma::bsi_get_or_create_b_fixed76_rsweep_tensor_map(
-	                            use_packed_b ? B_tc_fixed76 : B, W, R_total, r_sweep, use_packed_b, stream);
+	                            B, W, R_total, r_sweep, stream);
 	                        use_tma = (B_tensor_map != nullptr) ? 1 : 0;
 	                    }
 #endif
@@ -3145,7 +3033,6 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                                     B_launch,
                                     Bw_launch,
                                     B_tensor_map_launch,
-                                    use_packed_b ? 1 : 0,
                                     R_launch,
                                     Q,
                                     scale_inv,
@@ -3159,7 +3046,6 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                                     A_scale_stride,
                                     W,
                                     B_launch,
-                                    use_packed_b ? B_tc_fixed76 : nullptr,
                                     Bw_launch,
                                     R_launch,
                                     Q,
@@ -3179,7 +3065,6 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                                         B_launch,
                                         Bw_launch,
                                         B_tensor_map_launch,
-                                        use_packed_b ? 1 : 0,
                                         R_launch,
                                         Q,
                                         scale_inv,
@@ -3195,7 +3080,6 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                                         B_launch,
                                         Bw_launch,
                                         B_tensor_map_launch,
-                                        use_packed_b ? 1 : 0,
                                         R_launch,
                                         Q,
                                         scale_inv,
@@ -3211,7 +3095,6 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                                         A_scale_stride,
                                         W,
                                         B_launch,
-                                        use_packed_b ? B_tc_fixed76 : nullptr,
                                         Bw_launch,
                                         R_launch,
                                         Q,
@@ -3226,7 +3109,6 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                                         A_scale_stride,
                                         W,
                                         B_launch,
-                                        use_packed_b ? B_tc_fixed76 : nullptr,
                                         Bw_launch,
                                         R_launch,
                                         Q,
@@ -3259,7 +3141,6 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                             A_scale_stride,
                             W,
                             B_launch,
-                            use_packed_b ? B_tc_fixed76 : nullptr,
                             Bw_launch,
                             R_launch,
                             Q,
@@ -3273,20 +3154,17 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                     const int r_main = (r_sweep > 1) ? ((R / tn_sweep) * tn_sweep) : 0;
                     const int r_tail = R - r_main;
 
-                    const unsigned long long* B_main = use_packed_b ? nullptr : B;
-                    if (r_sweep > 1 && r_main >= tn_sweep && launch_fixed76_rsweep_main(B_main, Bw, B_tensor_map, r_main, out_global)) {
+                    if (r_sweep > 1 && r_main >= tn_sweep && launch_fixed76_rsweep_main(B, Bw, B_tensor_map, r_main, out_global)) {
                         if (r_tail > 0) {
-                            const unsigned long long* B_tail = nullptr;
-                            if (!use_packed_b) {
-                                B_tail = B + ((size_t)r_main * (size_t)6 * (size_t)W);
-                            }
+                            const unsigned long long* B_tail =
+                                B + ((size_t)r_main * (size_t)6 * (size_t)W);
                             const float* Bw_tail = Bw + ((size_t)r_main * (size_t)6);
                             float* out_tail = out_global + r_main;
                             if (!launch_fixed76_tail(B_tail, Bw_tail, r_tail, out_tail)) {
                                 return false;
                             }
                         }
-                        maybe_debug_print_fixed_int(32, r_sweep, r_tail, use_tma, use_packed_a ? 1 : 0, use_packed_b ? 1 : 0);
+                        maybe_debug_print_fixed_int(32, r_sweep, r_tail, use_tma, use_packed_a ? 1 : 0);
                         return true;
                     }
 
@@ -3303,14 +3181,13 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                             A_scale_stride,
                             W,
                             B,
-                            B_tc_fixed76,
                             Bw,
                             R,
                             Q,
                             scale_inv,
                             R_total,
                             out_global);
-                        maybe_debug_print_fixed_int(32, 1, 0, 0, 0, B_tc_fixed76 != nullptr ? 1 : 0);
+                        maybe_debug_print_fixed_int(32, 1, 0, 0, 0);
                         return true;
                     }
 	                }

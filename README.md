@@ -110,7 +110,7 @@ export BSI_DOT_DEBUG=1
 ```
 
 Notes:
-- `BSI_TC_TMA=2` now prefers TMA automatically for the fixed76 packed fast path whenever a tensor map is available. That includes packed-A query layouts and packed-B key layouts on the Hopper rsweep4 kernels.
+- `BSI_TC_TMA=2` now prefers TMA automatically for the packed-A fixed76 rsweep4 path whenever tensor-map creation succeeds; the generic fixed76 path still uses the `W64==64` and `R>=16384` auto threshold.
 - `BSI_TC_TM` is not currently an active tuning knob in this code path; TM32 is hardcoded for the fixed76 Hopper kernels.
 
 ## 4) Tensor-Core Dot Correctness (TC vs Baseline)
