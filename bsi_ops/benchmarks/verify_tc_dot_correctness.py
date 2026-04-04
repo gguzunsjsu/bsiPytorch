@@ -66,7 +66,7 @@ def main() -> None:
     # Keys are built on CPU (builder moves to CUDA internally).
     K = torch.randn(args.R, args.D, dtype=torch.float32, device="cpu")
     keys_cap, *_ = bsi_ops.build_bsi_keys_cuda(
-        K, args.decimal_places, float(args.compress_threshold), enable_hot_layout=True
+        K, args.decimal_places, float(args.compress_threshold)
     )
 
     # Queries are built on CUDA.

@@ -47,7 +47,7 @@ def main() -> None:
         # Build random keys on CPU (builder moves to CUDA internally)
         K = torch.randn(r_rows, d_cols, dtype=torch.float32, device="cpu")
         keys_cap, _, _, _, _ = bsi_ops.build_bsi_keys_cuda(
-            K, args.decimal_places, float(args.compress_threshold), enable_hot_layout=True
+            K, args.decimal_places, float(args.compress_threshold)
         )
 
         # Build random queries on CUDA
@@ -90,9 +90,9 @@ def main() -> None:
                 "[Engine] "
                 f"engine={prof.get('engine', 'legacy')} "
                 f"transport={prof.get('transport', 'legacy')} "
-                f"hot={int(bool(prof.get('hot_layout', False)))} "
                 f"split_k={int(prof.get('split_k', 1))} "
-                f"scratch_mb={int(prof.get('scratch_bytes', 0)) / (1024**2):.2f}"
+                f"reject={prof.get('reject_reason', 'none')} "
+                f"fallback={int(bool(prof.get('fallback_used', False)))}"
             )
         print(f"[Wall] total_elapsed_s={t1 - t0:.3f}")
 

@@ -71,16 +71,16 @@ def _print_engine_profile() -> None:
         "[Engine] "
         f"engine={prof.get('engine', 'legacy')} "
         f"transport={prof.get('transport', 'legacy')} "
-        f"hot={int(bool(prof.get('hot_layout', False)))} "
         f"split_k={int(prof.get('split_k', 1))} "
-        f"scratch_mb={int(prof.get('scratch_bytes', 0)) / (1024**2):.2f}"
+        f"reject={prof.get('reject_reason', 'none')} "
+        f"fallback={int(bool(prof.get('fallback_used', False)))}"
     )
 
 
 def run_kernel_only(args: argparse.Namespace, k_cpu: torch.Tensor, q_fp32: torch.Tensor, torch_dtype: torch.dtype) -> Dict[str, float]:
     print("\n[Mode] kernel_only")
     keys_cap, _, _, _, _ = bsi_ops.build_bsi_keys_cuda(
-        k_cpu, args.decimal_places, float(args.compress_threshold), enable_hot_layout=True
+        k_cpu, args.decimal_places, float(args.compress_threshold)
     )
     query_batch = bsi_ops.build_bsi_queries_cuda_batch_packed(
         q_fp32, args.decimal_places, float(args.compress_threshold)
@@ -109,7 +109,7 @@ def run_kernel_only(args: argparse.Namespace, k_cpu: torch.Tensor, q_fp32: torch
 def run_linear_e2e(args: argparse.Namespace, k_cpu: torch.Tensor, q_fp32: torch.Tensor, torch_dtype: torch.dtype) -> Dict[str, float]:
     print("\n[Mode] linear_e2e")
     keys_cap, _, _, _, _ = bsi_ops.build_bsi_keys_cuda(
-        k_cpu, args.decimal_places, float(args.compress_threshold), enable_hot_layout=True
+        k_cpu, args.decimal_places, float(args.compress_threshold)
     )
     k_torch = k_cpu.to(device="cuda", dtype=torch_dtype, non_blocking=False)
     q_torch = q_fp32.to(dtype=torch_dtype)
