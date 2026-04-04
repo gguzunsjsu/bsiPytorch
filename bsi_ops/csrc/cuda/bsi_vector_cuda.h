@@ -37,6 +37,10 @@ struct BsiQueryBatchCudaData {
     // Shape: [Q_tiles, chunks, slices, 32, 4] where Q_tiles = Q / 32 and
     // chunks = words_per_slice / 4.
     torch::Tensor words_tc_fixed76; // int64 cuda or undefined
+    // Optional Hopper fixed6 key layout for the TM32 rsweep fast path.
+    // Shape: [R_tiles, chunks, slices, 32, 4] where R_tiles = rows / 32 and
+    // chunks = words_per_slice / 4.
+    torch::Tensor words_tc_fixed76_b; // int64 cuda or undefined
     torch::Tensor slice_weights; // [Q, slices]
     // Optional per-query, per-256-element-chunk power-of-two scales used by
     // fixed-bit "block floating" modes. Shape: [Q, chunks] where
@@ -69,6 +73,11 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data_packed(const torch::Tens
                                                                int decimal_places,
                                                                const torch::Device& device,
                                                                bool verbose = false);
+
+BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data_packed_keys(const torch::Tensor& values,
+                                                                    int decimal_places,
+                                                                    const torch::Device& device,
+                                                                    bool verbose = false);
 
 // Exposed for tests/debug: quantise floats to int64 with CPU parity (half-away-from-zero).
 torch::Tensor bsi_cuda_quantize_to_int64(const torch::Tensor& values,
