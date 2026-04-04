@@ -279,6 +279,55 @@ static bool bsi_cuda_should_build_words_tc_fixed76_tile(const torch::Tensor& inp
     return bsi_cuda_sm90_or_newer_local();
 }
 
+static bool bsi_cuda_should_build_words_sm90_persistent(const torch::Tensor& input,
+                                                        bool for_keys,
+                                                        int fixed_bits,
+                                                        bool chunk_scale,
+                                                        int64_t Q,
+                                                        int words_per_slice) {
+    if (for_keys) return false;
+    if (fixed_bits != 7 || !chunk_scale) return false;
+    if (!input.is_cuda()) return false;
+    if (Q <= 0 || words_per_slice <= 0) return false;
+    if ((words_per_slice & 3) != 0) return false;
+    return bsi_cuda_sm90_or_newer_local();
+}
+
+static void bsi_cuda_pack_query_words_sm90_persistent(const torch::Tensor& words,
+                                                      const torch::Tensor& chunk_scales,
+                                                      torch::Tensor& words_out,
+                                                      torch::Tensor& chunk_scales_out) {
+    TORCH_CHECK(words.defined() && words.dim() == 3, "Expected words [Q, S, W]");
+    TORCH_CHECK(chunk_scales.defined() && chunk_scales.dim() == 2,
+                "Expected chunk_scales [Q, chunks]");
+    const int64_t Q = words.size(0);
+    const int64_t S = words.size(1);
+    const int64_t W64 = words.size(2);
+    const int64_t chunks = chunk_scales.size(1);
+    TORCH_CHECK(chunks == (W64 / 4), "Persistent query layout expects W64/4 chunk scales");
+
+    const int64_t q_tiles = (Q + 63) / 64;
+    const int64_t q_padded = q_tiles * 64;
+    const int64_t chunk_groups = (chunks + 3) / 4;
+    const int64_t w_padded = chunk_groups * 16;
+    auto word_opts = torch::TensorOptions().dtype(torch::kInt64).device(words.device());
+    auto scale_opts = torch::TensorOptions().dtype(torch::kFloat32).device(chunk_scales.device());
+
+    auto padded_words = torch::zeros({q_padded, S, w_padded}, word_opts);
+    padded_words.narrow(0, 0, Q).narrow(2, 0, W64).copy_(words);
+    words_out = padded_words
+                    .view({q_tiles, 64, S, chunk_groups, 16})
+                    .permute({0, 3, 2, 1, 4})
+                    .contiguous();
+
+    auto padded_scales = torch::zeros({q_padded, chunk_groups * 4}, scale_opts);
+    padded_scales.narrow(0, 0, Q).narrow(1, 0, chunks).copy_(chunk_scales);
+    chunk_scales_out = padded_scales
+                           .view({q_tiles, 64, chunk_groups, 4})
+                           .permute({0, 2, 1, 3})
+                           .contiguous();
+}
+
 static int bsi_cuda_fixed_bits() {
     static int cached = []() {
         const char* s = std::getenv("BSI_FIXED_BITS");
@@ -1106,6 +1155,17 @@ static BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data_impl(const torch:
             if (materialize_tc_fixed76 && words_tc_fixed76_tm64.defined() && words_tc_fixed76_tm64.numel() > 0) {
                 out.words_tc_fixed76_tm64 = words_tc_fixed76_tm64.contiguous();
             }
+            if (materialize_tc_fixed76 &&
+                bsi_cuda_should_build_words_sm90_persistent(
+                    input, /*for_keys=*/false, fixed_bits, chunk_scale, Q_input, words_per_slice)) {
+                TORCH_CHECK(chunk_scale && out.chunk_scales.defined() && out.chunk_scales.numel() > 0,
+                            "SM90 persistent query layout requires chunk scales");
+                bsi_cuda_pack_query_words_sm90_persistent(
+                    out.words,
+                    out.chunk_scales,
+                    out.words_sm90_persistent,
+                    out.chunk_scales_sm90_persistent);
+            }
 
             if (profile_cuda) {
                 g_last_query_build_quantize_ns = static_cast<uint64_t>(quantize_ms * 1.0e6);
@@ -1239,6 +1299,17 @@ static BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data_impl(const torch:
     out.slice_weights = slice_weights.contiguous();
     if (fixed_bits > 0 && chunk_scale) {
         out.chunk_scales = q.scale.contiguous();
+    }
+    if (materialize_tc_fixed76 &&
+        fixed_bits > 0 &&
+        chunk_scale &&
+        bsi_cuda_should_build_words_sm90_persistent(
+            input, /*for_keys=*/false, fixed_bits, chunk_scale, Q, words_per_slice)) {
+        bsi_cuda_pack_query_words_sm90_persistent(
+            out.words,
+            out.chunk_scales,
+            out.words_sm90_persistent,
+            out.chunk_scales_sm90_persistent);
     }
 
     if (profile_cuda) {

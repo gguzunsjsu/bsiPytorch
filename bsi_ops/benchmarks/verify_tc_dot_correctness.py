@@ -18,6 +18,14 @@ def _run_dot(*, use_tc: bool, query_caps, keys_cap):
     return out, int(dot_ns_total), float(dot_ns_per_query), float(dot_ns_per_scalar)
 
 
+def _run_dot_packed(*, query_batch, keys_cap):
+    out, dot_ns_total, dot_ns_per_query, dot_ns_per_scalar = (
+        bsi_ops.batch_dot_product_multiquery_cuda_batch_caps(query_batch, keys_cap)
+    )
+    torch.cuda.synchronize()
+    return out, int(dot_ns_total), float(dot_ns_per_query), float(dot_ns_per_scalar)
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="Verify TC BMMA dot matches baseline dot")
     p.add_argument("--Q", type=int, default=64)
@@ -27,6 +35,8 @@ def main() -> None:
     p.add_argument("--compress_threshold", type=float, default=0.5)
     p.add_argument("--seed", type=int, default=123)
     p.add_argument("--warmup", type=int, default=2)
+    p.add_argument("--check_packed", action=argparse.BooleanOptionalAction, default=True,
+                   help="compare packed-batch output against the capsule path")
     # TC and baseline accumulate in different orders/instructions; expect small fp32 diffs.
     p.add_argument("--rtol", type=float, default=1e-2)
     p.add_argument("--atol", type=float, default=5e-3)
@@ -41,12 +51,15 @@ def main() -> None:
     # Keys are built on CPU (builder moves to CUDA internally).
     K = torch.randn(args.R, args.D, dtype=torch.float32, device="cpu")
     keys_cap, *_ = bsi_ops.build_bsi_keys_cuda(
-        K, args.decimal_places, float(args.compress_threshold)
+        K, args.decimal_places, float(args.compress_threshold), enable_hot_layout=True
     )
 
     # Queries are built on CUDA.
     Q = torch.randn(args.Q, args.D, dtype=torch.float32, device=device)
     query_caps = bsi_ops.build_bsi_queries_cuda_batch(
+        Q, args.decimal_places, float(args.compress_threshold)
+    )
+    query_batch = bsi_ops.build_bsi_queries_cuda_batch_packed(
         Q, args.decimal_places, float(args.compress_threshold)
     )
 
@@ -73,6 +86,19 @@ def main() -> None:
     # A hard fail in CI-style usage.
     if not torch.allclose(ref, tc, rtol=float(args.rtol), atol=float(args.atol)):
         raise SystemExit("FAIL: TC output does not match baseline within tolerance")
+
+    if args.check_packed:
+        packed, packed_ns, *_ = _run_dot_packed(query_batch=query_batch, keys_cap=keys_cap)
+        packed_diff = (packed - tc).abs()
+        packed_max_abs = float(packed_diff.max().item())
+        packed_mean_abs = float(packed_diff.mean().item())
+        packed_max_rel = float((packed_diff / tc.abs().clamp_min(1.0e-6)).max().item())
+        print(
+            f"[Packed] packed_ms={packed_ns/1e6:.3f} "
+            f"max_abs={packed_max_abs:.6e} mean_abs={packed_mean_abs:.6e} max_rel={packed_max_rel:.6e}"
+        )
+        if not torch.allclose(tc, packed, rtol=float(args.rtol), atol=float(args.atol)):
+            raise SystemExit("FAIL: packed-batch output does not match capsule path within tolerance")
 
     print("OK: TC output matches baseline within tolerance")
 

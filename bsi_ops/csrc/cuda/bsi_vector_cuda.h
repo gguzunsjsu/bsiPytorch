@@ -41,12 +41,21 @@ struct BsiQueryBatchCudaData {
     // Shape: [Q_tiles, chunks, slices, 64, 4] where Q_tiles = Q / 64 and
     // chunks = words_per_slice / 4.
     torch::Tensor words_tc_fixed76_tm64; // int64 cuda or undefined
+    // Optional SM90 persistent-engine layout. Queries are padded to multiples of 64
+    // rows, and 4 fixed76 chunks are grouped together to reduce per-chunk pointer
+    // arithmetic in the persistent split-K kernel.
+    // Shape: [Q_tiles, chunk_groups, slices, 64, 16] where
+    // Q_tiles = ceil(Q / 64) and chunk_groups = ceil((words_per_slice / 4) / 4).
+    torch::Tensor words_sm90_persistent; // int64 cuda or undefined
     torch::Tensor slice_weights; // [Q, slices]
     // Optional per-query, per-256-element-chunk power-of-two scales used by
     // fixed-bit "block floating" modes. Shape: [Q, chunks] where
     // chunks = words_per_slice / 4 (i.e., 256 bits per chunk).
     // When undefined, slice_weights already include any fixed-bit scaling.
     torch::Tensor chunk_scales;  // [Q, chunks] or undefined
+    // Optional query chunk scales packed to the persistent-engine chunk-group layout.
+    // Shape: [Q_tiles, chunk_groups, 64, 4].
+    torch::Tensor chunk_scales_sm90_persistent; // float32 cuda or undefined
 };
 
 bool bsi_cuda_should_log();

@@ -8,7 +8,9 @@
 #include <chrono>
 #include <iostream>
 #include <cstdint>
+#include <cstring>
 #include <unordered_map>
+#include <mutex>
 #include <c10/cuda/CUDAFunctions.h>
 #include <ATen/Parallel.h>
 #include <cstdlib>
@@ -58,6 +60,22 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     float* out_global,
     cudaStream_t stream);
 
+extern "C" bool launch_popcount_weighted_keys_literal_fused_multiq_sm90_persistent(
+    const unsigned long long* A_sm90_persistent,
+    const float* A_chunk_scales_sm90_persistent,
+    int A_q_tiles,
+    int A_chunk_groups,
+    int A_chunks_total,
+    int Q,
+    const unsigned long long* B_sm90_persistent,
+    const float* B_row_scales_sm90_persistent,
+    int B_n_tiles,
+    int R,
+    float scale_inv,
+    float* scratch,
+    float* out_global,
+    cudaStream_t stream);
+
 template <typename T>
 inline T* tensor_data_ptr(torch::Tensor& t) {
     return t.data_ptr<T>();
@@ -91,6 +109,47 @@ static int bsi_cuda_r_tile() {
         if (t > 0) v = t;
     }
     if (v < 1) v = 1;
+    cached = v;
+    return cached;
+}
+
+enum class BsiTcPolicyHost : int {
+    Auto = 0,
+    Legacy = 1,
+    Sm90Persistent = 2,
+};
+
+static BsiTcPolicyHost bsi_cuda_tc_policy_host() {
+    static int cached = -1;
+    if (cached >= 0) return static_cast<BsiTcPolicyHost>(cached);
+    cached = static_cast<int>(BsiTcPolicyHost::Auto);
+    if (const char* s = std::getenv("BSI_TC_POLICY")) {
+        if (std::strcmp(s, "legacy") == 0) {
+            cached = static_cast<int>(BsiTcPolicyHost::Legacy);
+        } else if (std::strcmp(s, "sm90_persistent") == 0 || std::strcmp(s, "sm90_aggressive") == 0) {
+            cached = static_cast<int>(BsiTcPolicyHost::Sm90Persistent);
+        }
+    }
+    return static_cast<BsiTcPolicyHost>(cached);
+}
+
+static bool bsi_cuda_sm90_or_newer_host() {
+    int dev = 0;
+    cudaGetDevice(&dev);
+    int major = 0;
+    cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, dev);
+    return major >= 9;
+}
+
+static int bsi_cuda_hot_layout_budget_pct() {
+    static int cached = -1;
+    if (cached >= 0) return cached;
+    int v = 10;
+    if (const char* s = std::getenv("BSI_HOT_LAYOUT_BUDGET_PCT")) {
+        v = std::atoi(s);
+    }
+    if (v < 0) v = 0;
+    if (v > 100) v = 100;
     cached = v;
     return cached;
 }
@@ -171,6 +230,11 @@ struct PrebuiltBSIKeysCUDA {
     at::Tensor single_words;   // [Rg, Sb, W]
     at::Tensor single_weights; // [Rg, Sb]
     at::Tensor single_indices_dev; // [Rg] int64 cuda if non-identity
+    // Optional SM90 persistent hot layout for the fixed76 single-group keyset.
+    bool sm90_hot_layout = false;
+    int sm90_hot_chunk_groups = 0;
+    at::Tensor single_words_sm90_persistent; // [R_tiles, chunk_groups, 6, 128, 16] int64 cuda
+    at::Tensor single_row_scales_sm90_persistent; // [R_tiles, 128] float32 cuda
     int W = 0;
     int64_t d = 0;
     int64_t num_keys = 0;
@@ -205,8 +269,10 @@ struct PrebuiltBSIQueryBatchCUDA {
     at::Tensor words;         // [Q, Sa, W] int64 cuda
     at::Tensor words_tc_fixed76; // [Q_tiles, chunks, Sa, 32, 4] int64 cuda or undefined
     at::Tensor words_tc_fixed76_tm64; // [Q_tiles, chunks, Sa, 64, 4] int64 cuda or undefined
+    at::Tensor words_sm90_persistent; // [Q_tiles, chunk_groups, Sa, 64, 16] int64 cuda or undefined
     at::Tensor slice_weights; // [Q, Sa] float32 cuda
     at::Tensor chunk_scales;  // [Q, chunks] float32 cuda or undefined
+    at::Tensor chunk_scales_sm90_persistent; // [Q_tiles, chunk_groups, 64, 4] float32 cuda or undefined
     int Sa = 0;
     int W = 0;
     int decimals = 0;
@@ -216,6 +282,153 @@ struct PrebuiltBSIQueryBatchCUDA {
 
 static PrebuiltBSIQueryBatchCUDA* capsule_to_query_batch_cuda(const pybind11::capsule& cap) {
     return reinterpret_cast<PrebuiltBSIQueryBatchCUDA*>(cap.get_pointer());
+}
+
+struct BsiPersistentQueryLayout {
+    at::Tensor words;        // [Q_tiles, chunk_groups, 7, 64, 16]
+    at::Tensor chunk_scales; // [Q_tiles, chunk_groups, 64, 4]
+    int q_tiles = 0;
+    int chunk_groups = 0;
+    int chunks_total = 0;
+    int64_t q_padded = 0;
+};
+
+static bool bsi_cuda_fixed76_hot_layout_eligible_host(int64_t rows, int64_t d, int slices) {
+    return bsi_cuda_sm90_or_newer_host() &&
+        slices == 6 &&
+        rows >= 2048 &&
+        d >= 2048 &&
+        ((rows % 128) == 0) &&
+        ((d % 256) == 0);
+}
+
+static bool bsi_cuda_fixed76_persistent_query_eligible_host(int64_t q, int64_t d, int slices, bool have_chunk_scales) {
+    return bsi_cuda_sm90_or_newer_host() &&
+        have_chunk_scales &&
+        slices == 7 &&
+        q > 0 &&
+        d >= 2048 &&
+        ((d % 256) == 0);
+}
+
+static BsiPersistentQueryLayout bsi_make_query_persistent_layout(const at::Tensor& words,
+                                                                 const at::Tensor& chunk_scales) {
+    TORCH_CHECK(words.defined() && words.dim() == 3, "Expected words [Q, Sa, W]");
+    TORCH_CHECK(chunk_scales.defined() && chunk_scales.dim() == 2,
+                "Expected chunk_scales [Q, chunks]");
+    const int64_t Q = words.size(0);
+    const int64_t Sa = words.size(1);
+    const int64_t W64 = words.size(2);
+    const int64_t chunks = chunk_scales.size(1);
+    TORCH_CHECK(chunks == (W64 / 4), "Persistent query layout expects W64/4 chunk scales");
+
+    BsiPersistentQueryLayout out;
+    out.q_tiles = static_cast<int>((Q + 63) / 64);
+    out.q_padded = static_cast<int64_t>(out.q_tiles) * 64;
+    out.chunk_groups = static_cast<int>((chunks + 3) / 4);
+    out.chunks_total = static_cast<int>(chunks);
+
+    const int64_t w_padded = static_cast<int64_t>(out.chunk_groups) * 16;
+    auto word_opts = torch::TensorOptions().dtype(torch::kInt64).device(words.device());
+    auto scale_opts = torch::TensorOptions().dtype(torch::kFloat32).device(chunk_scales.device());
+
+    auto padded_words = torch::zeros({out.q_padded, Sa, w_padded}, word_opts);
+    padded_words.narrow(0, 0, Q).narrow(2, 0, W64).copy_(words);
+    out.words = padded_words
+                    .view({out.q_tiles, 64, Sa, out.chunk_groups, 16})
+                    .permute({0, 3, 2, 1, 4})
+                    .contiguous();
+
+    auto padded_scales = torch::zeros({out.q_padded, static_cast<int64_t>(out.chunk_groups) * 4}, scale_opts);
+    padded_scales.narrow(0, 0, Q).narrow(1, 0, chunks).copy_(chunk_scales);
+    out.chunk_scales = padded_scales
+                           .view({out.q_tiles, 64, out.chunk_groups, 4})
+                           .permute({0, 2, 1, 3})
+                           .contiguous();
+    return out;
+}
+
+static void bsi_make_key_hot_layout(const at::Tensor& words,
+                                    const at::Tensor& slice_weights,
+                                    at::Tensor& hot_words,
+                                    at::Tensor& hot_row_scales,
+                                    int& chunk_groups_out) {
+    TORCH_CHECK(words.defined() && words.dim() == 3, "Expected key words [R, Sb, W]");
+    TORCH_CHECK(slice_weights.defined() && slice_weights.dim() == 2,
+                "Expected key slice_weights [R, Sb]");
+    const int64_t R = words.size(0);
+    const int64_t Sb = words.size(1);
+    const int64_t W64 = words.size(2);
+    TORCH_CHECK((R % 128) == 0, "Hot key layout requires R multiple of 128");
+    TORCH_CHECK(Sb == 6, "Hot key layout requires fixed76 Sb=6");
+
+    const int64_t chunks = (W64 + 3) / 4;
+    const int64_t chunk_groups = (chunks + 3) / 4;
+    const int64_t w_padded = chunk_groups * 16;
+    const int64_t r_tiles = R / 128;
+    auto word_opts = torch::TensorOptions().dtype(torch::kInt64).device(words.device());
+
+    auto padded_words = torch::zeros({R, Sb, w_padded}, word_opts);
+    padded_words.narrow(2, 0, W64).copy_(words);
+    hot_words = padded_words
+                    .view({r_tiles, 128, Sb, chunk_groups, 16})
+                    .permute({0, 3, 2, 1, 4})
+                    .contiguous();
+
+    hot_row_scales = slice_weights.select(1, 0).contiguous().view({r_tiles, 128}).contiguous();
+    chunk_groups_out = static_cast<int>(chunk_groups);
+}
+
+struct BsiDotRuntimeProfile {
+    std::string engine = "legacy";
+    std::string transport = "legacy";
+    bool hot_layout = false;
+    int split_k = 1;
+    uint64_t scratch_bytes = 0;
+};
+
+static BsiDotRuntimeProfile g_last_dot_profile;
+
+static void bsi_set_last_dot_profile(const char* engine,
+                                     const char* transport,
+                                     bool hot_layout,
+                                     int split_k,
+                                     uint64_t scratch_bytes) {
+    g_last_dot_profile.engine = engine ? engine : "legacy";
+    g_last_dot_profile.transport = transport ? transport : "legacy";
+    g_last_dot_profile.hot_layout = hot_layout;
+    g_last_dot_profile.split_k = std::max(1, split_k);
+    g_last_dot_profile.scratch_bytes = scratch_bytes;
+}
+
+static pybind11::dict bsi_get_last_dot_profile_cuda() {
+    pybind11::dict out;
+    out["engine"] = g_last_dot_profile.engine;
+    out["transport"] = g_last_dot_profile.transport;
+    out["hot_layout"] = g_last_dot_profile.hot_layout;
+    out["split_k"] = g_last_dot_profile.split_k;
+    out["scratch_bytes"] = pybind11::int_(g_last_dot_profile.scratch_bytes);
+    return out;
+}
+
+static at::Tensor bsi_get_persistent_scratch_cached(int q_tiles,
+                                                    int n_tiles,
+                                                    int split_k,
+                                                    int device_index) {
+    static std::mutex cache_mu;
+    static std::unordered_map<std::string, at::Tensor> cache;
+    const std::string key = std::to_string(device_index) + ":" + std::to_string(q_tiles) + ":" +
+        std::to_string(n_tiles) + ":" + std::to_string(split_k);
+    std::lock_guard<std::mutex> lock(cache_mu);
+    auto it = cache.find(key);
+    if (it != cache.end() && it->second.defined()) {
+        return it->second;
+    }
+    auto scratch = torch::empty(
+        {split_k, q_tiles, n_tiles, 64, 128},
+        torch::TensorOptions().dtype(torch::kFloat32).device(torch::Device(torch::kCUDA, device_index)));
+    cache[key] = scratch;
+    return scratch;
 }
 
 static inline long double weight_for_meta(int offset, int idx, bool twos, int S) {
@@ -366,9 +579,15 @@ static pybind11::capsule build_bsi_queries_cuda_batch_packed(torch::Tensor q2d,
     if (batch.words_tc_fixed76_tm64.defined() && batch.words_tc_fixed76_tm64.numel() > 0) {
         holder->words_tc_fixed76_tm64 = batch.words_tc_fixed76_tm64.contiguous();
     }
+    if (batch.words_sm90_persistent.defined() && batch.words_sm90_persistent.numel() > 0) {
+        holder->words_sm90_persistent = batch.words_sm90_persistent.contiguous();
+    }
     holder->slice_weights = batch.slice_weights.contiguous();
     if (batch.chunk_scales.defined() && batch.chunk_scales.numel() > 0) {
         holder->chunk_scales = batch.chunk_scales.contiguous();
+    }
+    if (batch.chunk_scales_sm90_persistent.defined() && batch.chunk_scales_sm90_persistent.numel() > 0) {
+        holder->chunk_scales_sm90_persistent = batch.chunk_scales_sm90_persistent.contiguous();
     }
     holder->Sa = batch.slices;
     holder->W = batch.words_per_slice;
@@ -384,8 +603,16 @@ static pybind11::capsule build_bsi_queries_cuda_batch_packed(torch::Tensor q2d,
         holder->mem_bytes +=
             static_cast<size_t>(holder->words_tc_fixed76_tm64.numel() * holder->words_tc_fixed76_tm64.element_size());
     }
+    if (holder->words_sm90_persistent.defined() && holder->words_sm90_persistent.numel() > 0) {
+        holder->mem_bytes += static_cast<size_t>(
+            holder->words_sm90_persistent.numel() * holder->words_sm90_persistent.element_size());
+    }
     if (holder->chunk_scales.defined() && holder->chunk_scales.numel() > 0) {
         holder->mem_bytes += static_cast<size_t>(holder->chunk_scales.numel() * holder->chunk_scales.element_size());
+    }
+    if (holder->chunk_scales_sm90_persistent.defined() && holder->chunk_scales_sm90_persistent.numel() > 0) {
+        holder->mem_bytes += static_cast<size_t>(
+            holder->chunk_scales_sm90_persistent.numel() * holder->chunk_scales_sm90_persistent.element_size());
     }
 
     pybind11::capsule cap(holder, "PrebuiltBSIQueryBatchCUDA",
@@ -555,6 +782,8 @@ struct TempGroup {
         cudaEventRecord(start_evt, stream.stream());
     }
 
+    bool any_persistent_launch = false;
+    uint64_t persistent_scratch_bytes = 0;
     for (const auto& pg : prepared) {
         const auto* A = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(pg.words));
         const auto* Aw = tensor_data_ptr<float>(pg.weights);
@@ -578,6 +807,55 @@ struct TempGroup {
             A_scale_stride = static_cast<int>(pg.chunk_scales.size(1));
         }
         const auto* q_idx = reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(pg.q_indices));
+
+        const bool can_try_persistent =
+            (bsi_cuda_tc_policy_host() != BsiTcPolicyHost::Legacy) &&
+            keys->single_group &&
+            keys->single_indices_identity &&
+            keys->sm90_hot_layout &&
+            pg.S == 7 &&
+            pg.chunk_scales.defined() &&
+            pg.chunk_scales.numel() > 0 &&
+            bsi_cuda_fixed76_persistent_query_eligible_host(
+                pg.Qcount, keys->d, pg.S, /*have_chunk_scales=*/true);
+        if (can_try_persistent) {
+            auto q_layout = bsi_make_query_persistent_layout(pg.words, pg.chunk_scales);
+            if (q_layout.chunk_groups == keys->sm90_hot_chunk_groups) {
+                const int n_tiles = static_cast<int>(R / 128);
+                auto scratch = bsi_get_persistent_scratch_cached(
+                    q_layout.q_tiles,
+                    n_tiles,
+                    q_layout.chunk_groups,
+                    c10::cuda::current_device());
+                auto out_group = torch::zeros(
+                    {pg.Qcount, R},
+                    torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
+                const bool launched = launch_popcount_weighted_keys_literal_fused_multiq_sm90_persistent(
+                    reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(q_layout.words)),
+                    tensor_data_ptr<float>(q_layout.chunk_scales),
+                    q_layout.q_tiles,
+                    q_layout.chunk_groups,
+                    q_layout.chunks_total,
+                    static_cast<int>(pg.Qcount),
+                    reinterpret_cast<const unsigned long long*>(
+                        tensor_data_ptr<int64_t>(keys->single_words_sm90_persistent)),
+                    tensor_data_ptr<float>(keys->single_row_scales_sm90_persistent),
+                    n_tiles,
+                    static_cast<int>(R),
+                    static_cast<float>(scale_inv),
+                    tensor_data_ptr<float>(scratch),
+                    tensor_data_ptr<float>(out_group),
+                    stream.stream());
+                if (launched) {
+                    out_all.index_copy_(0, pg.q_indices, out_group);
+                    any_persistent_launch = true;
+                    persistent_scratch_bytes = std::max<uint64_t>(
+                        persistent_scratch_bytes,
+                        static_cast<uint64_t>(scratch.numel() * scratch.element_size()));
+                    continue;
+                }
+            }
+        }
 
         if (keys->single_group) {
             const int Sb = keys->single_sb;
@@ -652,6 +930,16 @@ struct TempGroup {
                     stream.stream());
             }
         }
+    }
+    if (any_persistent_launch) {
+        bsi_set_last_dot_profile(
+            "sm90_persistent",
+            "cpasync",
+            true,
+            keys->sm90_hot_chunk_groups,
+            persistent_scratch_bytes);
+    } else {
+        bsi_set_last_dot_profile("legacy", "legacy", false, 1, 0);
     }
 
     if (profile) {
@@ -757,6 +1045,20 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
         A_tc_fixed76_tm64 =
             reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(qb->words_tc_fixed76_tm64));
     }
+    if (qb->words_sm90_persistent.defined() && qb->words_sm90_persistent.numel() > 0) {
+        TORCH_CHECK(qb->words_sm90_persistent.is_cuda(), "words_sm90_persistent must be a CUDA tensor");
+        TORCH_CHECK(qb->words_sm90_persistent.dim() == 5,
+                    "words_sm90_persistent must be [Q_tiles, chunk_groups, Sa, 64, 16]");
+        TORCH_CHECK(qb->words_sm90_persistent.size(2) == Sa, "words_sm90_persistent slice count mismatch");
+        TORCH_CHECK(qb->words_sm90_persistent.size(3) == 64, "words_sm90_persistent TM dimension mismatch");
+        TORCH_CHECK(qb->words_sm90_persistent.size(4) == 16, "words_sm90_persistent group-word mismatch");
+    }
+    if (qb->chunk_scales_sm90_persistent.defined() && qb->chunk_scales_sm90_persistent.numel() > 0) {
+        TORCH_CHECK(qb->chunk_scales_sm90_persistent.is_cuda(),
+                    "chunk_scales_sm90_persistent must be a CUDA tensor");
+        TORCH_CHECK(qb->chunk_scales_sm90_persistent.dim() == 4,
+                    "chunk_scales_sm90_persistent must be [Q_tiles, chunk_groups, 64, 4]");
+    }
 
     // Output: [Q, R_total] (full keyset width).
     auto out_all = torch::zeros({Q, R}, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
@@ -780,8 +1082,66 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
     const auto* A = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(qb->words));
     const auto* Aw = tensor_data_ptr<float>(qb->slice_weights);
     const long long* indices_q = nullptr; // identity mapping in packed batch mode
+    bool persistent_launched = false;
+    uint64_t persistent_scratch_bytes = 0;
 
-    if (keys->single_group) {
+    auto try_launch_sm90_persistent = [&]() -> bool {
+        const BsiTcPolicyHost tc_policy = bsi_cuda_tc_policy_host();
+        if (tc_policy == BsiTcPolicyHost::Legacy) return false;
+        if (!keys->single_group || !keys->single_indices_identity || !keys->sm90_hot_layout) return false;
+        if (static_cast<int>(Sa) != 7 || A_chunk_scales == nullptr || A_scale_stride <= 0) return false;
+        if (!bsi_cuda_fixed76_persistent_query_eligible_host(Q, keys->d, static_cast<int>(Sa), true)) return false;
+
+        BsiPersistentQueryLayout q_layout;
+        if (qb->words_sm90_persistent.defined() && qb->words_sm90_persistent.numel() > 0 &&
+            qb->chunk_scales_sm90_persistent.defined() && qb->chunk_scales_sm90_persistent.numel() > 0) {
+            TORCH_CHECK(qb->chunk_scales.defined() && qb->chunk_scales.numel() > 0,
+                        "words_sm90_persistent requires canonical chunk_scales metadata");
+            q_layout.words = qb->words_sm90_persistent;
+            q_layout.chunk_scales = qb->chunk_scales_sm90_persistent;
+            q_layout.q_tiles = static_cast<int>(qb->words_sm90_persistent.size(0));
+            q_layout.chunk_groups = static_cast<int>(qb->words_sm90_persistent.size(1));
+            q_layout.chunks_total = static_cast<int>(qb->chunk_scales.size(1));
+            q_layout.q_padded = static_cast<int64_t>(q_layout.q_tiles) * 64;
+        } else {
+            q_layout = bsi_make_query_persistent_layout(qb->words, qb->chunk_scales);
+        }
+        if (q_layout.chunk_groups != keys->sm90_hot_chunk_groups) return false;
+
+        const int n_tiles = static_cast<int>(R / 128);
+        const int device_index = c10::cuda::current_device();
+        auto scratch = bsi_get_persistent_scratch_cached(
+            q_layout.q_tiles, n_tiles, q_layout.chunk_groups, device_index);
+        const bool launched = launch_popcount_weighted_keys_literal_fused_multiq_sm90_persistent(
+            reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(q_layout.words)),
+            tensor_data_ptr<float>(q_layout.chunk_scales),
+            q_layout.q_tiles,
+            q_layout.chunk_groups,
+            q_layout.chunks_total,
+            static_cast<int>(Q),
+            reinterpret_cast<const unsigned long long*>(
+                tensor_data_ptr<int64_t>(keys->single_words_sm90_persistent)),
+            tensor_data_ptr<float>(keys->single_row_scales_sm90_persistent),
+            n_tiles,
+            static_cast<int>(R),
+            static_cast<float>(scale_inv),
+            tensor_data_ptr<float>(scratch),
+            tensor_data_ptr<float>(out_all),
+            stream.stream());
+        if (!launched) return false;
+        persistent_scratch_bytes = static_cast<uint64_t>(scratch.numel() * scratch.element_size());
+        bsi_set_last_dot_profile(
+            "sm90_persistent",
+            "cpasync",
+            true,
+            q_layout.chunk_groups,
+            persistent_scratch_bytes);
+        return true;
+    };
+
+    persistent_launched = try_launch_sm90_persistent();
+
+    if (!persistent_launched && keys->single_group) {
         const int Sb = keys->single_sb;
         const int Rg = keys->single_rg;
         const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(keys->single_words));
@@ -812,7 +1172,7 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
             static_cast<int>(R),
             tensor_data_ptr<float>(out_all),
             stream.stream());
-    } else {
+    } else if (!persistent_launched) {
         for (const auto& kv2 : keys->grouped_indices) {
             int Sb = kv2.first;
             const auto& idxs = kv2.second;
@@ -854,6 +1214,9 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
                 stream.stream());
         }
     }
+    if (!persistent_launched) {
+        bsi_set_last_dot_profile("legacy", "legacy", false, 1, 0);
+    }
 
     if (profile) {
         cudaEventRecord(end_evt, stream.stream());
@@ -888,6 +1251,8 @@ static pybind11::dict bsi_keys_cuda_stats(pybind11::capsule keyset_cuda_cap) {
     out["decimals"] = pybind11::int_(keys->decimals);
     out["threshold"] = pybind11::float_(keys->threshold);
     out["Sb_counts"] = sb_counts;
+    out["sm90_hot_layout"] = pybind11::bool_(keys->sm90_hot_layout);
+    out["sm90_hot_chunk_groups"] = pybind11::int_(keys->sm90_hot_chunk_groups);
     return out;
 }
 
@@ -920,7 +1285,10 @@ static pybind11::dict bsi_query_caps_stats(pybind11::list query_caps_list) {
     return out;
 }
 
-static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, float compress_threshold) {
+static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K,
+                                           int decimalPlaces,
+                                           float compress_threshold,
+                                           bool enable_hot_layout = false) {
     TORCH_CHECK(K.dim() == 2, "K must be 2D [num_keys, d]");
     // Fixed-bit mode: build key bitplanes directly on CUDA to ensure
     // keys and queries use the same quantization/scaling behavior.
@@ -960,6 +1328,26 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
 
         uint64_t total_mem_bytes = static_cast<uint64_t>(
             holder->grouped_words[Sb].numel() * holder->grouped_words[Sb].element_size());
+        total_mem_bytes += static_cast<uint64_t>(
+            holder->grouped_weights[Sb].numel() * holder->grouped_weights[Sb].element_size());
+
+        if (enable_hot_layout &&
+            bsi_cuda_fixed76_hot_layout_eligible_host(num_keys, d, Sb)) {
+            bsi_make_key_hot_layout(
+                holder->grouped_words[Sb],
+                holder->grouped_weights[Sb],
+                holder->single_words_sm90_persistent,
+                holder->single_row_scales_sm90_persistent,
+                holder->sm90_hot_chunk_groups);
+            holder->sm90_hot_layout = holder->single_words_sm90_persistent.defined() &&
+                holder->single_words_sm90_persistent.numel() > 0;
+            if (holder->sm90_hot_layout) {
+                total_mem_bytes += static_cast<uint64_t>(
+                    holder->single_words_sm90_persistent.numel() * holder->single_words_sm90_persistent.element_size());
+                total_mem_bytes += static_cast<uint64_t>(
+                    holder->single_row_scales_sm90_persistent.numel() * holder->single_row_scales_sm90_persistent.element_size());
+            }
+        }
 
         pybind11::capsule cap(holder, "PrebuiltBSIKeysCUDA",
             [](PyObject* capsule){
@@ -1100,6 +1488,9 @@ void register_bsi_cuda(pybind11::module& m) {
     m.def("reset_last_query_build_profile_cuda",
         &bsi_cuda_reset_last_query_build_profile,
         "Reset last CUDA query-batch build profile counters to zero");
+    m.def("get_last_dot_profile_cuda",
+        &bsi_get_last_dot_profile_cuda,
+        "Return engine/transport/split-K metadata from the last CUDA dot call");
 
     // Hybrid compressed query builder
     m.def("build_bsi_query_cuda_hybrid",
@@ -1135,5 +1526,6 @@ void register_bsi_cuda(pybind11::module& m) {
         pybind11::arg("K"),
         pybind11::arg("decimal_places"),
         pybind11::arg("compress_threshold") = 0.2f,
+        pybind11::arg("enable_hot_layout") = false,
         "Build BSI keys and prepack to CUDA");
 }

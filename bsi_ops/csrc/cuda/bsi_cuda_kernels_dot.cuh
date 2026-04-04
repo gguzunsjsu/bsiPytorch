@@ -13,6 +13,7 @@
 #if !defined(__CUDA_ARCH__)
 #include <cuda.h>
 
+#include <algorithm>
 #include <mutex>
 #include <unordered_map>
 #endif
@@ -2706,6 +2707,293 @@ __device__ __forceinline__ void bsi_bmma_tm32_accum_sa7_sb_hot(
 #endif
 }
 
+static inline size_t bsi_sm90_persistent_shared_bytes() {
+    constexpr size_t SA = 7;
+    constexpr size_t SB = 6;
+    constexpr size_t TM_TOTAL = 64;
+    constexpr size_t TN_TOTAL = 128;
+    constexpr size_t GROUP_WORDS64 = 16;
+    return
+        (SA * TM_TOTAL * GROUP_WORDS64 * sizeof(unsigned long long)) +
+        (SB * TN_TOTAL * GROUP_WORDS64 * sizeof(unsigned long long)) +
+        (TM_TOTAL * 4 * sizeof(float)) +
+        (TN_TOTAL * sizeof(float)) +
+        256u;
+}
+
+extern "C" __global__ __launch_bounds__(512, 1)
+void popcount_weighted_keys_literal_fused_bmma_tc_kernel_sm90_persistent_partial(
+    const unsigned long long* __restrict__ A_hot,
+    const float* __restrict__ A_chunk_scales_hot,
+    int A_q_tiles,
+    int split_k,
+    int chunks_total,
+    int Q,
+    const unsigned long long* __restrict__ B_hot,
+    const float* __restrict__ B_row_scales_hot,
+    int B_n_tiles,
+    int total_work,
+    int* __restrict__ work_counter,
+    float* __restrict__ scratch)
+{
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900)
+    constexpr int SA = 7;
+    constexpr int SB = 6;
+    constexpr int TM_TOTAL = 64;
+    constexpr int TM = 16;
+    constexpr int TN_TOTAL = 128;
+    constexpr int GROUP_CHUNKS = 4;
+    constexpr int GROUP_WORDS64 = 16;
+    constexpr int WARPS_PER_QSUB = 4;
+    constexpr int QTILES = TM_TOTAL / TM;
+    constexpr int BLOCK_THREADS = QTILES * WARPS_PER_QSUB * 32;
+    if (blockDim.x != BLOCK_THREADS) return;
+
+    extern __shared__ unsigned char smem_raw[];
+    uintptr_t p = reinterpret_cast<uintptr_t>(smem_raw);
+    p = (p + 127u) & ~uintptr_t(127u);
+    auto* A_words = reinterpret_cast<unsigned long long*>(p);
+    p += (size_t)SA * (size_t)TM_TOTAL * (size_t)GROUP_WORDS64 * sizeof(unsigned long long);
+    auto* B_words = reinterpret_cast<unsigned long long*>(p);
+    p += (size_t)SB * (size_t)TN_TOTAL * (size_t)GROUP_WORDS64 * sizeof(unsigned long long);
+    auto* A_scales = reinterpret_cast<float*>(p);
+    p += (size_t)TM_TOTAL * (size_t)GROUP_CHUNKS * sizeof(float);
+    auto* B_scales = reinterpret_cast<float*>(p);
+    (void)p;
+
+    const int lane = threadIdx.x & 31;
+    const int warp_id = threadIdx.x >> 5;
+    const int q_subtile = warp_id >> 2; // 0..3
+    const int n_group = warp_id & (WARPS_PER_QSUB - 1); // 0..3
+    const int groupID = lane >> 2; // 0..7
+    const int threadID = lane & 3; // 0..3
+    const int row0 = groupID;
+    const int row1 = groupID + 8;
+    const int m0 = q_subtile * TM + row0;
+    const int m1 = q_subtile * TM + row1;
+    (void)chunks_total;
+    (void)Q;
+
+    while (true) {
+        const int work_id = atomicAdd(work_counter, 1);
+        if (work_id >= total_work) break;
+
+        const int split_idx = work_id % split_k;
+        const int tile_id = work_id / split_k;
+        const int n_tile = tile_id % B_n_tiles;
+        const int q_tile = tile_id / B_n_tiles;
+        if (q_tile >= A_q_tiles) break;
+
+        const size_t a_base =
+            ((((size_t)q_tile * (size_t)split_k + (size_t)split_idx) * (size_t)SA) *
+             (size_t)TM_TOTAL) *
+            (size_t)GROUP_WORDS64;
+        const size_t b_base =
+            ((((size_t)n_tile * (size_t)split_k + (size_t)split_idx) * (size_t)SB) *
+             (size_t)TN_TOTAL) *
+            (size_t)GROUP_WORDS64;
+        const unsigned long long* A_src = A_hot + a_base;
+        const unsigned long long* B_src = B_hot + b_base;
+        const float* A_scale_src =
+            A_chunk_scales_hot + ((((size_t)q_tile * (size_t)split_k + (size_t)split_idx) * (size_t)TM_TOTAL) * 4u);
+        const float* B_scale_src = B_row_scales_hot + ((size_t)n_tile * (size_t)TN_TOTAL);
+
+        constexpr int A_COPY_PAIRS = SA * TM_TOTAL * (GROUP_WORDS64 / 2);
+        for (int idx = threadIdx.x; idx < A_COPY_PAIRS; idx += blockDim.x) {
+            const size_t pair_off = (size_t)idx * 2u;
+            bsi_cp_async_cg_16B(A_words + pair_off, A_src + pair_off);
+        }
+        constexpr int B_COPY_PAIRS = SB * TN_TOTAL * (GROUP_WORDS64 / 2);
+        for (int idx = threadIdx.x; idx < B_COPY_PAIRS; idx += blockDim.x) {
+            const size_t pair_off = (size_t)idx * 2u;
+            bsi_cp_async_cg_16B(B_words + pair_off, B_src + pair_off);
+        }
+        for (int idx = threadIdx.x; idx < TM_TOTAL * GROUP_CHUNKS; idx += blockDim.x) {
+            A_scales[idx] = __ldg(&A_scale_src[idx]);
+        }
+        for (int idx = threadIdx.x; idx < TN_TOTAL; idx += blockDim.x) {
+            B_scales[idx] = __ldg(&B_scale_src[idx]);
+        }
+        bsi_cp_async_commit_group();
+        bsi_cp_async_wait_all();
+        __syncthreads();
+
+        float4 acc[4];
+#pragma unroll
+        for (int pass = 0; pass < 4; ++pass) {
+            acc[pass] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+        }
+
+#pragma unroll
+        for (int chunk_in_group = 0; chunk_in_group < GROUP_CHUNKS; ++chunk_in_group) {
+            float qscale_m0 = 0.0f;
+            float qscale_m1 = 0.0f;
+            if (threadID == 0) {
+                qscale_m0 = A_scales[(size_t)m0 * 4u + (size_t)chunk_in_group];
+                qscale_m1 = A_scales[(size_t)m1 * 4u + (size_t)chunk_in_group];
+            }
+            qscale_m0 = __shfl_sync(0xffffffff, qscale_m0, lane & ~3);
+            qscale_m1 = __shfl_sync(0xffffffff, qscale_m1, lane & ~3);
+
+#pragma unroll
+            for (int pass = 0; pass < 4; ++pass) {
+                const int col_base = (pass * 4 + n_group) * 8;
+                const int col0 = col_base + threadID * 2;
+                const int col1 = col0 + 1;
+                const float bscale0 = B_scales[col0];
+                const float bscale1 = B_scales[col1];
+                const int n = col_base + groupID;
+
+                uint32_t b0_cache[SB];
+                uint32_t b1_cache[SB];
+#pragma unroll
+                for (int j = 0; j < SB; ++j) {
+                    const uint32_t* b_row = reinterpret_cast<const uint32_t*>(
+                        B_words + (((size_t)j * (size_t)TN_TOTAL + (size_t)n) * (size_t)GROUP_WORDS64));
+                    const uint32_t* b_frag = b_row + (size_t)chunk_in_group * 8u;
+                    b0_cache[j] = b_frag[threadID];
+                    b1_cache[j] = b_frag[threadID + 4];
+                }
+
+                int chunk00 = 0, chunk01 = 0, chunk10 = 0, chunk11 = 0;
+#pragma unroll
+                for (int i = 0; i < SA; ++i) {
+                    const uint32_t* a_row0 = reinterpret_cast<const uint32_t*>(
+                        A_words + (((size_t)i * (size_t)TM_TOTAL + (size_t)m0) * (size_t)GROUP_WORDS64));
+                    const uint32_t* a_row1 = reinterpret_cast<const uint32_t*>(
+                        A_words + (((size_t)i * (size_t)TM_TOTAL + (size_t)m1) * (size_t)GROUP_WORDS64));
+                    const uint32_t* a_frag0 = a_row0 + (size_t)chunk_in_group * 8u;
+                    const uint32_t* a_frag1 = a_row1 + (size_t)chunk_in_group * 8u;
+                    const uint32_t a0 = a_frag0[threadID];
+                    const uint32_t a1 = a_frag1[threadID];
+                    const uint32_t a2 = a_frag0[threadID + 4];
+                    const uint32_t a3 = a_frag1[threadID + 4];
+
+#pragma unroll
+                    for (int j = 0; j < SB; ++j) {
+                        const int shift = i + j;
+                        const bool neg = ((i == (SA - 1)) ^ (j == (SB - 1)));
+                        int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
+                        asm volatile(
+                            "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
+                            "{%0, %1, %2, %3}, "
+                            "{%4, %5, %6, %7}, "
+                            "{%8, %9}, "
+                            "{%0, %1, %2, %3};\n"
+                            : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
+                            : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
+                              "r"(b0_cache[j]), "r"(b1_cache[j]));
+
+                        const int v0 = c0 << shift;
+                        const int v1 = c1 << shift;
+                        const int v2 = c2 << shift;
+                        const int v3 = c3 << shift;
+                        if (neg) {
+                            chunk00 -= v0;
+                            chunk01 -= v1;
+                            chunk10 -= v2;
+                            chunk11 -= v3;
+                        } else {
+                            chunk00 += v0;
+                            chunk01 += v1;
+                            chunk10 += v2;
+                            chunk11 += v3;
+                        }
+                    }
+                }
+
+                const float s00 = qscale_m0 * bscale0;
+                const float s01 = qscale_m0 * bscale1;
+                const float s10 = qscale_m1 * bscale0;
+                const float s11 = qscale_m1 * bscale1;
+                acc[pass].x = __fmaf_rn(static_cast<float>(chunk00), s00, acc[pass].x);
+                acc[pass].y = __fmaf_rn(static_cast<float>(chunk01), s01, acc[pass].y);
+                acc[pass].z = __fmaf_rn(static_cast<float>(chunk10), s10, acc[pass].z);
+                acc[pass].w = __fmaf_rn(static_cast<float>(chunk11), s11, acc[pass].w);
+            }
+        }
+
+        float* scratch_tile =
+            scratch + ((((size_t)split_idx * (size_t)A_q_tiles + (size_t)q_tile) * (size_t)B_n_tiles + (size_t)n_tile) *
+                       (size_t)TM_TOTAL * (size_t)TN_TOTAL);
+#pragma unroll
+        for (int pass = 0; pass < 4; ++pass) {
+            const int col_base = (pass * 4 + n_group) * 8;
+            const int col0 = col_base + threadID * 2;
+            const int col1 = col0 + 1;
+            const int q_out0 = m0;
+            const int q_out1 = m1;
+            scratch_tile[(size_t)q_out0 * (size_t)TN_TOTAL + (size_t)col0] = acc[pass].x;
+            scratch_tile[(size_t)q_out0 * (size_t)TN_TOTAL + (size_t)col1] = acc[pass].y;
+            scratch_tile[(size_t)q_out1 * (size_t)TN_TOTAL + (size_t)col0] = acc[pass].z;
+            scratch_tile[(size_t)q_out1 * (size_t)TN_TOTAL + (size_t)col1] = acc[pass].w;
+        }
+        __syncthreads();
+    }
+#else
+    (void)A_hot;
+    (void)A_chunk_scales_hot;
+    (void)A_q_tiles;
+    (void)split_k;
+    (void)chunks_total;
+    (void)Q;
+    (void)B_hot;
+    (void)B_row_scales_hot;
+    (void)B_n_tiles;
+    (void)total_work;
+    (void)work_counter;
+    (void)scratch;
+#endif
+}
+
+extern "C" __global__ __launch_bounds__(256, 2)
+void popcount_weighted_keys_literal_fused_bmma_tc_kernel_sm90_persistent_finalize(
+    const float* __restrict__ scratch,
+    int split_k,
+    int q_tiles,
+    int n_tiles,
+    int Q,
+    int R,
+    float scale_inv,
+    float* __restrict__ out_global)
+{
+#if defined(__CUDA_ARCH__)
+    constexpr int TM_TOTAL = 64;
+    constexpr int TN_TOTAL = 128;
+    const int q_tile = blockIdx.y;
+    const int n_tile = blockIdx.x;
+    const int q_base = q_tile * TM_TOTAL;
+    const int r_base = n_tile * TN_TOTAL;
+    const int total = TM_TOTAL * TN_TOTAL;
+    for (int idx = threadIdx.x; idx < total; idx += blockDim.x) {
+        const int q_local = idx / TN_TOTAL;
+        const int r_local = idx - q_local * TN_TOTAL;
+        const int q = q_base + q_local;
+        const int r = r_base + r_local;
+        if (q >= Q || r >= R) continue;
+        float sum = 0.0f;
+        const size_t tile_offset =
+            (((size_t)q_tile * (size_t)n_tiles + (size_t)n_tile) * (size_t)TM_TOTAL * (size_t)TN_TOTAL) +
+            (size_t)q_local * (size_t)TN_TOTAL + (size_t)r_local;
+        for (int sk = 0; sk < split_k; ++sk) {
+            const size_t off =
+                ((size_t)sk * (size_t)q_tiles * (size_t)n_tiles * (size_t)TM_TOTAL * (size_t)TN_TOTAL) + tile_offset;
+            sum += scratch[off];
+        }
+        out_global[(size_t)q * (size_t)R + (size_t)r] = sum * scale_inv;
+    }
+#else
+    (void)scratch;
+    (void)split_k;
+    (void)q_tiles;
+    (void)n_tiles;
+    (void)Q;
+    (void)R;
+    (void)scale_inv;
+    (void)out_global;
+#endif
+}
+
 struct BsiSharedLimits {
     int max_shared_default = 0;
     int max_shared_optin = 0;
@@ -2725,6 +3013,110 @@ static inline const BsiSharedLimits& bsi_get_shared_limits_cached() {
         return out;
     }();
     return limits;
+}
+
+extern "C" bool launch_popcount_weighted_keys_literal_fused_multiq_sm90_persistent(
+    const unsigned long long* A_sm90_persistent,
+    const float* A_chunk_scales_sm90_persistent,
+    int A_q_tiles,
+    int A_chunk_groups,
+    int A_chunks_total,
+    int Q,
+    const unsigned long long* B_sm90_persistent,
+    const float* B_row_scales_sm90_persistent,
+    int B_n_tiles,
+    int R,
+    float scale_inv,
+    float* scratch,
+    float* out_global,
+    cudaStream_t stream)
+{
+#if !defined(__CUDA_ARCH__)
+    if (A_sm90_persistent == nullptr || A_chunk_scales_sm90_persistent == nullptr ||
+        B_sm90_persistent == nullptr || B_row_scales_sm90_persistent == nullptr ||
+        scratch == nullptr || out_global == nullptr) {
+        return false;
+    }
+    if (A_q_tiles <= 0 || A_chunk_groups <= 0 || Q <= 0 || B_n_tiles <= 0 || R <= 0) {
+        return false;
+    }
+
+    int dev = 0;
+    cudaGetDevice(&dev);
+    int major = 0;
+    int sm_count = 0;
+    cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, dev);
+    cudaDeviceGetAttribute(&sm_count, cudaDevAttrMultiProcessorCount, dev);
+    if (major < 9) return false;
+
+    const auto& smem_limits = bsi_get_shared_limits_cached();
+    const size_t shared_bytes = bsi_sm90_persistent_shared_bytes();
+    if (shared_bytes > (size_t)smem_limits.max_shared) return false;
+
+    static size_t configured_shared = 0;
+    if (shared_bytes > configured_shared) {
+        cudaFuncSetAttribute(
+            popcount_weighted_keys_literal_fused_bmma_tc_kernel_sm90_persistent_partial,
+            cudaFuncAttributeMaxDynamicSharedMemorySize,
+            (int)shared_bytes);
+        configured_shared = shared_bytes;
+    }
+
+    int* work_counter = nullptr;
+    if (cudaMalloc(&work_counter, sizeof(int)) != cudaSuccess) {
+        return false;
+    }
+    if (cudaMemsetAsync(work_counter, 0, sizeof(int), stream) != cudaSuccess) {
+        cudaFree(work_counter);
+        return false;
+    }
+    const int total_work = A_q_tiles * B_n_tiles * A_chunk_groups;
+    const int grid_blocks = std::max(1, std::min(total_work, sm_count));
+    popcount_weighted_keys_literal_fused_bmma_tc_kernel_sm90_persistent_partial<<<
+        grid_blocks, 512, shared_bytes, stream>>>(
+        A_sm90_persistent,
+        A_chunk_scales_sm90_persistent,
+        A_q_tiles,
+        A_chunk_groups,
+        A_chunks_total,
+        Q,
+        B_sm90_persistent,
+        B_row_scales_sm90_persistent,
+        B_n_tiles,
+        total_work,
+        work_counter,
+        scratch);
+
+    dim3 grid_finalize(B_n_tiles, A_q_tiles, 1);
+    popcount_weighted_keys_literal_fused_bmma_tc_kernel_sm90_persistent_finalize<<<
+        grid_finalize, 256, 0, stream>>>(
+        scratch,
+        A_chunk_groups,
+        A_q_tiles,
+        B_n_tiles,
+        Q,
+        R,
+        scale_inv,
+        out_global);
+    cudaFree(work_counter);
+    return true;
+#else
+    (void)A_sm90_persistent;
+    (void)A_chunk_scales_sm90_persistent;
+    (void)A_q_tiles;
+    (void)A_chunk_groups;
+    (void)A_chunks_total;
+    (void)Q;
+    (void)B_sm90_persistent;
+    (void)B_row_scales_sm90_persistent;
+    (void)B_n_tiles;
+    (void)R;
+    (void)scale_inv;
+    (void)scratch;
+    (void)out_global;
+    (void)stream;
+    return false;
+#endif
 }
 
 #if !defined(__CUDA_ARCH__)
@@ -2912,7 +3304,7 @@ static inline void* bsi_get_or_create_b_fixed76_rsweep_tensor_map(
 enum class BsiTcPolicy : int {
     Auto = 0,
     Legacy = 1,
-    Sm90Aggressive = 2,
+    Sm90Persistent = 2,
 };
 
 enum class BsiSm90Fixed76Variant : int {
@@ -2929,8 +3321,8 @@ static inline BsiTcPolicy bsi_get_tc_policy_cached() {
     if (const char* s = getenv("BSI_TC_POLICY")) {
         if (strcmp(s, "legacy") == 0) {
             cached = static_cast<int>(BsiTcPolicy::Legacy);
-        } else if (strcmp(s, "sm90_aggressive") == 0) {
-            cached = static_cast<int>(BsiTcPolicy::Sm90Aggressive);
+        } else if (strcmp(s, "sm90_persistent") == 0 || strcmp(s, "sm90_aggressive") == 0) {
+            cached = static_cast<int>(BsiTcPolicy::Sm90Persistent);
         } else {
             cached = static_cast<int>(BsiTcPolicy::Auto);
         }
@@ -3500,7 +3892,7 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                             return true;
                         };
 
-                        if (tc_policy == BsiTcPolicy::Legacy) {
+                        if (tc_policy == BsiTcPolicy::Legacy || tc_policy == BsiTcPolicy::Sm90Persistent) {
                             if (variant_can_run(BsiSm90Fixed76Variant::TM32_R4) &&
                                 launch_fixed76_variant(BsiSm90Fixed76Variant::TM32_R4)) {
                                 return true;
@@ -3511,8 +3903,6 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
                             }
                         } else {
                             const BsiSm90Fixed76Variant candidates[] = {
-                                BsiSm90Fixed76Variant::TM64_R4,
-                                BsiSm90Fixed76Variant::TM32_R8,
                                 BsiSm90Fixed76Variant::TM32_R4,
                             };
                             for (const auto variant : candidates) {

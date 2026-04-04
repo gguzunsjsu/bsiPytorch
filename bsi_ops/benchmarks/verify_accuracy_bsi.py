@@ -43,10 +43,121 @@ def get_device():
     else:
         return 'cpu'
 
+
+def _fixed_bits_keys_env() -> int:
+    raw = os.getenv("BSI_FIXED_BITS_KEYS", os.getenv("BSI_FIXED_BITS", "0"))
+    try:
+        value = int(raw)
+    except Exception:
+        value = 0
+    if value < 0:
+        value = 0
+    return value
+
+
+def _hot_layout_budget_pct() -> int:
+    raw = os.getenv("BSI_HOT_LAYOUT_BUDGET_PCT", "10")
+    try:
+        value = int(raw)
+    except Exception:
+        value = 10
+    return max(0, min(100, value))
+
+
+def _sm90_or_newer() -> bool:
+    if not torch.cuda.is_available():
+        return False
+    major, _minor = torch.cuda.get_device_capability()
+    return major >= 9
+
+
+def _layer_hot_layout_eligible(module: torch.nn.Linear) -> bool:
+    return (
+        _sm90_or_newer()
+        and _fixed_bits_keys_env() == 6
+        and module.out_features >= 2048
+        and module.in_features >= 2048
+        and (module.out_features % 128) == 0
+        and (module.in_features % 256) == 0
+    )
+
+
+def _estimate_bsi_layer_base_bytes(module: torch.nn.Linear) -> int:
+    slices = _fixed_bits_keys_env()
+    if slices <= 0:
+        return int(module.out_features * module.in_features * 4)
+    words_per_slice = (module.in_features + 63) // 64
+    words_bytes = int(module.out_features * slices * words_per_slice * 8)
+    weights_bytes = int(module.out_features * slices * 4)
+    bias_bytes = int(module.bias.numel() * module.bias.element_size()) if module.bias is not None else 0
+    return words_bytes + weights_bytes + bias_bytes
+
+
+def _estimate_hot_layout_extra_bytes(module: torch.nn.Linear) -> int:
+    slices = _fixed_bits_keys_env()
+    if slices != 6:
+        return 0
+    words_per_slice = (module.in_features + 63) // 64
+    chunk_groups = ((words_per_slice // 4) + 3) // 4
+    hot_words_bytes = int(module.out_features * slices * chunk_groups * 16 * 8)
+    hot_scales_bytes = int(module.out_features * 4)
+    return hot_words_bytes + hot_scales_bytes
+
+
+def _select_hot_layout_layers(model: nn.Module,
+                              skip_lm_head: bool,
+                              scope: str) -> Dict[str, int]:
+    if _hot_layout_budget_pct() <= 0 or not _sm90_or_newer() or _fixed_bits_keys_env() != 6:
+        return {}
+
+    def is_attention_linear(name: str) -> bool:
+        tokens = ['attn', 'self_attn', 'q_proj', 'k_proj', 'v_proj', 'out_proj']
+        return any(t in name for t in tokens)
+
+    def is_mlp_linear(name: str) -> bool:
+        tokens = ['mlp', 'ff', 'ffn', 'fc1', 'fc2']
+        return any(t in name for t in tokens)
+
+    base_total = 0
+    candidates: List[Tuple[str, int, int]] = []
+    for name, module in model.named_modules():
+        if not isinstance(module, torch.nn.Linear):
+            continue
+        if skip_lm_head and 'lm_head' in name:
+            continue
+        if scope == 'attention' and not is_attention_linear(name):
+            continue
+        if scope == 'mlp' and not is_mlp_linear(name):
+            continue
+        base_total += _estimate_bsi_layer_base_bytes(module)
+        if not _layer_hot_layout_eligible(module):
+            continue
+        extra_bytes = _estimate_hot_layout_extra_bytes(module)
+        hotness = int(module.out_features * module.in_features)
+        candidates.append((name, hotness, extra_bytes))
+
+    budget_bytes = int(base_total * (_hot_layout_budget_pct() / 100.0))
+    used_bytes = 0
+    selected: Dict[str, int] = {}
+    for name, _hotness, extra_bytes in sorted(candidates, key=lambda item: item[1], reverse=True):
+        if extra_bytes <= 0:
+            continue
+        if used_bytes + extra_bytes > budget_bytes:
+            continue
+        selected[name] = extra_bytes
+        used_bytes += extra_bytes
+    return selected
+
 class BSIQuantizedLinear(torch.nn.Module):
     """BSI quantized linear layer using prebuilt BSI keys for efficiency and diagnostics."""
 
-    def __init__(self, original_linear, decimalPlaces=2, compress_threshold=0.2, query_threshold=None, prefer_cuda: bool=True):
+    def __init__(self,
+                 original_linear,
+                 decimalPlaces=2,
+                 compress_threshold=0.2,
+                 query_threshold=None,
+                 prefer_cuda: bool=True,
+                 enable_hot_layout: bool=False):
         super().__init__()
         self.decimalPlaces = int(decimalPlaces)
         self.compress_threshold = float(compress_threshold)
@@ -55,6 +166,7 @@ class BSIQuantizedLinear(torch.nn.Module):
         self.in_features = original_linear.in_features
         self.out_features = original_linear.out_features
         self.layer_name = ""
+        self.enable_hot_layout = bool(enable_hot_layout)
 
         # tracking counters (dot-only)
         self.dot_ns_total = 0
@@ -81,7 +193,10 @@ class BSIQuantizedLinear(torch.nn.Module):
             # Build keys directly on CUDA (verbatim layout)
             # Always pass CPU tensor to the CPU builder; it will prepack to CUDA internally
             self._bsi_keys_cuda, total_mem_bytes, num_keys, d, W = bsi_ops.build_bsi_keys_cuda(
-                self.weight_fp32, self.decimalPlaces, float(self.compress_threshold)
+                self.weight_fp32,
+                self.decimalPlaces,
+                float(self.compress_threshold),
+                enable_hot_layout=self.enable_hot_layout,
             )
             assert num_keys == self.out_features and d == self.in_features
             self.weight_bsi_memory_bytes = int(total_mem_bytes)
@@ -107,6 +222,11 @@ class BSIQuantizedLinear(torch.nn.Module):
         self.build_calls = 0
         # optional stats collection flag toggled by helpers
         self.collect_stats = False
+        self.last_engine = "legacy"
+        self.last_transport = "legacy"
+        self.last_hot_layout = False
+        self.last_split_k = 1
+        self.last_scratch_bytes = 0
 
     def reset_error_stats(self):
         self.mse_sum = 0.0
@@ -182,6 +302,13 @@ class BSIQuantizedLinear(torch.nn.Module):
                 bsi_ops.batch_dot_product_multiquery_cuda_caps(query_capsules, self._bsi_keys_cuda)
             )
         dot_ns_this_forward += int(dot_kernel_ns_total)
+        if hasattr(bsi_ops, "get_last_dot_profile_cuda"):
+            prof = bsi_ops.get_last_dot_profile_cuda()
+            self.last_engine = str(prof.get("engine", "legacy"))
+            self.last_transport = str(prof.get("transport", "legacy"))
+            self.last_hot_layout = bool(prof.get("hot_layout", False))
+            self.last_split_k = int(prof.get("split_k", 1))
+            self.last_scratch_bytes = int(prof.get("scratch_bytes", 0))
         # Expose last-call averages for debugging/analysis (in nanoseconds).
         self.dot_kernel_ns_per_query_last = float(dot_kernel_ns_per_query)
         self.dot_kernel_ns_per_scalar_last = float(dot_kernel_ns_per_scalar)
@@ -298,6 +425,11 @@ def collect_bsi_dot_hotness(model: nn.Module) -> List[Dict[str, float]]:
             "dot_ms_per_call": (dot_ns / 1e6) / max(1, calls),
             "dot_q_us": (dot_ns / q_total) / 1e3 if q_total > 0 else 0.0,
             "dot_s_ns": (dot_ns / elem_total) if elem_total > 0 else 0.0,
+            "engine": str(getattr(module, "last_engine", "legacy")),
+            "transport": str(getattr(module, "last_transport", "legacy")),
+            "hot_layout": bool(getattr(module, "last_hot_layout", False)),
+            "split_k": int(getattr(module, "last_split_k", 1)),
+            "scratch_bytes": int(getattr(module, "last_scratch_bytes", 0)),
             "calls": calls,
             "query_vectors": q_total,
             "output_elements": elem_total,
@@ -490,6 +622,13 @@ def quantize_model_bsi(model, decimalPlaces=2, skip_lm_head=True, scope='all', c
     threshold_config = compress_threshold
     default_decimal = float(decimal_config if isinstance(decimal_config, (int, float)) else decimal_config.get('default', 2))
     default_threshold = float(threshold_config if isinstance(threshold_config, (int, float)) else threshold_config.get('default', 0.2))
+    hot_layout_layers = _select_hot_layout_layers(model, skip_lm_head=skip_lm_head, scope=scope)
+    if hot_layout_layers:
+        hot_bytes = sum(hot_layout_layers.values())
+        print(
+            f"Selected {len(hot_layout_layers)} hot-layout layers "
+            f"(budget={_hot_layout_budget_pct()}%, extra={hot_bytes / (1024**2):.2f} MB)"
+        )
 
     layer_count = 0
     for name, module in model.named_modules():
@@ -514,6 +653,7 @@ def quantize_model_bsi(model, decimalPlaces=2, skip_lm_head=True, scope='all', c
                 decimalPlaces=decimal_layer,
                 compress_threshold=threshold_layer,
                 prefer_cuda=prefer_cuda,
+                enable_hot_layout=(name in hot_layout_layers),
             )
             wrapped.layer_name = name
             setattr(parent, module_name, wrapped)

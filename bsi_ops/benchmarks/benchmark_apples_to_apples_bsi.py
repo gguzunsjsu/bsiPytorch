@@ -63,10 +63,24 @@ def _print_row(name: str, avg_ms: float, q: int, r: int) -> None:
     )
 
 
+def _print_engine_profile() -> None:
+    if not hasattr(bsi_ops, "get_last_dot_profile_cuda"):
+        return
+    prof = bsi_ops.get_last_dot_profile_cuda()
+    print(
+        "[Engine] "
+        f"engine={prof.get('engine', 'legacy')} "
+        f"transport={prof.get('transport', 'legacy')} "
+        f"hot={int(bool(prof.get('hot_layout', False)))} "
+        f"split_k={int(prof.get('split_k', 1))} "
+        f"scratch_mb={int(prof.get('scratch_bytes', 0)) / (1024**2):.2f}"
+    )
+
+
 def run_kernel_only(args: argparse.Namespace, k_cpu: torch.Tensor, q_fp32: torch.Tensor, torch_dtype: torch.dtype) -> Dict[str, float]:
     print("\n[Mode] kernel_only")
     keys_cap, _, _, _, _ = bsi_ops.build_bsi_keys_cuda(
-        k_cpu, args.decimal_places, float(args.compress_threshold)
+        k_cpu, args.decimal_places, float(args.compress_threshold), enable_hot_layout=True
     )
     query_batch = bsi_ops.build_bsi_queries_cuda_batch_packed(
         q_fp32, args.decimal_places, float(args.compress_threshold)
@@ -85,6 +99,7 @@ def run_kernel_only(args: argparse.Namespace, k_cpu: torch.Tensor, q_fp32: torch
     torch_ms = _time_cuda_ms(run_torch, args.warmup, args.iters)
 
     _print_row("BSI kernel", bsi_ms, args.Q, args.R)
+    _print_engine_profile()
     _print_row(f"Torch {args.torch_dtype}", torch_ms, args.Q, args.R)
     speedup = (torch_ms / bsi_ms) if bsi_ms > 0.0 else 0.0
     print(f"speedup_vs_torch = {speedup:.4f}x")
@@ -94,7 +109,7 @@ def run_kernel_only(args: argparse.Namespace, k_cpu: torch.Tensor, q_fp32: torch
 def run_linear_e2e(args: argparse.Namespace, k_cpu: torch.Tensor, q_fp32: torch.Tensor, torch_dtype: torch.dtype) -> Dict[str, float]:
     print("\n[Mode] linear_e2e")
     keys_cap, _, _, _, _ = bsi_ops.build_bsi_keys_cuda(
-        k_cpu, args.decimal_places, float(args.compress_threshold)
+        k_cpu, args.decimal_places, float(args.compress_threshold), enable_hot_layout=True
     )
     k_torch = k_cpu.to(device="cuda", dtype=torch_dtype, non_blocking=False)
     q_torch = q_fp32.to(dtype=torch_dtype)
@@ -112,6 +127,7 @@ def run_linear_e2e(args: argparse.Namespace, k_cpu: torch.Tensor, q_fp32: torch.
     torch_ms = _time_cuda_ms(run_torch, args.warmup, args.iters)
 
     _print_row("BSI e2e", bsi_ms, args.Q, args.R)
+    _print_engine_profile()
     _print_row(f"Torch {args.torch_dtype}", torch_ms, args.Q, args.R)
     speedup = (torch_ms / bsi_ms) if bsi_ms > 0.0 else 0.0
     print(f"speedup_vs_torch = {speedup:.4f}x")

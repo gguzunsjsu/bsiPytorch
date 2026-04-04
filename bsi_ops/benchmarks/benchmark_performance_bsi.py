@@ -389,7 +389,10 @@ class Evaluator:
                 print(
                     f"  {row['name']}: dot_total={row['dot_ms_total']:.3f}ms, "
                     f"dot/call={row['dot_ms_per_call']:.3f}ms, dot_q={row['dot_q_us']:.3f}us, "
-                    f"dot_s={row['dot_s_ns']:.3f}ns, in={row['in_features']}, out={row['out_features']}"
+                    f"dot_s={row['dot_s_ns']:.3f}ns, engine={row['engine']}, "
+                    f"transport={row['transport']}, hot={int(row['hot_layout'])}, "
+                    f"split_k={row['split_k']}, scratch_mb={row['scratch_bytes'] / (1024**2):.2f}, "
+                    f"in={row['in_features']}, out={row['out_features']}"
                 )
         print(f"Completed BSI eval: top1_acc={accuracy:.4f}, top5_acc={top5_acc:.4f}")
         return (
