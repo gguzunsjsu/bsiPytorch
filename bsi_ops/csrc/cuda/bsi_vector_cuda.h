@@ -37,6 +37,10 @@ struct BsiQueryBatchCudaData {
     // Shape: [Q_tiles, chunks, slices, 32, 4] where Q_tiles = Q / 32 and
     // chunks = words_per_slice / 4.
     torch::Tensor words_tc_fixed76; // int64 cuda or undefined
+    // Optional Hopper fixed76 query layout for the packed-batch TM64 rsweep fast path.
+    // Shape: [Q_tiles, chunks, slices, 64, 4] where Q_tiles = Q / 64 and
+    // chunks = words_per_slice / 4.
+    torch::Tensor words_tc_fixed76_tm64; // int64 cuda or undefined
     torch::Tensor slice_weights; // [Q, slices]
     // Optional per-query, per-256-element-chunk power-of-two scales used by
     // fixed-bit "block floating" modes. Shape: [Q, chunks] where

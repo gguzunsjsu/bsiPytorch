@@ -13,7 +13,7 @@ from verify_accuracy_bsi import (
     reset_bsi_dot_counters, sum_bsi_dot_counters, sum_bsi_build_counters,
     sum_bsi_build_quantize_counters, sum_bsi_build_pack_counters, sum_bsi_build_kernel_counters,
     sum_bsi_dot_query_vectors, sum_bsi_dot_output_elements,
-    enable_bsi_error_stats, collect_bsi_error_stats,
+    enable_bsi_error_stats, collect_bsi_error_stats, collect_bsi_dot_hotness,
     print_compression_summary, save_bsi_model, bsi_full_model_static_bytes
 )
 import argparse
@@ -117,7 +117,7 @@ class _DenseGemmTimer:
         self._replacements.clear()
 
 class Evaluator:
-    def __init__(self, dataset, tokenizer, device=None, max_seq_len=512, layer_stats_batches=0):
+    def __init__(self, dataset, tokenizer, device=None, max_seq_len=512, layer_stats_batches=0, report_bsi_layers=0):
         if device is None:
             device = get_device()
         print(f"Using device: {device}")
@@ -129,6 +129,7 @@ class Evaluator:
         self.dataset.set_format(type='torch', columns=['input_ids'])
         self.num_samples = len(self.dataset)
         self.layer_stats_batches = max(0, layer_stats_batches)
+        self.report_bsi_layers = max(0, report_bsi_layers)
         # Choose a safe pad id for right-padding
         self.pad_id = getattr(self.tokenizer, 'pad_token_id', None)
         if self.pad_id is None:
@@ -377,10 +378,19 @@ class Evaluator:
         avg_dot_us_per_query = ((dot_ns_total / dot_q_total) / 1e3) if dot_q_total > 0 else 0.0
         avg_dot_ns_per_scalar = (dot_ns_total / dot_elem_total) if dot_elem_total > 0 else 0.0
         layer_stats = collect_bsi_error_stats(model) if self.layer_stats_batches > 0 else []
+        hot_layers = collect_bsi_dot_hotness(model) if self.report_bsi_layers > 0 else []
         enable_bsi_error_stats(model, False)
         summary["build_quantize_ms_per_sample"] = avg_build_q_ms
         summary["build_pack_ms_per_sample"] = avg_build_p_ms
         summary["build_kernel_ms_per_sample"] = avg_build_k_ms
+        if hot_layers:
+            print("\n[Top BSI Layers]")
+            for row in hot_layers[:self.report_bsi_layers]:
+                print(
+                    f"  {row['name']}: dot_total={row['dot_ms_total']:.3f}ms, "
+                    f"dot/call={row['dot_ms_per_call']:.3f}ms, dot_q={row['dot_q_us']:.3f}us, "
+                    f"dot_s={row['dot_s_ns']:.3f}ns, in={row['in_features']}, out={row['out_features']}"
+                )
         print(f"Completed BSI eval: top1_acc={accuracy:.4f}, top5_acc={top5_acc:.4f}")
         return (
             accuracy,
@@ -592,6 +602,8 @@ def main():
                     help='[DEPRECATED; ignored] Compression threshold override for MLP/FFN layers')
     parser.add_argument('--layer_stats_batches', type=int, default=0,
                     help='Collect per-layer error metrics for the first N batches (0 disables)')
+    parser.add_argument('--report_bsi_layers', type=int, default=0,
+                    help='Print the top N BSI layers by accumulated dot time after evaluation (0 disables)')
     parser.add_argument('--report_dir', type=str, default=None, help='Write per-run JSON + per-layer CSV here')
     parser.add_argument('--simple_report_txt', type=str, default=None,
         help='If set, append a simple line per configuration to this text file (memory-only and/or eval runs)')
@@ -656,7 +668,8 @@ def main():
                     tokenizer,
                     device=device,
                     max_seq_len=args.max_seq_len,
-                    layer_stats_batches=args.layer_stats_batches
+                    layer_stats_batches=args.layer_stats_batches,
+                    report_bsi_layers=args.report_bsi_layers,
                 )
                 print_metric_banner(dataset_name, args.split, args.num_samples, args.max_seq_len)
 
@@ -941,6 +954,7 @@ def main():
                     "decimal_places": args.decimal_places,
                     "compress_threshold": args.compress_threshold,
                     "layer_stats_batches": args.layer_stats_batches,
+                    "report_bsi_layers": args.report_bsi_layers,
                     "memory_only": args.memory_only,
                     "base_dtype": args.base_dtype
                 }

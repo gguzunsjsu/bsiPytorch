@@ -38,6 +38,7 @@ extern "C" void launch_ewah_decompress(
 extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     const unsigned long long* A,
     const unsigned long long* A_tc_fixed76,
+    const unsigned long long* A_tc_fixed76_tm64,
     const float* Aw,
     const float* A_chunk_scales,
     int A_scale_stride,
@@ -203,6 +204,7 @@ static PrebuiltBSIQueryCUDA* capsule_to_query_cuda(const pybind11::capsule& cap)
 struct PrebuiltBSIQueryBatchCUDA {
     at::Tensor words;         // [Q, Sa, W] int64 cuda
     at::Tensor words_tc_fixed76; // [Q_tiles, chunks, Sa, 32, 4] int64 cuda or undefined
+    at::Tensor words_tc_fixed76_tm64; // [Q_tiles, chunks, Sa, 64, 4] int64 cuda or undefined
     at::Tensor slice_weights; // [Q, Sa] float32 cuda
     at::Tensor chunk_scales;  // [Q, chunks] float32 cuda or undefined
     int Sa = 0;
@@ -361,6 +363,9 @@ static pybind11::capsule build_bsi_queries_cuda_batch_packed(torch::Tensor q2d,
     if (batch.words_tc_fixed76.defined() && batch.words_tc_fixed76.numel() > 0) {
         holder->words_tc_fixed76 = batch.words_tc_fixed76.contiguous();
     }
+    if (batch.words_tc_fixed76_tm64.defined() && batch.words_tc_fixed76_tm64.numel() > 0) {
+        holder->words_tc_fixed76_tm64 = batch.words_tc_fixed76_tm64.contiguous();
+    }
     holder->slice_weights = batch.slice_weights.contiguous();
     if (batch.chunk_scales.defined() && batch.chunk_scales.numel() > 0) {
         holder->chunk_scales = batch.chunk_scales.contiguous();
@@ -374,6 +379,10 @@ static pybind11::capsule build_bsi_queries_cuda_batch_packed(torch::Tensor q2d,
     if (holder->words_tc_fixed76.defined() && holder->words_tc_fixed76.numel() > 0) {
         holder->mem_bytes +=
             static_cast<size_t>(holder->words_tc_fixed76.numel() * holder->words_tc_fixed76.element_size());
+    }
+    if (holder->words_tc_fixed76_tm64.defined() && holder->words_tc_fixed76_tm64.numel() > 0) {
+        holder->mem_bytes +=
+            static_cast<size_t>(holder->words_tc_fixed76_tm64.numel() * holder->words_tc_fixed76_tm64.element_size());
     }
     if (holder->chunk_scales.defined() && holder->chunk_scales.numel() > 0) {
         holder->mem_bytes += static_cast<size_t>(holder->chunk_scales.numel() * holder->chunk_scales.element_size());
@@ -582,6 +591,7 @@ struct TempGroup {
             launch_popcount_weighted_keys_literal_fused_multiq(
                 A,
                 nullptr,
+                nullptr,
                 Aw,
                 A_chunk_scales,
                 A_scale_stride,
@@ -620,6 +630,7 @@ struct TempGroup {
                 }
                 launch_popcount_weighted_keys_literal_fused_multiq(
                     A,
+                    nullptr,
                     nullptr,
                     Aw,
                     A_chunk_scales,
@@ -729,6 +740,23 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
                     "words_tc_fixed76 requires chunk scales for the fixed76 Hopper path");
         A_tc_fixed76 = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(qb->words_tc_fixed76));
     }
+    const unsigned long long* A_tc_fixed76_tm64 = nullptr;
+    if (qb->words_tc_fixed76_tm64.defined() && qb->words_tc_fixed76_tm64.numel() > 0) {
+        TORCH_CHECK(qb->words_tc_fixed76_tm64.is_cuda(), "words_tc_fixed76_tm64 must be a CUDA tensor");
+        TORCH_CHECK(qb->words_tc_fixed76_tm64.dim() == 5,
+                    "words_tc_fixed76_tm64 must be [Q_tiles, chunks, Sa, 64, 4]");
+        TORCH_CHECK((Q & 63) == 0, "words_tc_fixed76_tm64 requires Q multiple of 64");
+        TORCH_CHECK((W & 3) == 0, "words_tc_fixed76_tm64 requires W64 multiple of 4");
+        TORCH_CHECK(qb->words_tc_fixed76_tm64.size(0) == (Q / 64), "words_tc_fixed76_tm64 Q_tiles mismatch");
+        TORCH_CHECK(qb->words_tc_fixed76_tm64.size(1) == (W / 4), "words_tc_fixed76_tm64 chunk count mismatch");
+        TORCH_CHECK(qb->words_tc_fixed76_tm64.size(2) == Sa, "words_tc_fixed76_tm64 slice count mismatch");
+        TORCH_CHECK(qb->words_tc_fixed76_tm64.size(3) == 64, "words_tc_fixed76_tm64 TM dimension mismatch");
+        TORCH_CHECK(qb->words_tc_fixed76_tm64.size(4) == 4, "words_tc_fixed76_tm64 K_WORDS64 mismatch");
+        TORCH_CHECK(A_chunk_scales != nullptr && A_scale_stride > 0,
+                    "words_tc_fixed76_tm64 requires chunk scales for the fixed76 Hopper path");
+        A_tc_fixed76_tm64 =
+            reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(qb->words_tc_fixed76_tm64));
+    }
 
     // Output: [Q, R_total] (full keyset width).
     auto out_all = torch::zeros({Q, R}, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
@@ -765,6 +793,7 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
         launch_popcount_weighted_keys_literal_fused_multiq(
             A,
             A_tc_fixed76,
+            A_tc_fixed76_tm64,
             Aw,
             A_chunk_scales,
             A_scale_stride,
@@ -801,12 +830,13 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
                 const auto& idx_dev = keys->grouped_indices_dev.at(Sb);
                 r_idx_ptr = reinterpret_cast<const long long*>(tensor_data_ptr<int64_t>(idx_dev));
             }
-            launch_popcount_weighted_keys_literal_fused_multiq(
-                A,
-                A_tc_fixed76,
-                Aw,
-                A_chunk_scales,
-                A_scale_stride,
+                launch_popcount_weighted_keys_literal_fused_multiq(
+                    A,
+                    A_tc_fixed76,
+                    A_tc_fixed76_tm64,
+                    Aw,
+                    A_chunk_scales,
+                    A_scale_stride,
                 static_cast<int>(Sa),
                 keys->W,
                 B_words,

@@ -54,6 +54,7 @@ class BSIQuantizedLinear(torch.nn.Module):
 
         self.in_features = original_linear.in_features
         self.out_features = original_linear.out_features
+        self.layer_name = ""
 
         # tracking counters (dot-only)
         self.dot_ns_total = 0
@@ -279,6 +280,34 @@ def sum_bsi_dot_output_elements(model: nn.Module) -> int:
     return total
 
 
+def collect_bsi_dot_hotness(model: nn.Module) -> List[Dict[str, float]]:
+    rows: List[Dict[str, float]] = []
+    for name, module in model.named_modules():
+        if not isinstance(module, BSIQuantizedLinear):
+            continue
+        dot_ns = int(getattr(module, "dot_ns_total", 0))
+        if dot_ns <= 0:
+            continue
+        q_total = int(getattr(module, "dot_query_vectors_total", 0))
+        elem_total = int(getattr(module, "dot_output_elements_total", 0))
+        calls = int(getattr(module, "dot_calls", 0))
+        layer_name = getattr(module, "layer_name", "") or name
+        rows.append({
+            "name": layer_name,
+            "dot_ms_total": dot_ns / 1e6,
+            "dot_ms_per_call": (dot_ns / 1e6) / max(1, calls),
+            "dot_q_us": (dot_ns / q_total) / 1e3 if q_total > 0 else 0.0,
+            "dot_s_ns": (dot_ns / elem_total) if elem_total > 0 else 0.0,
+            "calls": calls,
+            "query_vectors": q_total,
+            "output_elements": elem_total,
+            "in_features": int(module.in_features),
+            "out_features": int(module.out_features),
+        })
+    rows.sort(key=lambda item: item["dot_ms_total"], reverse=True)
+    return rows
+
+
 def enable_bsi_error_stats(model: nn.Module, enabled: bool) -> None:
     """Toggle per-layer error tracking for BSIQuantizedLinear modules."""
     for module in model.modules():
@@ -480,7 +509,14 @@ def quantize_model_bsi(model, decimalPlaces=2, skip_lm_head=True, scope='all', c
             layer_kind = 'attention' if is_attention_linear(name) else 'mlp' if is_mlp_linear(name) else 'other'
             decimal_layer = _resolve_layer_value(decimal_config, layer_kind, default_decimal)
             threshold_layer = _resolve_layer_value(threshold_config, layer_kind, default_threshold)
-            setattr(parent, module_name, BSIQuantizedLinear(module, decimalPlaces=decimal_layer, compress_threshold=threshold_layer, prefer_cuda=prefer_cuda))
+            wrapped = BSIQuantizedLinear(
+                module,
+                decimalPlaces=decimal_layer,
+                compress_threshold=threshold_layer,
+                prefer_cuda=prefer_cuda,
+            )
+            wrapped.layer_name = name
+            setattr(parent, module_name, wrapped)
             layer_count += 1
     print(f"Quantized {layer_count} linear layers to BSI with decimalPlaces={decimal_config} (scope={scope})")
     return model

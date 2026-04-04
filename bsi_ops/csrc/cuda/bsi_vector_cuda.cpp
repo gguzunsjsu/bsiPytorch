@@ -207,6 +207,7 @@ extern "C" void launch_quantize_shift_pack_chunk_batch(
     const int* shifts,
     unsigned long long* out,
     unsigned long long* out_tc_fixed76,
+    unsigned long long* out_tc_fixed76_tm64,
     cudaStream_t stream);
 
 extern "C" void launch_slice_popcount_sum(
@@ -263,16 +264,17 @@ static bool bsi_cuda_sm90_or_newer_local() {
     return cached != 0;
 }
 
-static bool bsi_cuda_should_build_words_tc_fixed76(const torch::Tensor& input,
-                                                   bool for_keys,
-                                                   int fixed_bits,
-                                                   bool chunk_scale,
-                                                   int64_t Q,
-                                                   int words_per_slice) {
+static bool bsi_cuda_should_build_words_tc_fixed76_tile(const torch::Tensor& input,
+                                                        bool for_keys,
+                                                        int fixed_bits,
+                                                        bool chunk_scale,
+                                                        int64_t Q,
+                                                        int words_per_slice,
+                                                        int tile_rows) {
     if (for_keys) return false;
     if (fixed_bits != 7 || !chunk_scale) return false;
     if (!input.is_cuda()) return false;
-    if (Q <= 0 || (Q & 31) != 0) return false;
+    if (Q <= 0 || tile_rows <= 0 || (Q % tile_rows) != 0) return false;
     if (words_per_slice <= 0 || (words_per_slice & 3) != 0) return false;
     return bsi_cuda_sm90_or_newer_local();
 }
@@ -433,6 +435,7 @@ static bool bsi_cuda_build_fixed_query_words_fused(const torch::Tensor& input,
                                                    bool materialize_tc_fixed76,
                                                    torch::Tensor& words_out,
                                                    torch::Tensor& words_tc_fixed76_out,
+                                                   torch::Tensor& words_tc_fixed76_tm64_out,
                                                    torch::Tensor& scale_out,
                                                    float& quantize_ms,
                                                    float& pack_ms) {
@@ -451,8 +454,11 @@ static bool bsi_cuda_build_fixed_query_words_fused(const torch::Tensor& input,
     const int slices = std::max(1, fixed_bits);
     const int words_per_slice = (d > 0) ? static_cast<int>((d + 63) / 64) : 1;
     const bool emit_tc_fixed76 =
-        materialize_tc_fixed76 && bsi_cuda_should_build_words_tc_fixed76(
-            input, /*for_keys=*/false, fixed_bits, chunk_scale, Q, words_per_slice);
+        materialize_tc_fixed76 && bsi_cuda_should_build_words_tc_fixed76_tile(
+            input, /*for_keys=*/false, fixed_bits, chunk_scale, Q, words_per_slice, /*tile_rows=*/32);
+    const bool emit_tc_fixed76_tm64 =
+        materialize_tc_fixed76 && bsi_cuda_should_build_words_tc_fixed76_tile(
+            input, /*for_keys=*/false, fixed_bits, chunk_scale, Q, words_per_slice, /*tile_rows=*/64);
     auto stream = at::cuda::getCurrentCUDAStream();
 
     words_out = torch::zeros({Q, slices, words_per_slice},
@@ -463,6 +469,13 @@ static bool bsi_cuda_build_fixed_query_words_fused(const torch::Tensor& input,
             torch::TensorOptions().dtype(torch::kInt64).device(device));
     } else {
         words_tc_fixed76_out = torch::Tensor();
+    }
+    if (emit_tc_fixed76_tm64) {
+        words_tc_fixed76_tm64_out = torch::zeros(
+            {Q / 64, words_per_slice / 4, slices, 64, 4},
+            torch::TensorOptions().dtype(torch::kInt64).device(device));
+    } else {
+        words_tc_fixed76_tm64_out = torch::Tensor();
     }
 
     if (Q <= 0 || d <= 0) {
@@ -533,6 +546,7 @@ static bool bsi_cuda_build_fixed_query_words_fused(const torch::Tensor& input,
             shifts.data_ptr<int>(),
             reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(words_out)),
             emit_tc_fixed76 ? reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(words_tc_fixed76_out)) : nullptr,
+            emit_tc_fixed76_tm64 ? reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(words_tc_fixed76_tm64_out)) : nullptr,
             stream.stream());
         if (profile_cuda) {
             cudaEventRecord(pack_end_evt, stream.stream());
@@ -1052,6 +1066,7 @@ static BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data_impl(const torch:
 
         torch::Tensor words;
         torch::Tensor words_tc_fixed76;
+        torch::Tensor words_tc_fixed76_tm64;
         torch::Tensor scale;
         const bool fused_ok = bsi_cuda_build_fixed_query_words_fused(
             input,
@@ -1063,6 +1078,7 @@ static BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data_impl(const torch:
             materialize_tc_fixed76,
             words,
             words_tc_fixed76,
+            words_tc_fixed76_tm64,
             scale,
             quantize_ms,
             pack_ms);
@@ -1086,6 +1102,9 @@ static BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data_impl(const torch:
             }
             if (materialize_tc_fixed76 && words_tc_fixed76.defined() && words_tc_fixed76.numel() > 0) {
                 out.words_tc_fixed76 = words_tc_fixed76.contiguous();
+            }
+            if (materialize_tc_fixed76 && words_tc_fixed76_tm64.defined() && words_tc_fixed76_tm64.numel() > 0) {
+                out.words_tc_fixed76_tm64 = words_tc_fixed76_tm64.contiguous();
             }
 
             if (profile_cuda) {

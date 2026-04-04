@@ -9,6 +9,12 @@ import torch
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import bsi_ops
 
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _THIS_DIR not in sys.path:
+    sys.path.insert(0, _THIS_DIR)
+
+from shape_manifest import resolve_shape_manifest
+
 
 def _parse_modes(raw: str) -> List[str]:
     out: List[str] = []
@@ -130,6 +136,7 @@ def run_model_e2e(args: argparse.Namespace) -> None:
         "--bsi_device", args.bsi_device,
         "--bsi_profile", str(args.bsi_profile),
         "--base_dtype", args.base_dtype,
+        "--report_bsi_layers", str(args.report_bsi_layers),
     ]
     env = dict(os.environ)
     env["BSI_PROFILE"] = "1" if int(args.bsi_profile) != 0 else "0"
@@ -151,6 +158,8 @@ def main() -> None:
     parser.add_argument("--warmup", type=int, default=10)
     parser.add_argument("--iters", type=int, default=50)
     parser.add_argument("--seed", type=int, default=123)
+    parser.add_argument("--shape_manifest", type=str, default="",
+                        help='Optional shape manifest name (e.g. "fixed76"). When set, ignores --Q/--R/--D for kernel_only/linear_e2e.')
     parser.add_argument("--torch_dtype", type=str, default="fp16", choices=["fp16", "bf16", "fp32"])
     parser.add_argument("--bsi_profile", type=int, default=0,
                         help="Set BSI_PROFILE env (0 recommended for apples-to-apples runtime timing)")
@@ -163,6 +172,8 @@ def main() -> None:
     parser.add_argument("--bsi_device", type=str, default="cuda")
     parser.add_argument("--base_dtype", type=str, default="fp16", choices=["fp16", "fp32"],
                         help="Base model dtype for BSI model in model_e2e (default fp16 for apples-to-apples)")
+    parser.add_argument("--report_bsi_layers", type=int, default=0,
+                        help="Print the top N BSI layers by accumulated dot time in model_e2e (0 disables)")
     args = parser.parse_args()
 
     if not torch.cuda.is_available():
@@ -178,34 +189,44 @@ def main() -> None:
 
     torch.manual_seed(args.seed)
     device = torch.device("cuda")
-    k_cpu = torch.randn(args.R, args.D, dtype=torch.float32, device="cpu")
-    q_fp32 = torch.randn(args.Q, args.D, dtype=torch.float32, device=device)
+    manifest_shapes = resolve_shape_manifest(args.shape_manifest)
+    shapes = manifest_shapes if manifest_shapes is not None else [(args.Q, args.R, args.D)]
 
     print("[Config]")
     print(f"  modes={modes}")
-    print(f"  shape=(Q={args.Q}, R={args.R}, D={args.D})")
+    if args.shape_manifest:
+        print(f"  shape_manifest={args.shape_manifest} ({len(shapes)} shapes)")
+    else:
+        print(f"  shape=(Q={args.Q}, R={args.R}, D={args.D})")
     print(f"  decimal_places={args.decimal_places}  compress_threshold={args.compress_threshold}")
     print(f"  warmup={args.warmup}  iters={args.iters}")
     print(f"  torch_dtype={args.torch_dtype}  BSI_PROFILE={os.environ.get('BSI_PROFILE', '0')}")
 
     results: Dict[str, Dict[str, float]] = {}
-    if "kernel_only" in modes:
-        results["kernel_only"] = run_kernel_only(args, k_cpu, q_fp32, torch_dtype)
-    if "linear_e2e" in modes:
-        results["linear_e2e"] = run_linear_e2e(args, k_cpu, q_fp32, torch_dtype)
+    for shape_idx, (q_rows, r_rows, d_cols) in enumerate(shapes):
+        if len(shapes) > 1:
+            print(f"\n[Shape {shape_idx + 1}/{len(shapes)}] Q={q_rows} R={r_rows} D={d_cols}")
+        args.Q = q_rows
+        args.R = r_rows
+        args.D = d_cols
+        k_cpu = torch.randn(args.R, args.D, dtype=torch.float32, device="cpu")
+        q_fp32 = torch.randn(args.Q, args.D, dtype=torch.float32, device=device)
+        shape_key = f"{args.Q}x{args.R}x{args.D}"
+        if "kernel_only" in modes:
+            results[f"kernel_only:{shape_key}"] = run_kernel_only(args, k_cpu, q_fp32, torch_dtype)
+        if "linear_e2e" in modes:
+            results[f"linear_e2e:{shape_key}"] = run_linear_e2e(args, k_cpu, q_fp32, torch_dtype)
     if "model_e2e" in modes:
         run_model_e2e(args)
 
     print("\n[Summary]")
-    for mode in modes:
-        if mode in results:
-            row = results[mode]
-            print(
-                f"  {mode:12s}  bsi_ms={row['bsi_ms']:.4f}  "
-                f"torch_ms={row['torch_ms']:.4f}  speedup_vs_torch={row['speedup_vs_torch']:.4f}x"
-            )
-        elif mode == "model_e2e":
-            print(f"  {mode:12s}  completed (see benchmark_performance_bsi.py output above)")
+    for key, row in results.items():
+        print(
+            f"  {key:24s}  bsi_ms={row['bsi_ms']:.4f}  "
+            f"torch_ms={row['torch_ms']:.4f}  speedup_vs_torch={row['speedup_vs_torch']:.4f}x"
+        )
+    if "model_e2e" in modes:
+        print(f"  {'model_e2e':24s}  completed (see benchmark_performance_bsi.py output above)")
 
 
 if __name__ == "__main__":
