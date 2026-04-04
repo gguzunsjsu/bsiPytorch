@@ -454,7 +454,7 @@ static bool bsi_cuda_build_fixed_query_words_fused(const torch::Tensor& input,
                                                    torch::Tensor& scale_out,
                                                    float& quantize_ms,
                                                    float& pack_ms) {
-    if (fixed_bits <= 0 || !input.is_cuda()) {
+    if (fixed_bits <= 0 || device.type() != torch::kCUDA) {
         return false;
     }
     auto values = input.to(device, input.scalar_type(), /*non_blocking=*/true).contiguous();
@@ -470,10 +470,10 @@ static bool bsi_cuda_build_fixed_query_words_fused(const torch::Tensor& input,
     const int words_per_slice = (d > 0) ? static_cast<int>((d + 63) / 64) : 1;
     const bool emit_tc_fixed76 =
         materialize_tc_fixed76 && bsi_cuda_should_build_words_tc_fixed76(
-            input, for_keys, fixed_bits, chunk_scale, Q, words_per_slice);
+            values, for_keys, fixed_bits, chunk_scale, Q, words_per_slice);
     const bool emit_tc_fixed76_b =
         materialize_tc_fixed76_b && bsi_cuda_should_build_words_tc_fixed76_b(
-            input, for_keys, fixed_bits, chunk_scale, Q, words_per_slice);
+            values, for_keys, fixed_bits, chunk_scale, Q, words_per_slice);
     auto stream = at::cuda::getCurrentCUDAStream();
 
     words_out = torch::zeros({Q, slices, words_per_slice},
@@ -1063,7 +1063,7 @@ static BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data_impl(const torch:
         }
     }
     const bool profile = bsi_cuda_profile_enabled_local();
-    const bool profile_cuda = profile && input.is_cuda();
+    const bool profile_cuda = profile && (device.type() == torch::kCUDA);
     float quantize_ms = 0.0f;
     float pack_ms = 0.0f;
     const int64_t Q_input = input.size(0);
@@ -1072,7 +1072,7 @@ static BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data_impl(const torch:
     // Fused fixed-bit builder: compute shifts/scales directly from input and
     // quantize+pack directly into bitplanes (no intermediate int64 staging tensor).
     if (fixed_bits > 0 &&
-        input.is_cuda() &&
+        device.type() == torch::kCUDA &&
         bsi_cuda_custom_quant_enabled() &&
         bsi_cuda_fused_qpack_enabled()) {
         const int offset = 0;

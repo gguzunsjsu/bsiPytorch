@@ -1435,9 +1435,12 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
                 }
                 const int w64_i = w64_pair << 1;
                 const int base = ((j * TN + n) * K_STRIDE32) + (w64_i << 1);
+                const size_t b_word_off = use_packed_b
+                    ? static_cast<size_t>(w64_i)
+                    : (static_cast<size_t>(next_chunk) * static_cast<size_t>(K_WORDS64) + static_cast<size_t>(w64_i));
                 bsi_cp_async_cg_16B(
                     B_bits_next + base,
-                    &b_slice[(size_t)w64_i]);
+                    &b_slice[b_word_off]);
             }
             bsi_cp_async_commit_group();
         }
@@ -1797,9 +1800,12 @@ __device__ __forceinline__ void bsi_fixed76_tm32_chunkscale_rsweep_body(
                     }
                     const int w64_i = w64_pair << 1;
                     const size_t base = (size_t)t * B_words + ((size_t)j * (size_t)TN + (size_t)n) * (size_t)K_STRIDE32 + (size_t)(w64_i << 1);
+                    const size_t b_word_off = use_packed_b
+                        ? static_cast<size_t>(w64_i)
+                        : (static_cast<size_t>(next_chunk) * static_cast<size_t>(K_WORDS64) + static_cast<size_t>(w64_i));
                     bsi_cp_async_cg_16B(
                         B_bits_next + base,
-                        &b_slice[(size_t)w64_i]);
+                        &b_slice[b_word_off]);
                 }
             }
             bsi_cp_async_commit_group();
