@@ -2916,7 +2916,16 @@ extern "C" bool launch_popcount_weighted_keys_literal_fused_multiq_sm90_splitk_t
         R,
         scale_inv,
         out_global);
-    return cudaPeekAtLastError() == cudaSuccess;
+    if (cudaPeekAtLastError() != cudaSuccess) return false;
+
+    int strict = 0;
+    if (const char* s = std::getenv("BSI_TC_STRICT")) {
+        strict = (std::atoi(s) != 0) ? 1 : 0;
+    }
+    if (strict != 0) {
+        return cudaStreamSynchronize(stream) == cudaSuccess;
+    }
+    return true;
 #else
     (void)A_tc_fixed76;
     (void)A_chunk_scales;

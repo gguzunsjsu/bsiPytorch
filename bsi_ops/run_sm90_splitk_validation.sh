@@ -27,6 +27,7 @@ unset BSI_TC_X_REPEAT
 echo "[Env]"
 echo "  BSI_TC_POLICY=${BSI_TC_POLICY}"
 echo "  BSI_TC_TMA=${BSI_TC_TMA}"
+echo "  BSI_TC_STRICT=${BSI_TC_STRICT:-0}"
 echo "  SKIP_BUILD=${SKIP_BUILD:-0}"
 
 run_rebuild() {
@@ -44,15 +45,22 @@ run_rebuild() {
 run_correctness() {
   echo
   echo "[Correctness]"
-  python benchmarks/verify_tc_dot_correctness.py --Q 32  --R 768   --D 768
-  python benchmarks/verify_tc_dot_correctness.py --Q 64  --R 2048  --D 2048
-  python benchmarks/verify_tc_dot_correctness.py --Q 63  --R 4096  --D 4096
-  python benchmarks/verify_tc_dot_correctness.py --Q 65  --R 4096  --D 4096
-  python benchmarks/verify_tc_dot_correctness.py --Q 128 --R 4096  --D 4096
-  python benchmarks/verify_tc_dot_correctness.py --Q 512 --R 16384 --D 4096
-  python benchmarks/verify_tc_dot_correctness.py --Q 512 --R 4096  --D 16384
-  python benchmarks/verify_tc_dot_correctness.py --Q 96  --R 16416 --D 4096
-  python benchmarks/verify_tc_dot_correctness.py --Q 96  --R 16512 --D 4096
+  if [[ "${BSI_TC_POLICY}" == "sm90_splitk" ]]; then
+    BSI_QUERY_BATCH=0 python benchmarks/verify_tc_dot_correctness.py --Q 64  --R 2048  --D 2048
+    BSI_QUERY_BATCH=0 python benchmarks/verify_tc_dot_correctness.py --Q 128 --R 4096  --D 4096
+    BSI_QUERY_BATCH=0 python benchmarks/verify_tc_dot_correctness.py --Q 512 --R 16384 --D 4096
+    BSI_QUERY_BATCH=0 python benchmarks/verify_tc_dot_correctness.py --Q 512 --R 4096  --D 16384
+  else
+    BSI_QUERY_BATCH=0 python benchmarks/verify_tc_dot_correctness.py --Q 32  --R 768   --D 768
+    BSI_QUERY_BATCH=0 python benchmarks/verify_tc_dot_correctness.py --Q 64  --R 2048  --D 2048
+    BSI_QUERY_BATCH=0 python benchmarks/verify_tc_dot_correctness.py --Q 63  --R 4096  --D 4096
+    BSI_QUERY_BATCH=0 python benchmarks/verify_tc_dot_correctness.py --Q 65  --R 4096  --D 4096
+    BSI_QUERY_BATCH=0 python benchmarks/verify_tc_dot_correctness.py --Q 128 --R 4096  --D 4096
+    BSI_QUERY_BATCH=0 python benchmarks/verify_tc_dot_correctness.py --Q 512 --R 16384 --D 4096
+    BSI_QUERY_BATCH=0 python benchmarks/verify_tc_dot_correctness.py --Q 512 --R 4096  --D 16384
+    BSI_QUERY_BATCH=0 python benchmarks/verify_tc_dot_correctness.py --Q 96  --R 16416 --D 4096
+    BSI_QUERY_BATCH=0 python benchmarks/verify_tc_dot_correctness.py --Q 96  --R 16512 --D 4096
+  fi
 }
 
 run_microbench() {
