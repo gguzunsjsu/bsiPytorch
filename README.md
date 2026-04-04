@@ -88,7 +88,6 @@ BSI_TC_DOT=1 BSI_Q_TILE=8 BSI_R_TILE=4 \
 ### Stable SM90 fixed76 dot path (baseline)
 
 On SM90/H100, the current stable baseline dot path for fixed-bit BSI (Sa=7, Sb=6) with chunk scaling is:
-- `popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_xrepeat2_tma_tensorB` (preferred when `BSI_TC_X_REPEAT` selects the wider 256-key CTA path and TMA staging succeeds)
 - `popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_tma_tensorB` (preferred, if TMA descriptor creation succeeds)
 - Fallback: `popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4` (cp.async staging)
 - Tail fallback (if `R` not divisible by `32*BSI_TC_R_SWEEP`): `popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale`
@@ -104,14 +103,12 @@ export BSI_FIXED_BITS_QUERIES=7
 export BSI_FIXED_CHUNK_SCALE=1
 export BSI_TC_R_SWEEP=4
 export BSI_TC_TMA=1
-export BSI_TC_X_REPEAT=0
 
 # Optional (debug only):
 export BSI_DOT_DEBUG=1
 ```
 
 Notes:
-- `BSI_TC_X_REPEAT=0` is auto. `1` forces the current `128`-key CTA path, `2` forces the Hopper-only `256`-key `xrepeat2` path when eligible.
 - `BSI_TC_TM` is not currently an active tuning knob in this code path; TM32 is hardcoded for the fixed76 Hopper kernels.
 
 ## 4) Tensor-Core Dot Correctness (TC vs Baseline)
