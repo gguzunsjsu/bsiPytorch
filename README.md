@@ -173,7 +173,9 @@ Validated reference numbers on the stable rollback branch (`locality`, April 202
 ## 4) Tensor-Core Dot Correctness (TC vs Baseline)
 
 ```bash
-BSI_TC_DOT=1 \
+BSI_TC_DOT=1 BSI_TC_FIXED_INT=1 BSI_TC_CPASYNC=1 \
+BSI_FIXED_BITS_KEYS=6 BSI_FIXED_BITS_QUERIES=7 BSI_FIXED_CHUNK_SCALE=1 \
+BSI_TC_R_SWEEP=4 BSI_TC_TMA=1 \
   python benchmarks/verify_tc_dot_correctness.py \
     --Q 64 --R 256 --D 2048 \
     --decimal_places 2 --compress_threshold 0.5
@@ -184,7 +186,9 @@ BSI_TC_DOT=1 \
 FC1-like shape:
 
 ```bash
-BSI_TC_DOT=1 \
+BSI_TC_DOT=1 BSI_TC_FIXED_INT=1 BSI_TC_CPASYNC=1 \
+BSI_FIXED_BITS_KEYS=6 BSI_FIXED_BITS_QUERIES=7 BSI_FIXED_CHUNK_SCALE=1 \
+BSI_TC_R_SWEEP=4 BSI_TC_TMA=1 \
   python benchmarks/benchmark_dot_kernel_micro.py \
     --Q 512 --R 8192 --D 2048 \
     --decimal_places 2 --compress_threshold 0.5 \
@@ -194,7 +198,9 @@ BSI_TC_DOT=1 \
 FC2-like shape:
 
 ```bash
-BSI_TC_DOT=1 \
+BSI_TC_DOT=1 BSI_TC_FIXED_INT=1 BSI_TC_CPASYNC=1 \
+BSI_FIXED_BITS_KEYS=6 BSI_FIXED_BITS_QUERIES=7 BSI_FIXED_CHUNK_SCALE=1 \
+BSI_TC_R_SWEEP=4 BSI_TC_TMA=1 \
   python benchmarks/benchmark_dot_kernel_micro.py \
     --Q 512 --R 2048 --D 8192 \
     --decimal_places 2 --compress_threshold 0.5 \
