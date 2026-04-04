@@ -53,43 +53,93 @@ Notes:
 - This uninstalls any existing `bsi_ops`, cleans build artifacts, and reinstalls via `pip install . -v`.
 - Build logs are written to `bsi_ops/install.log`.
 
-## 3) End-to-End LLM Benchmark (BSI in OPT Linear Layers)
-
-Run LAMBADA next-token eval + timing breakdown (examples):
+## 3) Stable Branch Quickstart (Build + Env + Benchmarks)
 
 > NOTE: The commands in sections 3-6 assume you are running from the `bsi_ops/` directory (i.e., `cd bsi_ops`).
 
+Rebuild the extension:
+
 ```bash
-# OPT-125M
-BSI_TC_DOT=1 BSI_Q_TILE=8 BSI_R_TILE=4 \
-  python benchmarks/benchmark_performance_bsi.py \
+cd bsi_ops
+bash rebuild_local.sh
+```
+
+Set the validated env for the stable SM90 fixed76 branch:
+
+```bash
+export BSI_TC_DOT=1
+export BSI_TC_FIXED_INT=1
+export BSI_TC_CPASYNC=1
+export BSI_FIXED_BITS_KEYS=6
+export BSI_FIXED_BITS_QUERIES=7
+export BSI_FIXED_CHUNK_SCALE=1
+export BSI_TC_R_SWEEP=4
+export BSI_PROFILE=1
+export BSI_DOT_DEBUG=1
+unset BSI_TC_TM
+unset BSI_TC_X_REPEAT
+```
+
+Kernel sanity sweep for the stable fixed76 path:
+
+```bash
+for TMA in 0 1 2; do
+  export BSI_TC_TMA=$TMA
+  for R in 4096 16384 50272 16512 16416; do
+    python benchmarks/benchmark_apples_to_apples_bsi.py \
+      --modes kernel_only \
+      --Q 512 --R $R --D 4096 \
+      --decimal_places 2 --compress_threshold 0.5 \
+      --torch_dtype fp16 --bsi_profile 0 --base_dtype fp16
+  done
+done
+```
+
+Model validation for the stable branch:
+
+```bash
+export BSI_TC_TMA=0
+python benchmarks/benchmark_apples_to_apples_bsi.py \
+  --modes model_e2e \
+  --model_name facebook/opt-125m \
+  --dataset lambada --split validation --num_samples 200 \
+  --decimal_places 2 --compress_threshold 0.5 \
+  --scope all --bsi_device cuda --bsi_profile 1 --base_dtype fp16
+```
+
+```bash
+for TMA in 1 2; do
+  export BSI_TC_TMA=$TMA
+
+  python benchmarks/benchmark_apples_to_apples_bsi.py \
+    --modes model_e2e \
     --model_name facebook/opt-125m \
-    --datasets lambada --split validation --num_samples 200 \
+    --dataset lambada --split validation --num_samples 200 \
     --decimal_places 2 --compress_threshold 0.5 \
-    --scope all --bsi_device cuda
+    --scope all --bsi_device cuda --bsi_profile 1 --base_dtype fp16
 
-# OPT-1.3B
-BSI_TC_DOT=1 BSI_Q_TILE=8 BSI_R_TILE=4 \
-  python benchmarks/benchmark_performance_bsi.py \
+  python benchmarks/benchmark_apples_to_apples_bsi.py \
+    --modes model_e2e \
     --model_name facebook/opt-1.3b \
-    --datasets lambada --split validation --num_samples 200 \
+    --dataset lambada --split validation --num_samples 200 \
     --decimal_places 2 --compress_threshold 0.5 \
-    --scope all --bsi_device cuda
+    --scope all --bsi_device cuda --bsi_profile 1 --base_dtype fp16
 
-# OPT-6.7B
-BSI_TC_DOT=1 BSI_Q_TILE=8 BSI_R_TILE=4 \
-  python benchmarks/benchmark_performance_bsi.py \
+  python benchmarks/benchmark_apples_to_apples_bsi.py \
+    --modes model_e2e \
     --model_name facebook/opt-6.7b \
-    --datasets lambada --split validation --num_samples 200 \
+    --dataset lambada --split validation --num_samples 200 \
     --decimal_places 2 --compress_threshold 0.5 \
-    --scope all --bsi_device cuda
+    --scope all --bsi_device cuda --bsi_profile 1 --base_dtype fp16
+done
 ```
 
 ### Stable SM90 fixed76 dot path (baseline)
 
 On SM90/H100, the current stable baseline dot path for fixed-bit BSI (Sa=7, Sb=6) with chunk scaling is:
-- `popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_tma_tensorB` (preferred, if TMA descriptor creation succeeds)
-- Fallback: `popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4` (cp.async staging)
+- `popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_packedA_tma_tensorB` when the packed-A query layout is available and the TMA path is selected
+- `popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_tma_tensorB` for the generic query layout when TMA is selected
+- Fallback: `popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_packedA` or `popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4` (cp.async staging)
 - Tail fallback (if `R` not divisible by `32*BSI_TC_R_SWEEP`): `popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale`
 
 Recommended env vars for reproducing the fixed76 chunk-scale path:
@@ -108,10 +158,24 @@ export BSI_TC_TMA=1
 export BSI_DOT_DEBUG=1
 ```
 
+Notes:
+- `BSI_TC_TMA=2` now prefers TMA automatically for the packed-A fixed76 rsweep4 path whenever tensor-map creation succeeds; the generic fixed76 path still uses the `W64==64` and `R>=16384` auto threshold.
+- `BSI_TC_TM` is not currently an active tuning knob in this code path; TM32 is hardcoded for the fixed76 Hopper kernels.
+- The stable retained optimization is the packed-A query layout plus the fixed76 rsweep4 TMA path. The later packed-B experiment was rolled back and is not part of this baseline.
+
+Validated reference numbers on the stable rollback branch (`locality`, April 2026):
+- `kernel_only`, `Q=512 R=4096 D=4096`: `TMA=0` about `0.214 ms`; `TMA=1/2` about `0.177 ms`.
+- `model_e2e`, `facebook/opt-125m`: `TMA=0` `top1/top5=0.625/0.750`, `dot=2.175 ms`; `TMA=1/2` `top1/top5=0.625/0.750`, `dot=1.84-1.86 ms`.
+- `model_e2e`, `facebook/opt-1.3b`: `TMA=1/2` `top1/top5=0.670/0.785`, `dot=13.3-13.4 ms`.
+- `model_e2e`, `facebook/opt-6.7b`: `TMA=1/2` `top1/top5=0.745/0.920`, `dot=64.1-64.3 ms`.
+- Resident key storage is not duplicated in this stable baseline. The remaining extra layout is query-side packed-A staging for the packed batch path.
+
 ## 4) Tensor-Core Dot Correctness (TC vs Baseline)
 
 ```bash
-BSI_TC_DOT=1 \
+BSI_TC_DOT=1 BSI_TC_FIXED_INT=1 BSI_TC_CPASYNC=1 \
+BSI_FIXED_BITS_KEYS=6 BSI_FIXED_BITS_QUERIES=7 BSI_FIXED_CHUNK_SCALE=1 \
+BSI_TC_R_SWEEP=4 BSI_TC_TMA=1 \
   python benchmarks/verify_tc_dot_correctness.py \
     --Q 64 --R 256 --D 2048 \
     --decimal_places 2 --compress_threshold 0.5
@@ -122,7 +186,9 @@ BSI_TC_DOT=1 \
 FC1-like shape:
 
 ```bash
-BSI_TC_DOT=1 \
+BSI_TC_DOT=1 BSI_TC_FIXED_INT=1 BSI_TC_CPASYNC=1 \
+BSI_FIXED_BITS_KEYS=6 BSI_FIXED_BITS_QUERIES=7 BSI_FIXED_CHUNK_SCALE=1 \
+BSI_TC_R_SWEEP=4 BSI_TC_TMA=1 \
   python benchmarks/benchmark_dot_kernel_micro.py \
     --Q 512 --R 8192 --D 2048 \
     --decimal_places 2 --compress_threshold 0.5 \
@@ -132,7 +198,9 @@ BSI_TC_DOT=1 \
 FC2-like shape:
 
 ```bash
-BSI_TC_DOT=1 \
+BSI_TC_DOT=1 BSI_TC_FIXED_INT=1 BSI_TC_CPASYNC=1 \
+BSI_FIXED_BITS_KEYS=6 BSI_FIXED_BITS_QUERIES=7 BSI_FIXED_CHUNK_SCALE=1 \
+BSI_TC_R_SWEEP=4 BSI_TC_TMA=1 \
   python benchmarks/benchmark_dot_kernel_micro.py \
     --Q 512 --R 2048 --D 8192 \
     --decimal_places 2 --compress_threshold 0.5 \
@@ -144,11 +212,11 @@ BSI_TC_DOT=1 \
 Example NCU command for the tensor-core kernel (single launch):
 
 ```bash
-BSI_TC_DOT=1 BSI_TC_FIXED_INT=1 BSI_TC_CPASYNC=1 \
+  BSI_TC_DOT=1 BSI_TC_FIXED_INT=1 BSI_TC_CPASYNC=1 \
   BSI_FIXED_BITS_KEYS=6 BSI_FIXED_BITS_QUERIES=7 BSI_FIXED_CHUNK_SCALE=1 \
   BSI_TC_R_SWEEP=4 BSI_TC_TMA=1 \
   ncu --set full --target-processes all -f -o ncu_tc_tm32_full \
-    -k popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_tma_tensorB \
+    -k popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_packedA_tma_tensorB \
     --launch-count 1 \
   python benchmarks/benchmark_dot_kernel_micro.py \
     --Q 512 --R 8192 --D 2048 \
