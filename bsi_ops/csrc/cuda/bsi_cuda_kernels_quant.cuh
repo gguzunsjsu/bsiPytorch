@@ -120,39 +120,6 @@ __global__ void quantize_round_to_int64_batch_kernel(
     out_ints[idx] = bsi_round_half_away_to_ll(scaled);
 }
 
-__global__ void reorder_query_words_tc_fixed76_kernel(
-    const unsigned long long* __restrict__ src,
-    int64_t Q,
-    int slices,
-    int words_per_slice,
-    unsigned long long* __restrict__ dst) {
-    constexpr int TM_TOTAL = 32;
-    constexpr int K_WORDS64 = 4;
-    const int64_t total = Q * static_cast<int64_t>(slices) * static_cast<int64_t>(words_per_slice);
-    const int64_t idx = static_cast<int64_t>(blockIdx.x) * static_cast<int64_t>(blockDim.x) + threadIdx.x;
-    if (idx >= total) return;
-
-    int64_t t = idx;
-    const int word_idx = static_cast<int>(t % words_per_slice);
-    t /= words_per_slice;
-    const int slice = static_cast<int>(t % slices);
-    const int64_t q = t / slices;
-
-    const int chunk = word_idx / K_WORDS64;
-    const int k64 = word_idx & (K_WORDS64 - 1);
-    const int64_t q_tile = q / TM_TOTAL;
-    const int m = static_cast<int>(q & (TM_TOTAL - 1));
-    const int chunks = words_per_slice / K_WORDS64;
-
-    const int64_t dst_idx =
-        (((((q_tile * static_cast<int64_t>(chunks) + chunk) * static_cast<int64_t>(slices) + slice) *
-           static_cast<int64_t>(TM_TOTAL)) +
-          m) *
-         static_cast<int64_t>(K_WORDS64)) +
-        k64;
-    dst[dst_idx] = src[idx];
-}
-
 template <int BLOCK_SIZE>
 __global__ void compute_row_shift_scale_kernel(
     const long long* __restrict__ ints,
@@ -456,7 +423,8 @@ __global__ void quantize_shift_pack_chunk_batch_oneshot_kernel(
     double dec_scale,
     int fixed_bits,
     const int* __restrict__ shifts,
-    unsigned long long* __restrict__ out) {
+    unsigned long long* __restrict__ out,
+    unsigned long long* __restrict__ out_tc_fixed76) {
     const int q = blockIdx.z;
     if (q >= Q) return;
 
@@ -513,9 +481,25 @@ __global__ void quantize_shift_pack_chunk_batch_oneshot_kernel(
         const unsigned lo = __ballot_sync(0xffffffff, b0);
         const unsigned hi = __ballot_sync(0xffffffff, b1);
         if (lane == 0) {
-            out_q[static_cast<size_t>(slice) * static_cast<size_t>(words_per_slice) +
-                  static_cast<size_t>(word_idx)] =
+            const unsigned long long packed_word =
                 static_cast<unsigned long long>(lo) | (static_cast<unsigned long long>(hi) << 32);
+            out_q[static_cast<size_t>(slice) * static_cast<size_t>(words_per_slice) +
+                  static_cast<size_t>(word_idx)] = packed_word;
+            if (out_tc_fixed76 != nullptr) {
+                constexpr int TM_TOTAL = 32;
+                constexpr int K_WORDS64 = 4;
+                const int q_tile = q / TM_TOTAL;
+                const int m = q & (TM_TOTAL - 1);
+                const int chunk = word_idx / K_WORDS64;
+                const int k64 = word_idx & (K_WORDS64 - 1);
+                const int chunks_per_row = words_per_slice / K_WORDS64;
+                out_tc_fixed76[
+                    (((((size_t)q_tile * (size_t)chunks_per_row + (size_t)chunk) * (size_t)slices + (size_t)slice) *
+                       (size_t)TM_TOTAL +
+                      (size_t)m) *
+                     (size_t)K_WORDS64) +
+                    (size_t)k64] = packed_word;
+            }
         }
     }
 }
@@ -639,6 +623,7 @@ extern "C" void launch_quantize_shift_pack_chunk_batch(
     int fixed_bits,
     const int* shifts,
     unsigned long long* out,
+    unsigned long long* out_tc_fixed76,
     cudaStream_t stream) {
     if (Q <= 0 || d <= 0 || chunks <= 0 || slices <= 0 || words_per_slice <= 0) return;
     const int warps_per_block = 8;
@@ -648,39 +633,24 @@ extern "C" void launch_quantize_shift_pack_chunk_batch(
         case 0:
             quantize_shift_pack_chunk_batch_oneshot_kernel<float><<<grid, block, 0, stream>>>(
                 reinterpret_cast<const float*>(input),
-                Q, d, chunks, slices, words_per_slice, value_mask, dec_scale, fixed_bits, shifts, out);
+                Q, d, chunks, slices, words_per_slice, value_mask, dec_scale, fixed_bits, shifts, out, out_tc_fixed76);
             break;
         case 1:
             quantize_shift_pack_chunk_batch_oneshot_kernel<half><<<grid, block, 0, stream>>>(
                 reinterpret_cast<const half*>(input),
-                Q, d, chunks, slices, words_per_slice, value_mask, dec_scale, fixed_bits, shifts, out);
+                Q, d, chunks, slices, words_per_slice, value_mask, dec_scale, fixed_bits, shifts, out, out_tc_fixed76);
             break;
         case 2:
             quantize_shift_pack_chunk_batch_oneshot_kernel<__nv_bfloat16><<<grid, block, 0, stream>>>(
                 reinterpret_cast<const __nv_bfloat16*>(input),
-                Q, d, chunks, slices, words_per_slice, value_mask, dec_scale, fixed_bits, shifts, out);
+                Q, d, chunks, slices, words_per_slice, value_mask, dec_scale, fixed_bits, shifts, out, out_tc_fixed76);
             break;
         default:
             quantize_shift_pack_chunk_batch_oneshot_kernel<float><<<grid, block, 0, stream>>>(
                 reinterpret_cast<const float*>(input),
-                Q, d, chunks, slices, words_per_slice, value_mask, dec_scale, fixed_bits, shifts, out);
+                Q, d, chunks, slices, words_per_slice, value_mask, dec_scale, fixed_bits, shifts, out, out_tc_fixed76);
             break;
     }
-}
-
-extern "C" void launch_reorder_query_words_tc_fixed76(
-    const unsigned long long* src,
-    int64_t Q,
-    int slices,
-    int words_per_slice,
-    unsigned long long* dst,
-    cudaStream_t stream) {
-    if (src == nullptr || dst == nullptr || Q <= 0 || slices <= 0 || words_per_slice <= 0) return;
-    if ((Q & 31) != 0 || (words_per_slice & 3) != 0) return;
-    constexpr int BLOCK = 256;
-    const int64_t total = Q * static_cast<int64_t>(slices) * static_cast<int64_t>(words_per_slice);
-    const int grid = static_cast<int>((total + BLOCK - 1) / BLOCK);
-    reorder_query_words_tc_fixed76_kernel<<<grid, BLOCK, 0, stream>>>(src, Q, slices, words_per_slice, dst);
 }
 
 extern "C" void launch_quantize_round_to_int64_batch(

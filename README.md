@@ -110,7 +110,7 @@ export BSI_DOT_DEBUG=1
 ```
 
 Notes:
-- `BSI_TC_TMA=2` now uses a fixed76 auto-policy: `W64==64` and `R>=8192` for the packed-A rsweep4 path, otherwise `W64==64` and `R>=16384`.
+- `BSI_TC_TMA=2` now prefers TMA automatically for the packed-A fixed76 rsweep4 path whenever tensor-map creation succeeds; the generic fixed76 path still uses the `W64==64` and `R>=16384` auto threshold.
 - `BSI_TC_TM` is not currently an active tuning knob in this code path; TM32 is hardcoded for the fixed76 Hopper kernels.
 
 ## 4) Tensor-Core Dot Correctness (TC vs Baseline)
@@ -149,11 +149,11 @@ BSI_TC_DOT=1 \
 Example NCU command for the tensor-core kernel (single launch):
 
 ```bash
-BSI_TC_DOT=1 BSI_TC_FIXED_INT=1 BSI_TC_CPASYNC=1 \
+  BSI_TC_DOT=1 BSI_TC_FIXED_INT=1 BSI_TC_CPASYNC=1 \
   BSI_FIXED_BITS_KEYS=6 BSI_FIXED_BITS_QUERIES=7 BSI_FIXED_CHUNK_SCALE=1 \
   BSI_TC_R_SWEEP=4 BSI_TC_TMA=1 \
   ncu --set full --target-processes all -f -o ncu_tc_tm32_full \
-    -k popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_tma_tensorB \
+    -k popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale_rsweep4_packedA_tma_tensorB \
     --launch-count 1 \
   python benchmarks/benchmark_dot_kernel_micro.py \
     --Q 512 --R 8192 --D 2048 \

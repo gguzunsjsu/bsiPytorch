@@ -2856,7 +2856,7 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
 	            // Optional TMA-based B staging for fixed76 rsweep TM32 kernels (H100+).
 	            // 0 (default): baseline cp.async staging
 	            // 1: force tensor-map TMA staging for B (fallback to baseline if descriptor creation fails)
-	            // 2: auto (enable only for large-R W64==64 cases)
+	            // 2: auto (prefer packed-A fixed76 when a tensor map is available; otherwise keep the generic large-R rule)
 	            static int cached_tc_tma = -1;
 	            if (cached_tc_tma < 0) {
 	                int v = 0;
@@ -2914,9 +2914,8 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
 	                    int use_tma = 0;
 	                    void* B_tensor_map = nullptr;
 #if defined(__cccl_lib_local_barrier_arrive_tx)
-	                    const int tma_auto_r_min = use_packed_a ? 8192 : 16384;
 	                    const bool want_tma = (cached_tc_tma == 1) ||
-	                        (cached_tc_tma == 2 && W == 64 && R >= tma_auto_r_min);
+	                        (cached_tc_tma == 2 && (use_packed_a || (W == 64 && R >= 16384)));
 	                    if (want_tma) {
 	                        B_tensor_map = bsi_tma::bsi_get_or_create_b_fixed76_rsweep_tensor_map(
 	                            B, W, R_total, r_sweep, stream);

@@ -280,7 +280,7 @@ static pybind11::list build_bsi_queries_cuda_batch(torch::Tensor q2d, int decima
     pybind11::list out;
     if (bsi_cuda_query_batch()) {
         auto batch = build_bsi_queries_cuda_batch_data(
-            q2d.detach(), decimalPlaces, device, verbose, /*for_keys=*/false, /*build_tc_fixed76_packed=*/false);
+            q2d.detach(), decimalPlaces, device, verbose, /*for_keys=*/false);
         const int S = batch.slices;
         const int W = batch.words_per_slice;
         auto words = batch.words.contiguous();
@@ -354,8 +354,8 @@ static pybind11::capsule build_bsi_queries_cuda_batch_packed(torch::Tensor q2d,
     auto device = torch::Device(torch::kCUDA, c10::cuda::current_device());
     bool verbose = bsi_cuda_should_log();
 
-    auto batch = build_bsi_queries_cuda_batch_data(
-        q2d.detach(), decimalPlaces, device, verbose, /*for_keys=*/false, /*build_tc_fixed76_packed=*/true);
+    auto batch = build_bsi_queries_cuda_batch_data_packed(
+        q2d.detach(), decimalPlaces, device, verbose);
     auto* holder = new PrebuiltBSIQueryBatchCUDA();
     holder->words = batch.words.contiguous();
     if (batch.words_tc_fixed76.defined() && batch.words_tc_fixed76.numel() > 0) {
@@ -901,7 +901,7 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
         bool verbose = bsi_cuda_should_log();
 
         auto batch = build_bsi_queries_cuda_batch_data(
-            K.detach(), decimalPlaces, device, verbose, /*for_keys=*/true, /*build_tc_fixed76_packed=*/false);
+            K.detach(), decimalPlaces, device, verbose, /*for_keys=*/true);
         TORCH_CHECK(batch.rows == num_keys, "CUDA fixed-bit key build row mismatch");
         TORCH_CHECK(batch.words_per_slice == static_cast<int>((d + 63) / 64),
                     "CUDA fixed-bit key build word count mismatch");
