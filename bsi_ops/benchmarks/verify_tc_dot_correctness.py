@@ -47,7 +47,10 @@ def main() -> None:
 
     # Keys are built on CPU (builder moves to CUDA internally).
     K = torch.randn(args.R, args.D, dtype=torch.float32, device="cpu")
-    keys_cap, *_ = bsi_ops.build_bsi_keys_cuda(
+    keys_cap_ref, *_ = bsi_ops.build_bsi_keys_cuda(
+        K, args.decimal_places, float(args.compress_threshold), args.key_bits, ""
+    )
+    keys_cap_packed, *_ = bsi_ops.build_bsi_keys_cuda(
         K, args.decimal_places, float(args.compress_threshold), args.key_bits, args.pack_layout
     )
 
@@ -62,14 +65,14 @@ def main() -> None:
 
     # Warmup both paths to avoid one-time overhead in the timings.
     for _ in range(max(0, args.warmup)):
-        bsi_ops.batch_dot_product_multiquery_cuda_caps(query_caps, keys_cap)
-        _run_dot_packed(query_batch=query_batch, keys_cap=keys_cap)
+        bsi_ops.batch_dot_product_multiquery_cuda_caps(query_caps, keys_cap_ref)
+        _run_dot_packed(query_batch=query_batch, keys_cap=keys_cap_packed)
 
     (ref, _, _, _), ref_ms = _time_cuda_call(
-        lambda: bsi_ops.batch_dot_product_multiquery_cuda_caps(query_caps, keys_cap)
+        lambda: bsi_ops.batch_dot_product_multiquery_cuda_caps(query_caps, keys_cap_ref)
     )
     (tc, _, _, _), tc_ms = _time_cuda_call(
-        lambda: bsi_ops.batch_dot_product_multiquery_cuda_batch_caps(query_batch, keys_cap)
+        lambda: bsi_ops.batch_dot_product_multiquery_cuda_batch_caps(query_batch, keys_cap_packed)
     )
 
     diff = (tc - ref).abs()

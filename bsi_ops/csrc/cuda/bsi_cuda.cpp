@@ -976,7 +976,6 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K,
     TORCH_CHECK(K.dim() == 2, "K must be 2D [num_keys, d]");
     TORCH_CHECK(fixed_bits >= 4 && fixed_bits <= 10,
                 "Packed SM90 key builds require fixed_bits in [4, 10], got ", fixed_bits);
-    TORCH_CHECK(!pack_layout.empty(), "Packed SM90 key builds require a non-empty pack_layout");
     const int requested_fixed_bits = fixed_bits;
     // Fixed-bit mode: build key bitplanes directly on CUDA to ensure
     // keys and queries use the same quantization/scaling behavior.
