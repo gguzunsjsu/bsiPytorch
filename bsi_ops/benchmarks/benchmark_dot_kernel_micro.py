@@ -13,9 +13,9 @@ def main() -> None:
     parser.add_argument("--D", type=int, default=2048, help="input dimension")
     parser.add_argument("--decimal_places", type=int, default=2)
     parser.add_argument("--compress_threshold", type=float, default=0.5)
-    parser.add_argument("--query_bits", type=int, default=-1)
-    parser.add_argument("--key_bits", type=int, default=-1)
-    parser.add_argument("--pack_layout", type=str, default="sm90_b1_u32_tm256")
+    parser.add_argument("--query_bits", type=int, default=7)
+    parser.add_argument("--key_bits", type=int, default=6)
+    parser.add_argument("--pack_layout", type=str, default="sm90_b1_u32_tile32_v2")
     parser.add_argument("--warmup", type=int, default=5)
     parser.add_argument("--iters", type=int, default=20)
     parser.add_argument("--seed", type=int, default=123)
@@ -56,23 +56,32 @@ def main() -> None:
     for _ in range(args.warmup):
         bsi_ops.batch_dot_product_multiquery_cuda_batch_caps(query_batch, keys_cap)
 
-    # Timed iterations: use kernel timings returned by the extension.
-    total_ns = 0
+    # Timed iterations: use external CUDA events so timings are valid even when
+    # internal extension profiling is disabled.
+    total_ms = 0.0
+    internal_total_ns = 0
     t0 = time.perf_counter()
     for _ in range(args.iters):
-        _, dot_ns_total, _, _ = bsi_ops.batch_dot_product_multiquery_cuda_batch_caps(
-            query_batch, keys_cap
-        )
-        total_ns += int(dot_ns_total)
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+        start.record()
+        _, dot_ns_total, _, _ = bsi_ops.batch_dot_product_multiquery_cuda_batch_caps(query_batch, keys_cap)
+        end.record()
+        end.synchronize()
+        total_ms += float(start.elapsed_time(end))
+        internal_total_ns += int(dot_ns_total)
     t1 = time.perf_counter()
 
-    avg_ns = total_ns / max(1, args.iters)
+    avg_ms = total_ms / float(max(1, args.iters))
+    avg_ns = avg_ms * 1.0e6
     avg_ms = avg_ns / 1e6
     per_query_us = (avg_ns / args.Q) / 1e3 if args.Q > 0 else 0.0
     per_scalar_ns = (avg_ns / (args.Q * args.R)) if (args.Q > 0 and args.R > 0) else 0.0
 
     print(f"[Microbench] Q={args.Q} R={args.R} D={args.D} iters={args.iters}")
     print(f"[Kernel] avg_dot_ms={avg_ms:.3f}  dot_q_us={per_query_us:.3f}  dot_s_ns={per_scalar_ns:.3f}")
+    if internal_total_ns > 0:
+        print(f"[Internal] avg_dot_ms={internal_total_ns / max(1, args.iters) / 1e6:.3f}")
     if hasattr(bsi_ops, "get_last_dot_launch_stats_cuda"):
         print("[Launch]", dict(bsi_ops.get_last_dot_launch_stats_cuda()))
     print(f"[Wall] total_elapsed_s={t1 - t0:.3f}")

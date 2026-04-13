@@ -3,6 +3,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
+import bsi_ops
 from transformers import AutoTokenizer, OPTForCausalLM
 import gc
 from torch.nn.functional import pad
@@ -148,7 +149,7 @@ class Evaluator:
                           bsi_device: str='auto',
                           query_bits_cfg=None,
                           key_bits_cfg=None,
-                          pack_layout: str='sm90_b1_u32_tm256'):
+                          pack_layout: str='sm90_b1_u32_tile32_v2'):
         """Evaluate model with actual BSI quantization."""
         model.eval()
         total, hit = 0, 0
@@ -609,10 +610,10 @@ def main():
                     help='[DEPRECATED; ignored] Optional decimal-place override for MLP/FFN layers')
     parser.add_argument('--compress_threshold', type=float, default=0.2,
                     help='Base compression threshold for BSI slices (0 disables compression)')
-    parser.add_argument('--query_bits', type=int, default=-1,
-                    help='Fixed query bit budget for the SM90 packed path (-1 keeps legacy defaults)')
-    parser.add_argument('--key_bits', type=int, default=-1,
-                    help='Fixed key bit budget for the SM90 packed path (-1 keeps legacy defaults)')
+    parser.add_argument('--query_bits', type=int, default=7,
+                    help='Fixed query bit budget for the SM90 packed path')
+    parser.add_argument('--key_bits', type=int, default=6,
+                    help='Fixed key bit budget for the SM90 packed path')
     parser.add_argument('--attention_query_bits', type=int, default=None,
                     help='Optional attention-layer query bit override')
     parser.add_argument('--attention_key_bits', type=int, default=None,
@@ -621,7 +622,7 @@ def main():
                     help='Optional MLP-layer query bit override')
     parser.add_argument('--mlp_key_bits', type=int, default=None,
                     help='Optional MLP-layer key bit override')
-    parser.add_argument('--pack_layout', type=str, default='sm90_b1_u32_tm256',
+    parser.add_argument('--pack_layout', type=str, default='sm90_b1_u32_tile32_v2',
                     help='Packed layout name for CUDA builders and SM90 dot dispatch')
     parser.add_argument('--threshold_attention', type=float, default=None,
                     help='[DEPRECATED; ignored] Compression threshold override for attention layers')
@@ -999,6 +1000,9 @@ def main():
                     "scope": args.scope,
                     "decimal_places": args.decimal_places,
                     "compress_threshold": args.compress_threshold,
+                    "query_bits": query_bits_cfg,
+                    "key_bits": key_bits_cfg,
+                    "pack_layout": args.pack_layout,
                     "layer_stats_batches": args.layer_stats_batches,
                     "memory_only": args.memory_only,
                     "base_dtype": args.base_dtype

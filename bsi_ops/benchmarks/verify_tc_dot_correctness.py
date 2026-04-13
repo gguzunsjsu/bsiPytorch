@@ -1,26 +1,20 @@
 import argparse
-import os
-
 import torch
 
 import bsi_ops
 
 
-def _run_dot_caps(*, use_tc: bool, query_caps, keys_cap):
-    # bsi_ops reads this env var inside the C++ dispatch. We intentionally set it
-    # in-process so we can A/B compare without rebuilding.
-    os.environ["BSI_TC_DOT"] = "1" if use_tc else "0"
-
-    out, dot_ns_total, dot_ns_per_query, dot_ns_per_scalar = (
-        bsi_ops.batch_dot_product_multiquery_cuda_caps(query_caps, keys_cap)
-    )
-    torch.cuda.synchronize()
-    return out, int(dot_ns_total), float(dot_ns_per_query), float(dot_ns_per_scalar)
+def _time_cuda_call(fn):
+    start = torch.cuda.Event(enable_timing=True)
+    end = torch.cuda.Event(enable_timing=True)
+    start.record()
+    out = fn()
+    end.record()
+    end.synchronize()
+    return out, float(start.elapsed_time(end))
 
 
 def _run_dot_packed(*, query_batch, keys_cap):
-    os.environ["BSI_TC_DOT"] = "1"
-
     out, dot_ns_total, dot_ns_per_query, dot_ns_per_scalar = (
         bsi_ops.batch_dot_product_multiquery_cuda_batch_caps(query_batch, keys_cap)
     )
@@ -35,9 +29,9 @@ def main() -> None:
     p.add_argument("--D", type=int, default=2048)
     p.add_argument("--decimal_places", type=int, default=2)
     p.add_argument("--compress_threshold", type=float, default=0.5)
-    p.add_argument("--query_bits", type=int, default=-1)
-    p.add_argument("--key_bits", type=int, default=-1)
-    p.add_argument("--pack_layout", type=str, default="sm90_b1_u32_tm256")
+    p.add_argument("--query_bits", type=int, default=7)
+    p.add_argument("--key_bits", type=int, default=6)
+    p.add_argument("--pack_layout", type=str, default="sm90_b1_u32_tile32_v2")
     p.add_argument("--seed", type=int, default=123)
     p.add_argument("--warmup", type=int, default=2)
     # TC and baseline accumulate in different orders/instructions; expect small fp32 diffs.
@@ -68,11 +62,15 @@ def main() -> None:
 
     # Warmup both paths to avoid one-time overhead in the timings.
     for _ in range(max(0, args.warmup)):
-        _run_dot_caps(use_tc=False, query_caps=query_caps, keys_cap=keys_cap)
+        bsi_ops.batch_dot_product_multiquery_cuda_caps(query_caps, keys_cap)
         _run_dot_packed(query_batch=query_batch, keys_cap=keys_cap)
 
-    ref, ref_ns, *_ = _run_dot_caps(use_tc=False, query_caps=query_caps, keys_cap=keys_cap)
-    tc, tc_ns, *_ = _run_dot_packed(query_batch=query_batch, keys_cap=keys_cap)
+    (ref, _, _, _), ref_ms = _time_cuda_call(
+        lambda: bsi_ops.batch_dot_product_multiquery_cuda_caps(query_caps, keys_cap)
+    )
+    (tc, _, _, _), tc_ms = _time_cuda_call(
+        lambda: bsi_ops.batch_dot_product_multiquery_cuda_batch_caps(query_batch, keys_cap)
+    )
 
     diff = (tc - ref).abs()
     max_abs = float(diff.max().item())
@@ -82,7 +80,7 @@ def main() -> None:
     max_rel = float((diff / denom).max().item())
 
     print(f"[Shape] Q={args.Q} R={args.R} D={args.D}")
-    print(f"[Timing] baseline_ms={ref_ns/1e6:.3f} packed_tc_ms={tc_ns/1e6:.3f}")
+    print(f"[Timing] baseline_ms={ref_ms:.3f} packed_tc_ms={tc_ms:.3f}")
     print(f"[Diff] max_abs={max_abs:.6e} mean_abs={mean_abs:.6e} max_rel={max_rel:.6e}")
     print(f"[NaN] baseline={bool(torch.isnan(ref).any().item())} tc={bool(torch.isnan(tc).any().item())}")
     if hasattr(bsi_ops, "get_last_dot_launch_stats_cuda"):

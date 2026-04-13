@@ -140,20 +140,60 @@ def run_model_e2e(args: argparse.Namespace) -> None:
     subprocess.run(cmd, check=True, env=env)
 
 
+def run_mixed_sweep(args: argparse.Namespace) -> None:
+    print("\n[Mode] mixed_sweep")
+    this_dir = os.path.dirname(os.path.abspath(__file__))
+    script = os.path.join(this_dir, "benchmark_performance_bsi.py")
+    schedules = [
+        ("uniform_7_6", 7, 6, 7, 6),
+        ("attn_7_6__mlp_8_7", 7, 6, 8, 7),
+        ("attn_6_5__mlp_7_6", 6, 5, 7, 6),
+    ]
+    for name, attn_q, attn_k, mlp_q, mlp_k in schedules:
+        cmd = [
+            sys.executable,
+            script,
+            "--model_name", args.model_name,
+            "--datasets", args.dataset,
+            "--split", args.split,
+            "--num_samples", str(args.num_samples),
+            "--max_seq_len", str(args.max_seq_len),
+            "--decimal_places", str(args.decimal_places),
+            "--compress_threshold", str(args.compress_threshold),
+            "--query_bits", str(args.query_bits),
+            "--key_bits", str(args.key_bits),
+            "--attention_query_bits", str(attn_q),
+            "--attention_key_bits", str(attn_k),
+            "--mlp_query_bits", str(mlp_q),
+            "--mlp_key_bits", str(mlp_k),
+            "--pack_layout", args.pack_layout,
+            "--scope", args.scope,
+            "--bsi_device", args.bsi_device,
+            "--bsi_profile", str(args.bsi_profile),
+            "--base_dtype", args.base_dtype,
+            "--layer_stats_batches", str(args.layer_stats_batches),
+        ]
+        env = dict(os.environ)
+        env["BSI_PROFILE"] = "1" if int(args.bsi_profile) != 0 else "0"
+        print(f"[Schedule] {name}")
+        print("Running:", " ".join(cmd))
+        subprocess.run(cmd, check=True, env=env)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Apples-to-apples BSI vs Torch timing (kernel_only, linear_e2e, model_e2e)"
+        description="Apples-to-apples BSI vs Torch timing (kernel_only, linear_e2e, model_e2e, mixed_sweep)"
     )
     parser.add_argument("--modes", type=str, default="kernel_only,linear_e2e",
-                        help="Comma-separated modes: kernel_only,linear_e2e,model_e2e")
+                        help="Comma-separated modes: kernel_only,linear_e2e,model_e2e,mixed_sweep")
     parser.add_argument("--Q", type=int, default=128, help="Query rows")
     parser.add_argument("--R", type=int, default=256, help="Key rows / output features")
     parser.add_argument("--D", type=int, default=2048, help="Input features")
     parser.add_argument("--decimal_places", type=int, default=2)
     parser.add_argument("--compress_threshold", type=float, default=0.5)
-    parser.add_argument("--query_bits", type=int, default=-1)
-    parser.add_argument("--key_bits", type=int, default=-1)
-    parser.add_argument("--pack_layout", type=str, default="sm90_b1_u32_tm256")
+    parser.add_argument("--query_bits", type=int, default=7)
+    parser.add_argument("--key_bits", type=int, default=6)
+    parser.add_argument("--pack_layout", type=str, default="sm90_b1_u32_tile32_v2")
     parser.add_argument("--warmup", type=int, default=10)
     parser.add_argument("--iters", type=int, default=50)
     parser.add_argument("--seed", type=int, default=123)
@@ -169,6 +209,7 @@ def main() -> None:
     parser.add_argument("--bsi_device", type=str, default="cuda")
     parser.add_argument("--base_dtype", type=str, default="fp16", choices=["fp16", "fp32"],
                         help="Base model dtype for BSI model in model_e2e (default fp16 for apples-to-apples)")
+    parser.add_argument("--layer_stats_batches", type=int, default=0)
     args = parser.parse_args()
 
     if not torch.cuda.is_available():
@@ -177,7 +218,7 @@ def main() -> None:
     os.environ["BSI_PROFILE"] = "1" if int(args.bsi_profile) != 0 else "0"
     torch_dtype = _torch_dtype_from_flag(args.torch_dtype)
     modes = _parse_modes(args.modes)
-    allowed = {"kernel_only", "linear_e2e", "model_e2e"}
+    allowed = {"kernel_only", "linear_e2e", "model_e2e", "mixed_sweep"}
     invalid = [m for m in modes if m not in allowed]
     if invalid:
         raise ValueError(f"Unsupported mode(s): {invalid}. Allowed: {sorted(allowed)}")
@@ -202,6 +243,8 @@ def main() -> None:
         results["linear_e2e"] = run_linear_e2e(args, k_cpu, q_fp32, torch_dtype)
     if "model_e2e" in modes:
         run_model_e2e(args)
+    if "mixed_sweep" in modes:
+        run_mixed_sweep(args)
 
     print("\n[Summary]")
     for mode in modes:
@@ -211,7 +254,7 @@ def main() -> None:
                 f"  {mode:12s}  bsi_ms={row['bsi_ms']:.4f}  "
                 f"torch_ms={row['torch_ms']:.4f}  speedup_vs_torch={row['speedup_vs_torch']:.4f}x"
             )
-        elif mode == "model_e2e":
+        elif mode in {"model_e2e", "mixed_sweep"}:
             print(f"  {mode:12s}  completed (see benchmark_performance_bsi.py output above)")
 
 

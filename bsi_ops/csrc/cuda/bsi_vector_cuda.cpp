@@ -279,24 +279,10 @@ static bool bsi_cuda_sm90_or_newer_local() {
     return cached != 0;
 }
 
-static bool bsi_cuda_should_build_words_tc_fixed76(const torch::Tensor& input,
-                                                   bool for_keys,
-                                                   int fixed_bits,
-                                                   bool chunk_scale,
-                                                   int64_t Q,
-                                                   int words_per_slice) {
-    if (for_keys) return false;
-    if (fixed_bits != 7 || !chunk_scale) return false;
-    if (!input.is_cuda()) return false;
-    if (Q <= 0 || (Q & 31) != 0) return false;
-    if (words_per_slice <= 0 || (words_per_slice & 3) != 0) return false;
-    return bsi_cuda_sm90_or_newer_local();
-}
-
 static bool bsi_cuda_use_sm90_packed_layout(const std::string& pack_layout,
                                             int fixed_bits) {
     if (pack_layout.empty()) return false;
-    if (pack_layout != "sm90_b1_u32_tm256") return false;
+    if (pack_layout != "sm90_b1_u32_tm256" && pack_layout != "sm90_b1_u32_tile32_v2") return false;
     if (fixed_bits <= 0) return false;
     return bsi_cuda_sm90_or_newer_local();
 }
@@ -357,14 +343,7 @@ float bsi_cuda_fixed_clip_k() {
 }
 
 static bool bsi_cuda_fixed_chunk_scale_queries() {
-    static int cached = -1;
-    if (cached >= 0) return cached != 0;
-    int v = 0;
-    if (const char* s = std::getenv("BSI_FIXED_CHUNK_SCALE")) {
-        v = std::atoi(s);
-    }
-    cached = (v != 0) ? 1 : 0;
-    return cached != 0;
+    return true;
 }
 
 static bool bsi_cuda_profile_enabled_local() {
@@ -379,25 +358,11 @@ static bool bsi_cuda_profile_enabled_local() {
 }
 
 static bool bsi_cuda_custom_quant_enabled() {
-    static int cached = -1;
-    if (cached >= 0) return cached != 0;
-    int v = 1; // default on
-    if (const char* s = std::getenv("BSI_CUSTOM_QUANT")) {
-        v = (std::atoi(s) != 0) ? 1 : 0;
-    }
-    cached = v;
-    return cached != 0;
+    return true;
 }
 
 static bool bsi_cuda_fused_qpack_enabled() {
-    static int cached = -1;
-    if (cached >= 0) return cached != 0;
-    int v = 1; // default on
-    if (const char* s = std::getenv("BSI_FUSED_QPACK")) {
-        v = (std::atoi(s) != 0) ? 1 : 0;
-    }
-    cached = v;
-    return cached != 0;
+    return true;
 }
 
 static int bsi_cuda_input_dtype_code(const torch::Tensor& values) {
@@ -1047,9 +1012,9 @@ static BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data_impl(const torch:
                                                                     int fixed_bits_override,
                                                                     const std::string& pack_layout) {
     TORCH_CHECK(input.dim() == 2, "build_bsi_queries_cuda_batch_data expects 2D tensor [Q, d]");
-    const int fixed_bits = (fixed_bits_override >= 0)
-        ? fixed_bits_override
-        : (for_keys ? bsi_cuda_fixed_bits_keys() : bsi_cuda_fixed_bits_queries());
+    TORCH_CHECK(fixed_bits_override >= 4 && fixed_bits_override <= 10,
+                "SM90 fixed-bit batch builder requires fixed_bits in [4, 10], got ", fixed_bits_override);
+    const int fixed_bits = fixed_bits_override;
     const bool build_sm90_packed = bsi_cuda_use_sm90_packed_layout(pack_layout, fixed_bits);
     // Optional per-256-element chunk scaling for queries (activations) in fixed-bit mode.
     // Keys/weights use per-row scaling by default (for reproducibility + lower overhead).
@@ -1114,7 +1079,7 @@ static BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data_impl(const torch:
             out.fixed_bits = fixed_bits;
             out.packed_chunks = std::max(1, (words_per_slice + 3) / 4);
             out.pack_layout = build_sm90_packed ? pack_layout : "";
-            out.words = (build_sm90_packed && !for_keys) ? torch::Tensor() : words.contiguous();
+            out.words = build_sm90_packed ? torch::Tensor() : words.contiguous();
             if (chunk_scale) {
                 TORCH_CHECK(scale.defined() && scale.dim() == 2, "Expected [Q, chunks] chunk scales");
                 out.slice_weights = slice_weights.contiguous();
@@ -1258,7 +1223,7 @@ static BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data_impl(const torch:
     out.fixed_bits = fixed_bits;
     out.packed_chunks = std::max(1, (words_per_slice + 3) / 4);
     out.pack_layout = build_sm90_packed ? pack_layout : "";
-    out.words = (build_sm90_packed && !for_keys) ? torch::Tensor() : words;
+    out.words = build_sm90_packed ? torch::Tensor() : words;
     out.slice_weights = slice_weights.contiguous();
     if (fixed_bits > 0 && chunk_scale) {
         out.chunk_scales = q.scale.contiguous();

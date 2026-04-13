@@ -14,27 +14,6 @@ import bsi_ops
 import gc
 import numpy as np
 from typing import Dict, Any, List, Union, Tuple
-from concurrent.futures import ThreadPoolExecutor
-
-# Legacy executor unused after batch CUDA builder; keep definitions minimal
-_cpu_count = os.cpu_count() or 1
-
-def _build_query_cpu(tensor_cpu: torch.Tensor, decimal_places: int, threshold: float):
-    start = time.perf_counter_ns()
-    capsule, mem_bytes, slices = bsi_ops.build_bsi_query(tensor_cpu, decimal_places, threshold)
-    elapsed = time.perf_counter_ns() - start
-    return capsule, mem_bytes, slices, elapsed
-
-def _build_query_cuda(tensor_gpu: torch.Tensor, decimal_places: int, threshold: float, device_index: int):
-    prev_device = torch.cuda.current_device()
-    if prev_device != device_index:
-        torch.cuda.set_device(device_index)
-    start = time.perf_counter_ns()
-    capsule, mem_bytes, slices, words = bsi_ops.build_bsi_query_cuda(tensor_gpu, decimal_places, threshold)
-    elapsed = time.perf_counter_ns() - start
-    if prev_device != device_index:
-        torch.cuda.set_device(prev_device)
-    return capsule, mem_bytes, (slices, words), elapsed
 
 def get_device():
     """Auto-detect best available device"""
@@ -52,9 +31,9 @@ class BSIQuantizedLinear(torch.nn.Module):
                  compress_threshold=0.2,
                  query_threshold=None,
                  prefer_cuda: bool=True,
-                 query_bits: int = -1,
-                 key_bits: int = -1,
-                 pack_layout: str = "sm90_b1_u32_tm256"):
+                 query_bits: int = 7,
+                 key_bits: int = 6,
+                 pack_layout: str = "sm90_b1_u32_tile32_v2"):
         super().__init__()
         self.decimalPlaces = int(decimalPlaces)
         self.compress_threshold = float(compress_threshold)
@@ -62,6 +41,12 @@ class BSIQuantizedLinear(torch.nn.Module):
         self.query_bits = int(query_bits)
         self.key_bits = int(key_bits)
         self.pack_layout = str(pack_layout)
+        if not (4 <= self.query_bits <= 10):
+            raise ValueError(f"query_bits must be in [4, 10], got {self.query_bits}")
+        if not (4 <= self.key_bits <= 10):
+            raise ValueError(f"key_bits must be in [4, 10], got {self.key_bits}")
+        if not self.pack_layout:
+            raise ValueError("pack_layout must be a non-empty SM90 packed layout name")
 
         self.in_features = original_linear.in_features
         self.out_features = original_linear.out_features
@@ -137,19 +122,12 @@ class BSIQuantizedLinear(torch.nn.Module):
         original_shape = x.shape
         if len(x.shape) > 2:
             x = x.view(-1, x.shape[-1])
-        # Keep activations in their native dtype for query build by default.
-        # The CUDA fixed-bit quant kernels accept fp16/bf16/fp32 directly.
-        if os.getenv("BSI_QUERY_FP32", "0") != "0":
-            x = x.to(torch.float32)
 
         dot_ns_this_forward = 0
         
         # Debug printing gated by `self.verbose` to avoid overhead in benchmarks
         debug_first = bool(self.verbose) and not hasattr(self, '_debug_printed')
         
-        use_cuda = True
-        device_index = torch.cuda.current_device()
-
         batch_size = x.shape[0]
         # Build all queries for the batch in one CUDA call (avoids per-vector Python overhead)
         batch_inputs = x.detach().contiguous()
@@ -160,31 +138,18 @@ class BSIQuantizedLinear(torch.nn.Module):
             print(f"  Decimal Places used: {self.decimalPlaces}")
 
         t_build0 = time.perf_counter_ns()
-        use_packed = (
-            hasattr(bsi_ops, "build_bsi_queries_cuda_batch_packed")
-            and hasattr(bsi_ops, "batch_dot_product_multiquery_cuda_batch_caps")
+        if not hasattr(bsi_ops, "build_bsi_queries_cuda_batch_packed"):
+            raise RuntimeError("Packed SM90 query builder is required on this branch")
+        if not hasattr(bsi_ops, "batch_dot_product_multiquery_cuda_batch_caps"):
+            raise RuntimeError("Packed SM90 batched dot API is required on this branch")
+        query_capsules = bsi_ops.build_bsi_queries_cuda_batch_packed(
+            batch_inputs,
+            self.decimalPlaces,
+            float(self.query_compress_threshold),
+            self.query_bits,
+            self.pack_layout,
+            True,
         )
-        if self.pack_layout and not use_packed:
-            raise RuntimeError(
-                f"Requested packed layout '{self.pack_layout}' but packed query-batch CUDA APIs are unavailable"
-            )
-        if use_packed:
-            query_capsules = bsi_ops.build_bsi_queries_cuda_batch_packed(
-                batch_inputs,
-                self.decimalPlaces,
-                float(self.query_compress_threshold),
-                self.query_bits,
-                self.pack_layout,
-                True,
-            )
-        else:
-            query_capsules = bsi_ops.build_bsi_queries_cuda_batch(
-                batch_inputs,
-                self.decimalPlaces,
-                float(self.query_compress_threshold),
-                self.query_bits,
-                "",
-            )
         self.build_ns_total += (time.perf_counter_ns() - t_build0)
         if hasattr(bsi_ops, "get_last_query_build_profile_cuda"):
             q_ns, p_ns, t_ns = bsi_ops.get_last_query_build_profile_cuda()
@@ -196,14 +161,9 @@ class BSIQuantizedLinear(torch.nn.Module):
         # Single multi-query call on CUDA to compute all outputs at once
         # Dot-only timing comes from CUDA events inside the extension. The "total" is for the full
         # output matrix [Q, R]; the per-query/per-scalar are averages derived from that total.
-        if use_packed:
-            scores_2d, dot_kernel_ns_total, dot_kernel_ns_per_query, dot_kernel_ns_per_scalar = (
-                bsi_ops.batch_dot_product_multiquery_cuda_batch_caps(query_capsules, self._bsi_keys_cuda)
-            )
-        else:
-            scores_2d, dot_kernel_ns_total, dot_kernel_ns_per_query, dot_kernel_ns_per_scalar = (
-                bsi_ops.batch_dot_product_multiquery_cuda_caps(query_capsules, self._bsi_keys_cuda)
-            )
+        scores_2d, dot_kernel_ns_total, dot_kernel_ns_per_query, dot_kernel_ns_per_scalar = (
+            bsi_ops.batch_dot_product_multiquery_cuda_batch_caps(query_capsules, self._bsi_keys_cuda)
+        )
         dot_ns_this_forward += int(dot_kernel_ns_total)
         # Expose last-call averages for debugging/analysis (in nanoseconds).
         self.dot_kernel_ns_per_query_last = float(dot_kernel_ns_per_query)
@@ -425,7 +385,8 @@ def save_bsi_model(model: nn.Module, out_dir: str):
         if isinstance(module, BSIQuantizedLinear):
             layer_dir = os.path.join(out_dir, name.replace('.', '_'))
             os.makedirs(layer_dir, exist_ok=True)
-            bsi_ops.save_keyset(module._bsi_keys, layer_dir)
+            if hasattr(module, "_bsi_keys"):
+                bsi_ops.save_keyset(module._bsi_keys, layer_dir)
             meta.append({
                 "name": name,
                 "in": module.in_features,
@@ -512,7 +473,7 @@ def quantize_model_bsi(model,
                        prefer_cuda: bool=False,
                        query_bits: Union[int, Dict[str, int], None] = None,
                        key_bits: Union[int, Dict[str, int], None] = None,
-                       pack_layout: str = "sm90_b1_u32_tm256"):
+                       pack_layout: str = "sm90_b1_u32_tile32_v2"):
     """Replace linear layers with BSI quantized versions.
 
     scope options:
@@ -532,8 +493,8 @@ def quantize_model_bsi(model,
     threshold_config = compress_threshold
     default_decimal = float(decimal_config if isinstance(decimal_config, (int, float)) else decimal_config.get('default', 2))
     default_threshold = float(threshold_config if isinstance(threshold_config, (int, float)) else threshold_config.get('default', 0.2))
-    default_query_bits = int(query_bits if isinstance(query_bits, int) else (query_bits.get('default', -1) if isinstance(query_bits, dict) else -1))
-    default_key_bits = int(key_bits if isinstance(key_bits, int) else (key_bits.get('default', -1) if isinstance(key_bits, dict) else -1))
+    default_query_bits = int(query_bits if isinstance(query_bits, int) else (query_bits.get('default', 7) if isinstance(query_bits, dict) else 7))
+    default_key_bits = int(key_bits if isinstance(key_bits, int) else (key_bits.get('default', 6) if isinstance(key_bits, dict) else 6))
 
     layer_count = 0
     for name, module in model.named_modules():

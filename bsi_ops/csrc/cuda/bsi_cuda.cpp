@@ -287,7 +287,7 @@ static pybind11::tuple build_bsi_query_cuda(torch::Tensor q, int decimalPlaces, 
 static pybind11::list build_bsi_queries_cuda_batch(torch::Tensor q2d,
                                                    int decimalPlaces,
                                                    float compress_threshold = 0.2f,
-                                                   int fixed_bits = -1,
+                                                   int fixed_bits = 7,
                                                    const std::string& pack_layout = "") {
     TORCH_CHECK(q2d.dim() == 2, "q must be 2D [Q, d]");
     TORCH_CHECK(pack_layout.empty(),
@@ -369,12 +369,15 @@ static pybind11::list build_bsi_queries_cuda_batch(torch::Tensor q2d,
 static pybind11::capsule build_bsi_queries_cuda_batch_packed(torch::Tensor q2d,
                                                              int decimalPlaces,
                                                              float compress_threshold = 0.2f,
-                                                             int fixed_bits = -1,
-                                                             const std::string& pack_layout = "sm90_b1_u32_tm256",
+                                                             int fixed_bits = 7,
+                                                             const std::string& pack_layout = "sm90_b1_u32_tile32_v2",
                                                              bool reuse_workspace = true) {
     TORCH_CHECK(q2d.dim() == 2, "q must be 2D [Q, d]");
     (void)compress_threshold;
     (void)reuse_workspace;
+    TORCH_CHECK(fixed_bits >= 4 && fixed_bits <= 10,
+                "Packed SM90 query builds require fixed_bits in [4, 10], got ", fixed_bits);
+    TORCH_CHECK(!pack_layout.empty(), "Packed SM90 query builds require a non-empty pack_layout");
     auto device = torch::Device(torch::kCUDA, c10::cuda::current_device());
     bool verbose = bsi_cuda_should_log();
 
@@ -813,7 +816,7 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
         }
         if (have_packed_words || !qb->pack_layout.empty()) {
             TORCH_CHECK(B_packed_u32 != nullptr,
-                        "SM90 packed query batch requires packed key layout; rebuild keys with pack_layout='sm90_b1_u32_tm256'");
+                        "SM90 packed query batch requires packed key layout; rebuild keys with pack_layout='sm90_b1_u32_tile32_v2'");
         }
         const auto* Bw_ptr = tensor_data_ptr<float>(keys->single_weights);
         const long long* r_idx_ptr = nullptr;
@@ -968,13 +971,13 @@ static pybind11::dict bsi_query_caps_stats(pybind11::list query_caps_list) {
 static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K,
                                            int decimalPlaces,
                                            float compress_threshold,
-                                           int fixed_bits = -1,
-                                           const std::string& pack_layout = "sm90_b1_u32_tm256") {
+                                           int fixed_bits = 6,
+                                           const std::string& pack_layout = "sm90_b1_u32_tile32_v2") {
     TORCH_CHECK(K.dim() == 2, "K must be 2D [num_keys, d]");
-    const int requested_fixed_bits = (fixed_bits >= 0) ? fixed_bits : bsi_cuda_fixed_bits_keys_env();
-    TORCH_CHECK(
-        pack_layout.empty() || requested_fixed_bits > 0,
-        "Packed SM90 key layouts require explicit fixed_bits > 0");
+    TORCH_CHECK(fixed_bits >= 4 && fixed_bits <= 10,
+                "Packed SM90 key builds require fixed_bits in [4, 10], got ", fixed_bits);
+    TORCH_CHECK(!pack_layout.empty(), "Packed SM90 key builds require a non-empty pack_layout");
+    const int requested_fixed_bits = fixed_bits;
     // Fixed-bit mode: build key bitplanes directly on CUDA to ensure
     // keys and queries use the same quantization/scaling behavior.
     if (requested_fixed_bits > 0) {
@@ -1038,6 +1041,8 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K,
                 holder->grouped_words_tc_packed_u32[Sb].numel() *
                 holder->grouped_words_tc_packed_u32[Sb].element_size());
         }
+        total_mem_bytes += static_cast<uint64_t>(
+            holder->grouped_weights[Sb].numel() * holder->grouped_weights[Sb].element_size());
 
         pybind11::capsule cap(holder, "PrebuiltBSIKeysCUDA",
             [](PyObject* capsule){
@@ -1153,19 +1158,12 @@ void register_bsi_cuda(pybind11::module& m) {
     m.def("cuda_builder_version",
         &cuda_builder_version);
 
-    // Query builder
-    m.def("build_bsi_query_cuda",
-        &build_bsi_query_cuda,
-        pybind11::arg("q"),
-        pybind11::arg("decimal_places"),
-        pybind11::arg("compress_threshold") = 0.2f,
-        "Build BSI query vector on CUDA");
     m.def("build_bsi_queries_cuda_batch",
         &build_bsi_queries_cuda_batch,
         pybind11::arg("q2d"),
         pybind11::arg("decimal_places"),
         pybind11::arg("compress_threshold") = 0.2f,
-        pybind11::arg("fixed_bits") = -1,
+        pybind11::arg("fixed_bits") = 7,
         pybind11::arg("pack_layout") = "",
         "Build BSI queries for a batch on CUDA");
     m.def("build_bsi_queries_cuda_batch_packed",
@@ -1173,8 +1171,8 @@ void register_bsi_cuda(pybind11::module& m) {
         pybind11::arg("q2d"),
         pybind11::arg("decimal_places"),
         pybind11::arg("compress_threshold") = 0.2f,
-        pybind11::arg("fixed_bits") = -1,
-        pybind11::arg("pack_layout") = "sm90_b1_u32_tm256",
+        pybind11::arg("fixed_bits") = 7,
+        pybind11::arg("pack_layout") = "sm90_b1_u32_tile32_v2",
         pybind11::arg("reuse_workspace") = true,
         "Build a packed (batched) BSI query object on CUDA (no per-row capsules)");
     m.def("get_last_query_build_profile_cuda",
@@ -1183,14 +1181,6 @@ void register_bsi_cuda(pybind11::module& m) {
     m.def("reset_last_query_build_profile_cuda",
         &bsi_cuda_reset_last_query_build_profile,
         "Reset last CUDA query-batch build profile counters to zero");
-
-    // Hybrid compressed query builder
-    m.def("build_bsi_query_cuda_hybrid",
-        &build_bsi_query_cuda_hybrid,
-        pybind11::arg("q"),
-        pybind11::arg("decimal_places"),
-        pybind11::arg("compress_threshold") = 0.2,
-        "Build BSI query with EWAH compression");
 
     // OPTIMIZED: Multi-query batched dot product with fused kernel
     m.def("batch_dot_product_multiquery_cuda_caps",
@@ -1210,18 +1200,13 @@ void register_bsi_cuda(pybind11::module& m) {
         &bsi_keys_cuda_stats,
         pybind11::arg("keyset_cuda_cap"),
         "Return shape/group stats for a CUDA BSI keyset");
-    m.def("bsi_query_caps_stats",
-        &bsi_query_caps_stats,
-        pybind11::arg("query_caps_list"),
-        "Return shape stats for a list of CUDA BSI query capsules");
-
     // Key builder for CUDA
     m.def("build_bsi_keys_cuda",
         &build_bsi_keys_cuda,
         pybind11::arg("K"),
         pybind11::arg("decimal_places"),
         pybind11::arg("compress_threshold") = 0.2f,
-        pybind11::arg("fixed_bits") = -1,
-        pybind11::arg("pack_layout") = "sm90_b1_u32_tm256",
+        pybind11::arg("fixed_bits") = 6,
+        pybind11::arg("pack_layout") = "sm90_b1_u32_tile32_v2",
         "Build BSI keys and prepack to CUDA");
 }

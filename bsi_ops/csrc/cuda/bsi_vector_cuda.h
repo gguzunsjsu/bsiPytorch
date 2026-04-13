@@ -76,7 +76,7 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data_packed(const torch::Tens
                                                                const torch::Device& device,
                                                                bool verbose = false,
                                                                int fixed_bits_override = -1,
-                                                               const std::string& pack_layout = "sm90_b1_u32_tm256");
+                                                               const std::string& pack_layout = "sm90_b1_u32_tile32_v2");
 
 // Exposed for tests/debug: quantise floats to int64 with CPU parity (half-away-from-zero).
 torch::Tensor bsi_cuda_quantize_to_int64(const torch::Tensor& values,
