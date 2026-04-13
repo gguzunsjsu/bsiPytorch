@@ -13,6 +13,9 @@ def main() -> None:
     parser.add_argument("--D", type=int, default=2048, help="input dimension")
     parser.add_argument("--decimal_places", type=int, default=2)
     parser.add_argument("--compress_threshold", type=float, default=0.5)
+    parser.add_argument("--query_bits", type=int, default=-1)
+    parser.add_argument("--key_bits", type=int, default=-1)
+    parser.add_argument("--pack_layout", type=str, default="sm90_b1_u32_tm256")
     parser.add_argument("--warmup", type=int, default=5)
     parser.add_argument("--iters", type=int, default=20)
     parser.add_argument("--seed", type=int, default=123)
@@ -29,31 +32,36 @@ def main() -> None:
     # Build random keys on CPU (builder moves to CUDA internally)
     K = torch.randn(args.R, args.D, dtype=torch.float32, device="cpu")
     keys_cap, _, _, _, _ = bsi_ops.build_bsi_keys_cuda(
-        K, args.decimal_places, float(args.compress_threshold)
+        K, args.decimal_places, float(args.compress_threshold), args.key_bits, args.pack_layout
     )
 
-    # Build random queries on CUDA
+    # Build random queries on CUDA using the packed batch path under test.
     Q = torch.randn(args.Q, args.D, dtype=torch.float32, device=device)
-    query_caps = bsi_ops.build_bsi_queries_cuda_batch(
-        Q, args.decimal_places, float(args.compress_threshold)
+    query_batch = bsi_ops.build_bsi_queries_cuda_batch_packed(
+        Q, args.decimal_places, float(args.compress_threshold), args.query_bits, args.pack_layout, True
     )
 
     if args.report_stats:
         key_stats = bsi_ops.bsi_keys_cuda_stats(keys_cap)
-        qry_stats = bsi_ops.bsi_query_caps_stats(query_caps)
+        qry_stats = {
+            "Q": args.Q,
+            "W": (args.D + 63) // 64,
+            "query_bits": args.query_bits,
+            "pack_layout": args.pack_layout,
+        }
         print("[Keys]", dict(key_stats))
-        print("[Queries]", dict(qry_stats))
+        print("[Queries]", qry_stats)
 
     # Warmup
     for _ in range(args.warmup):
-        bsi_ops.batch_dot_product_multiquery_cuda_caps(query_caps, keys_cap)
+        bsi_ops.batch_dot_product_multiquery_cuda_batch_caps(query_batch, keys_cap)
 
     # Timed iterations: use kernel timings returned by the extension.
     total_ns = 0
     t0 = time.perf_counter()
     for _ in range(args.iters):
-        _, dot_ns_total, _, _ = bsi_ops.batch_dot_product_multiquery_cuda_caps(
-            query_caps, keys_cap
+        _, dot_ns_total, _, _ = bsi_ops.batch_dot_product_multiquery_cuda_batch_caps(
+            query_batch, keys_cap
         )
         total_ns += int(dot_ns_total)
     t1 = time.perf_counter()
@@ -65,6 +73,8 @@ def main() -> None:
 
     print(f"[Microbench] Q={args.Q} R={args.R} D={args.D} iters={args.iters}")
     print(f"[Kernel] avg_dot_ms={avg_ms:.3f}  dot_q_us={per_query_us:.3f}  dot_s_ns={per_scalar_ns:.3f}")
+    if hasattr(bsi_ops, "get_last_dot_launch_stats_cuda"):
+        print("[Launch]", dict(bsi_ops.get_last_dot_launch_stats_cuda()))
     print(f"[Wall] total_elapsed_s={t1 - t0:.3f}")
 
 

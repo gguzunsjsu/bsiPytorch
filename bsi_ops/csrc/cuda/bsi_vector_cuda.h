@@ -3,6 +3,7 @@
 #include <torch/extension.h>
 
 #include <cstdint>
+#include <string>
 #include <tuple>
 
 #include "bsi_vector_utils.h"
@@ -32,17 +33,20 @@ struct BsiQueryBatchCudaData {
     int slices = 0;
     int words_per_slice = 0;
     int offset = 0;
+    int fixed_bits = 0;
+    int packed_chunks = 0;
     torch::Tensor words;         // [Q, slices, words_per_slice]
-    // Optional Hopper fixed76 query layout for the packed-batch TM32 rsweep fast path.
-    // Shape: [Q_tiles, chunks, slices, 32, 4] where Q_tiles = Q / 32 and
-    // chunks = words_per_slice / 4.
-    torch::Tensor words_tc_fixed76; // int64 cuda or undefined
+    // Optional SM90 packed layout for the runtime-bit BMMA path.
+    // Shape: [Q_tiles, chunks, slices, 32, 8] where Q_tiles = ceil(Q / 32).
+    // Stored as int32 for direct uint32 reinterpretation in CUDA.
+    torch::Tensor words_tc_packed_u32; // int32 cuda or undefined
     torch::Tensor slice_weights; // [Q, slices]
     // Optional per-query, per-256-element-chunk power-of-two scales used by
     // fixed-bit "block floating" modes. Shape: [Q, chunks] where
     // chunks = words_per_slice / 4 (i.e., 256 bits per chunk).
     // When undefined, slice_weights already include any fixed-bit scaling.
     torch::Tensor chunk_scales;  // [Q, chunks] or undefined
+    std::string pack_layout;
 };
 
 bool bsi_cuda_should_log();
@@ -63,12 +67,16 @@ BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data(const torch::Tensor& val
                                                         int decimal_places,
                                                         const torch::Device& device,
                                                         bool verbose = false,
-                                                        bool for_keys = false);
+                                                        bool for_keys = false,
+                                                        int fixed_bits_override = -1,
+                                                        const std::string& pack_layout = "");
 
 BsiQueryBatchCudaData build_bsi_queries_cuda_batch_data_packed(const torch::Tensor& values,
                                                                int decimal_places,
                                                                const torch::Device& device,
-                                                               bool verbose = false);
+                                                               bool verbose = false,
+                                                               int fixed_bits_override = -1,
+                                                               const std::string& pack_layout = "sm90_b1_u32_tm256");
 
 // Exposed for tests/debug: quantise floats to int64 with CPU parity (half-away-from-zero).
 torch::Tensor bsi_cuda_quantize_to_int64(const torch::Tensor& values,

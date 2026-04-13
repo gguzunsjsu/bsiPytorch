@@ -60,10 +60,10 @@ def _print_row(name: str, avg_ms: float, q: int, r: int) -> None:
 def run_kernel_only(args: argparse.Namespace, k_cpu: torch.Tensor, q_fp32: torch.Tensor, torch_dtype: torch.dtype) -> Dict[str, float]:
     print("\n[Mode] kernel_only")
     keys_cap, _, _, _, _ = bsi_ops.build_bsi_keys_cuda(
-        k_cpu, args.decimal_places, float(args.compress_threshold)
+        k_cpu, args.decimal_places, float(args.compress_threshold), args.key_bits, args.pack_layout
     )
     query_batch = bsi_ops.build_bsi_queries_cuda_batch_packed(
-        q_fp32, args.decimal_places, float(args.compress_threshold)
+        q_fp32, args.decimal_places, float(args.compress_threshold), args.query_bits, args.pack_layout, True
     )
 
     k_torch = k_cpu.to(device="cuda", dtype=torch_dtype, non_blocking=False)
@@ -88,14 +88,14 @@ def run_kernel_only(args: argparse.Namespace, k_cpu: torch.Tensor, q_fp32: torch
 def run_linear_e2e(args: argparse.Namespace, k_cpu: torch.Tensor, q_fp32: torch.Tensor, torch_dtype: torch.dtype) -> Dict[str, float]:
     print("\n[Mode] linear_e2e")
     keys_cap, _, _, _, _ = bsi_ops.build_bsi_keys_cuda(
-        k_cpu, args.decimal_places, float(args.compress_threshold)
+        k_cpu, args.decimal_places, float(args.compress_threshold), args.key_bits, args.pack_layout
     )
     k_torch = k_cpu.to(device="cuda", dtype=torch_dtype, non_blocking=False)
     q_torch = q_fp32.to(dtype=torch_dtype)
 
     def run_bsi() -> None:
         query_batch = bsi_ops.build_bsi_queries_cuda_batch_packed(
-            q_fp32, args.decimal_places, float(args.compress_threshold)
+            q_fp32, args.decimal_places, float(args.compress_threshold), args.query_bits, args.pack_layout, True
         )
         bsi_ops.batch_dot_product_multiquery_cuda_batch_caps(query_batch, keys_cap)
 
@@ -126,6 +126,9 @@ def run_model_e2e(args: argparse.Namespace) -> None:
         "--max_seq_len", str(args.max_seq_len),
         "--decimal_places", str(args.decimal_places),
         "--compress_threshold", str(args.compress_threshold),
+        "--query_bits", str(args.query_bits),
+        "--key_bits", str(args.key_bits),
+        "--pack_layout", args.pack_layout,
         "--scope", args.scope,
         "--bsi_device", args.bsi_device,
         "--bsi_profile", str(args.bsi_profile),
@@ -148,6 +151,9 @@ def main() -> None:
     parser.add_argument("--D", type=int, default=2048, help="Input features")
     parser.add_argument("--decimal_places", type=int, default=2)
     parser.add_argument("--compress_threshold", type=float, default=0.5)
+    parser.add_argument("--query_bits", type=int, default=-1)
+    parser.add_argument("--key_bits", type=int, default=-1)
+    parser.add_argument("--pack_layout", type=str, default="sm90_b1_u32_tm256")
     parser.add_argument("--warmup", type=int, default=10)
     parser.add_argument("--iters", type=int, default=50)
     parser.add_argument("--seed", type=int, default=123)
@@ -185,6 +191,7 @@ def main() -> None:
     print(f"  modes={modes}")
     print(f"  shape=(Q={args.Q}, R={args.R}, D={args.D})")
     print(f"  decimal_places={args.decimal_places}  compress_threshold={args.compress_threshold}")
+    print(f"  query_bits={args.query_bits}  key_bits={args.key_bits}  pack_layout={args.pack_layout}")
     print(f"  warmup={args.warmup}  iters={args.iters}")
     print(f"  torch_dtype={args.torch_dtype}  BSI_PROFILE={os.environ.get('BSI_PROFILE', '0')}")
 

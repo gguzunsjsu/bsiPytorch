@@ -228,3 +228,111 @@ extern "C" void launch_pack_bits_all_ballot_batch(
             values, Q, n, slices, words_per_slice, value_mask, out);
     }
 }
+
+extern "C" __global__
+void repack_words_to_sm90_query_u32_kernel(
+    const unsigned long long* __restrict__ words,
+    int Q,
+    int slices,
+    int words_per_slice,
+    int chunks,
+    unsigned int* __restrict__ out)
+{
+    const int q_tile = blockIdx.z;
+    const int chunk = blockIdx.x;
+    const int slice = blockIdx.y;
+    const int t = threadIdx.x;
+    if (t >= 256 || slice >= slices) return;
+
+    const int row = t >> 3;   // 0..31
+    const int w32 = t & 7;    // 0..7
+    const int q = q_tile * 32 + row;
+    const int w64 = chunk * 4 + (w32 >> 1);
+
+    unsigned int v = 0u;
+    if (q < Q && w64 < words_per_slice) {
+        const size_t src_idx =
+            ((size_t)q * (size_t)slices + (size_t)slice) * (size_t)words_per_slice + (size_t)w64;
+        const unsigned long long word = words[src_idx];
+        v = ((w32 & 1) == 0) ? static_cast<unsigned int>(word)
+                             : static_cast<unsigned int>(word >> 32);
+    }
+
+    const size_t dst_idx =
+        (((((size_t)q_tile * (size_t)chunks + (size_t)chunk) * (size_t)slices + (size_t)slice) *
+          32ull +
+          (size_t)row) *
+         8ull) +
+        (size_t)w32;
+    out[dst_idx] = v;
+}
+
+extern "C" __global__
+void repack_words_to_sm90_key_u32_kernel(
+    const unsigned long long* __restrict__ words,
+    int R,
+    int slices,
+    int words_per_slice,
+    int chunks,
+    unsigned int* __restrict__ out)
+{
+    const int r_tile = blockIdx.z;
+    const int chunk = blockIdx.x;
+    const int slice = blockIdx.y;
+    const int t = threadIdx.x;
+    if (t >= 64 || slice >= slices) return;
+
+    const int row = t >> 3;   // 0..7
+    const int w32 = t & 7;    // 0..7
+    const int r = r_tile * 8 + row;
+    const int w64 = chunk * 4 + (w32 >> 1);
+
+    unsigned int v = 0u;
+    if (r < R && w64 < words_per_slice) {
+        const size_t src_idx =
+            ((size_t)r * (size_t)slices + (size_t)slice) * (size_t)words_per_slice + (size_t)w64;
+        const unsigned long long word = words[src_idx];
+        v = ((w32 & 1) == 0) ? static_cast<unsigned int>(word)
+                             : static_cast<unsigned int>(word >> 32);
+    }
+
+    const size_t dst_idx =
+        (((((size_t)r_tile * (size_t)chunks + (size_t)chunk) * (size_t)slices + (size_t)slice) *
+          8ull +
+          (size_t)row) *
+         8ull) +
+        (size_t)w32;
+    out[dst_idx] = v;
+}
+
+extern "C" void launch_repack_words_to_sm90_query_u32(
+    const unsigned long long* words,
+    int Q,
+    int slices,
+    int words_per_slice,
+    unsigned int* out,
+    cudaStream_t stream)
+{
+    if (words == nullptr || out == nullptr || Q <= 0 || slices <= 0 || words_per_slice <= 0) return;
+    const int chunks = (words_per_slice + 3) / 4;
+    dim3 block(256);
+    dim3 grid(chunks, slices, (Q + 31) / 32);
+    repack_words_to_sm90_query_u32_kernel<<<grid, block, 0, stream>>>(
+        words, Q, slices, words_per_slice, chunks, out);
+}
+
+extern "C" void launch_repack_words_to_sm90_key_u32(
+    const unsigned long long* words,
+    int R,
+    int slices,
+    int words_per_slice,
+    unsigned int* out,
+    cudaStream_t stream)
+{
+    if (words == nullptr || out == nullptr || R <= 0 || slices <= 0 || words_per_slice <= 0) return;
+    const int chunks = (words_per_slice + 3) / 4;
+    dim3 block(64);
+    dim3 grid(chunks, slices, (R + 7) / 8);
+    repack_words_to_sm90_key_u32_kernel<<<grid, block, 0, stream>>>(
+        words, R, slices, words_per_slice, chunks, out);
+}

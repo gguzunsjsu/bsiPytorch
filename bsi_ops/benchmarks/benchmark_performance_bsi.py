@@ -140,15 +140,36 @@ class Evaluator:
         return self.tokenizer(examples['text'])
 
     @torch.no_grad()
-    def evaluate_with_bsi(self, model, decimal_cfg=2, scope='all', threshold_cfg=0.2, bsi_device: str='auto'):
+    def evaluate_with_bsi(self,
+                          model,
+                          decimal_cfg=2,
+                          scope='all',
+                          threshold_cfg=0.2,
+                          bsi_device: str='auto',
+                          query_bits_cfg=None,
+                          key_bits_cfg=None,
+                          pack_layout: str='sm90_b1_u32_tm256'):
         """Evaluate model with actual BSI quantization."""
         model.eval()
         total, hit = 0, 0
         latency = 0
 
-        print(f"Quantizing model with BSI (decimal_places={decimal_cfg}, scope={scope}, device={bsi_device})...")
+        print(
+            f"Quantizing model with BSI (decimal_places={decimal_cfg}, scope={scope}, "
+            f"device={bsi_device}, query_bits={query_bits_cfg}, key_bits={key_bits_cfg}, "
+            f"pack_layout={pack_layout})..."
+        )
         prefer_cuda = (bsi_device == 'cuda') or (bsi_device == 'auto' and torch.cuda.is_available())
-        model = quantize_model_bsi(model, decimalPlaces=decimal_cfg, scope=scope, compress_threshold=threshold_cfg, prefer_cuda=prefer_cuda)
+        model = quantize_model_bsi(
+            model,
+            decimalPlaces=decimal_cfg,
+            scope=scope,
+            compress_threshold=threshold_cfg,
+            prefer_cuda=prefer_cuda,
+            query_bits=query_bits_cfg,
+            key_bits=key_bits_cfg,
+            pack_layout=pack_layout,
+        )
         summary = summarize_bsi_model(model)
         reset_bsi_dot_counters(model)
         if summary["total_bsi_bytes"] == 0:
@@ -381,6 +402,8 @@ class Evaluator:
         summary["build_quantize_ms_per_sample"] = avg_build_q_ms
         summary["build_pack_ms_per_sample"] = avg_build_p_ms
         summary["build_kernel_ms_per_sample"] = avg_build_k_ms
+        if hasattr(bsi_ops, "get_last_dot_launch_stats_cuda"):
+            summary["last_dot_launch"] = dict(bsi_ops.get_last_dot_launch_stats_cuda())
         print(f"Completed BSI eval: top1_acc={accuracy:.4f}, top5_acc={top5_acc:.4f}")
         return (
             accuracy,
@@ -538,7 +561,7 @@ def write_report(report_dir, run_cfg, fp16_static_mb, results):
     with open(os.path.join(report_dir, f"layers_{stamp}.csv"), "w", newline="") as f:
         w = csv.writer(f)
         # Report sizes in MB and include FP16 per-layer weight size
-        w.writerow(["name","in","out","decimalPlaces","compress_threshold",
+        w.writerow(["name","in","out","decimalPlaces","compress_threshold","query_bits","key_bits","pack_layout",
                     "bsi_weight_mb","bsi_disk_mb","dense_weight_mb","fp16_weight_mb",
                     "bias_mb","total_slices","compressed_slices","verbatim_slices",
                     "compressed_pct","verbatim_pct"])
@@ -555,7 +578,7 @@ def write_report(report_dir, run_cfg, fp16_static_mb, results):
             bias_mb = _mb(L.get("bias_bytes", 0))
             w.writerow([
                 L["name"], L["in_features"], L["out_features"],
-                L["decimalPlaces"], L["compress_threshold"],
+                L["decimalPlaces"], L["compress_threshold"], L.get("query_bits", -1), L.get("key_bits", -1), L.get("pack_layout", ""),
                 f"{bsi_mb:.4f}", f"{bsi_disk_mb:.4f}", f"{dense_mb:.4f}", f"{fp16_mb:.4f}",
                 f"{bias_mb:.4f}",
                 L.get("weight_total_slices",0),
@@ -586,6 +609,20 @@ def main():
                     help='[DEPRECATED; ignored] Optional decimal-place override for MLP/FFN layers')
     parser.add_argument('--compress_threshold', type=float, default=0.2,
                     help='Base compression threshold for BSI slices (0 disables compression)')
+    parser.add_argument('--query_bits', type=int, default=-1,
+                    help='Fixed query bit budget for the SM90 packed path (-1 keeps legacy defaults)')
+    parser.add_argument('--key_bits', type=int, default=-1,
+                    help='Fixed key bit budget for the SM90 packed path (-1 keeps legacy defaults)')
+    parser.add_argument('--attention_query_bits', type=int, default=None,
+                    help='Optional attention-layer query bit override')
+    parser.add_argument('--attention_key_bits', type=int, default=None,
+                    help='Optional attention-layer key bit override')
+    parser.add_argument('--mlp_query_bits', type=int, default=None,
+                    help='Optional MLP-layer query bit override')
+    parser.add_argument('--mlp_key_bits', type=int, default=None,
+                    help='Optional MLP-layer key bit override')
+    parser.add_argument('--pack_layout', type=str, default='sm90_b1_u32_tm256',
+                    help='Packed layout name for CUDA builders and SM90 dot dispatch')
     parser.add_argument('--threshold_attention', type=float, default=None,
                     help='[DEPRECATED; ignored] Compression threshold override for attention layers')
     parser.add_argument('--threshold_mlp', type=float, default=None,
@@ -621,6 +658,8 @@ def main():
     args = parser.parse_args()
     os.environ["BSI_PROFILE"] = "1" if int(args.bsi_profile) != 0 else "0"
     print(f"BSI_PROFILE={os.environ['BSI_PROFILE']}")
+    query_bits_cfg = build_layer_config(args.query_bits, args.attention_query_bits, args.mlp_query_bits)
+    key_bits_cfg = build_layer_config(args.key_bits, args.attention_key_bits, args.mlp_key_bits)
 
     fp16_model_name = args.model_name
     device = get_device()
@@ -769,7 +808,10 @@ def main():
                         model_bsi,
                         decimalPlaces=decimal_cfg,
                         scope=args.scope,
-                        compress_threshold=threshold_global_cfg
+                        compress_threshold=threshold_global_cfg,
+                        query_bits=query_bits_cfg,
+                        key_bits=key_bits_cfg,
+                        pack_layout=args.pack_layout,
                     )
                     summary = summarize_bsi_model(model_bsi)
                     # Compute full-model static size (MB): params+buffers+BSI weight bytes
@@ -802,6 +844,9 @@ def main():
                         "name": name,
                         "decimal": dec,
                         "scope": args.scope,
+                        "query_bits": query_bits_cfg,
+                        "key_bits": key_bits_cfg,
+                        "pack_layout": args.pack_layout,
                         "accuracy_top1": None,
                         "accuracy_top5": None,
                         "avg_forward_ms": None,
@@ -820,7 +865,9 @@ def main():
                         with open(args.simple_report_txt, 'a') as tf:
                             stamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
                             tf.write(
-                                f"[{stamp}] dataset={dataset_name} model={fp16_model_name} scope={args.scope} dec={dec} thr={args.compress_threshold} base_dtype={args.base_dtype} "
+                                f"[{stamp}] dataset={dataset_name} model={fp16_model_name} scope={args.scope} dec={dec} "
+                                f"thr={args.compress_threshold} q_bits={query_bits_cfg} k_bits={key_bits_cfg} "
+                                f"layout={args.pack_layout} base_dtype={args.base_dtype} "
                                 f"base_full_mb={base_full_static_mb:.4f} bsi_full_mb={bsi_full_total_mb:.4f} compression_full={base_full_static_mb / bsi_full_total_mb if bsi_full_total_mb > 0 else 0:.4f}\n"
                             )
                 else:
@@ -831,7 +878,10 @@ def main():
                         decimal_cfg,
                         scope=args.scope,
                         threshold_cfg=threshold_global_cfg,
-                        bsi_device=args.bsi_device
+                        bsi_device=args.bsi_device,
+                        query_bits_cfg=query_bits_cfg,
+                        key_bits_cfg=key_bits_cfg,
+                        pack_layout=args.pack_layout,
                     )
                     # Model is quantized in-place; optionally persist keysets
                     if args.save_bsi_dir:
@@ -869,10 +919,14 @@ def main():
                         print("  Worst layers by MSE (top 5):")
                         for entry in layer_stats[:5]:
                             print(
-                                "    {name}: decimal={dec:.0f}, thr={thr:.3f}, samples={samples:.0f}, "
-                                "mse={mse:.6f}, mae={mae:.6f}, cosine={cos:.4f}, max_abs={mx:.6f}".format(
+                                "    {name}: decimal={dec:.0f}, q_bits={qb}, k_bits={kb}, layout={layout}, "
+                                "thr={thr:.3f}, samples={samples:.0f}, mse={mse:.6f}, mae={mae:.6f}, "
+                                "cosine={cos:.4f}, max_abs={mx:.6f}".format(
                                     name=entry['name'],
                                     dec=entry['decimalPlaces'],
+                                    qb=entry.get('query_bits', -1),
+                                    kb=entry.get('key_bits', -1),
+                                    layout=entry.get('pack_layout', ''),
                                     thr=entry['compress_threshold'],
                                     samples=entry['samples_tracked'],
                                     mse=entry['mse'],
@@ -887,6 +941,9 @@ def main():
                         "name": name,
                         "decimal": dec,
                         "scope": args.scope,
+                        "query_bits": query_bits_cfg,
+                        "key_bits": key_bits_cfg,
+                        "pack_layout": args.pack_layout,
                         "accuracy_top1": acc_bsi,
                         "accuracy_top5": top5_acc,
                         "avg_forward_ms": fwd_ms,
@@ -912,7 +969,9 @@ def main():
                         with open(args.simple_report_txt, 'a') as tf:
                             stamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
                             tf.write(
-                                f"[{stamp}] dataset={dataset_name} model={fp16_model_name} scope={args.scope} dec={dec} thr={args.compress_threshold} base_dtype={args.base_dtype} "
+                                f"[{stamp}] dataset={dataset_name} model={fp16_model_name} scope={args.scope} dec={dec} "
+                                f"thr={args.compress_threshold} q_bits={query_bits_cfg} k_bits={key_bits_cfg} "
+                                f"layout={args.pack_layout} base_dtype={args.base_dtype} "
                                 f"base_full_mb={base_full_static_mb:.4f} bsi_full_mb={bsi_full_total_mb:.4f} compression_full={base_full_static_mb / bsi_full_total_mb if bsi_full_total_mb > 0 else 0:.4f} "
                                 f"top1={acc_bsi:.4f} top5={top5_acc:.4f} fwd_ms={fwd_ms:.3f} build_ms={build_ms:.3f} dot_ms={dot_ms:.3f} "
                                 f"dot_q_us={dot_q_us:.3f} dot_s_ns={dot_s_ns:.3f}\n"

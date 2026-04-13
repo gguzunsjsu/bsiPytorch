@@ -46,11 +46,22 @@ def get_device():
 class BSIQuantizedLinear(torch.nn.Module):
     """BSI quantized linear layer using prebuilt BSI keys for efficiency and diagnostics."""
 
-    def __init__(self, original_linear, decimalPlaces=2, compress_threshold=0.2, query_threshold=None, prefer_cuda: bool=True):
+    def __init__(self,
+                 original_linear,
+                 decimalPlaces=2,
+                 compress_threshold=0.2,
+                 query_threshold=None,
+                 prefer_cuda: bool=True,
+                 query_bits: int = -1,
+                 key_bits: int = -1,
+                 pack_layout: str = "sm90_b1_u32_tm256"):
         super().__init__()
         self.decimalPlaces = int(decimalPlaces)
         self.compress_threshold = float(compress_threshold)
         self.query_compress_threshold = float(query_threshold) if query_threshold is not None else float(compress_threshold)
+        self.query_bits = int(query_bits)
+        self.key_bits = int(key_bits)
+        self.pack_layout = str(pack_layout)
 
         self.in_features = original_linear.in_features
         self.out_features = original_linear.out_features
@@ -80,7 +91,11 @@ class BSIQuantizedLinear(torch.nn.Module):
             # Build keys directly on CUDA (verbatim layout)
             # Always pass CPU tensor to the CPU builder; it will prepack to CUDA internally
             self._bsi_keys_cuda, total_mem_bytes, num_keys, d, W = bsi_ops.build_bsi_keys_cuda(
-                self.weight_fp32, self.decimalPlaces, float(self.compress_threshold)
+                self.weight_fp32,
+                self.decimalPlaces,
+                float(self.compress_threshold),
+                self.key_bits,
+                self.pack_layout,
             )
             assert num_keys == self.out_features and d == self.in_features
             self.weight_bsi_memory_bytes = int(total_mem_bytes)
@@ -106,6 +121,7 @@ class BSIQuantizedLinear(torch.nn.Module):
         self.build_calls = 0
         # optional stats collection flag toggled by helpers
         self.collect_stats = False
+        self.reset_error_stats()
 
     def reset_error_stats(self):
         self.mse_sum = 0.0
@@ -145,21 +161,29 @@ class BSIQuantizedLinear(torch.nn.Module):
 
         t_build0 = time.perf_counter_ns()
         use_packed = (
-            os.getenv("BSI_QUERY_PACKED", "1") != "0"
-            and hasattr(bsi_ops, "build_bsi_queries_cuda_batch_packed")
+            hasattr(bsi_ops, "build_bsi_queries_cuda_batch_packed")
             and hasattr(bsi_ops, "batch_dot_product_multiquery_cuda_batch_caps")
         )
+        if self.pack_layout and not use_packed:
+            raise RuntimeError(
+                f"Requested packed layout '{self.pack_layout}' but packed query-batch CUDA APIs are unavailable"
+            )
         if use_packed:
             query_capsules = bsi_ops.build_bsi_queries_cuda_batch_packed(
                 batch_inputs,
                 self.decimalPlaces,
                 float(self.query_compress_threshold),
+                self.query_bits,
+                self.pack_layout,
+                True,
             )
         else:
             query_capsules = bsi_ops.build_bsi_queries_cuda_batch(
                 batch_inputs,
                 self.decimalPlaces,
                 float(self.query_compress_threshold),
+                self.query_bits,
+                "",
             )
         self.build_ns_total += (time.perf_counter_ns() - t_build0)
         if hasattr(bsi_ops, "get_last_query_build_profile_cuda"):
@@ -206,6 +230,27 @@ class BSIQuantizedLinear(torch.nn.Module):
         self.dot_calls += 1
 
         output = scores_2d
+
+        if self.collect_stats:
+            approx_cpu = output.detach().to(device="cpu", dtype=torch.float32)
+            dense_ref_cpu = F.linear(
+                batch_inputs.detach().to(device="cpu", dtype=torch.float32),
+                self.weight_fp32,
+                self.bias_fp32,
+            )
+            diff = approx_cpu - dense_ref_cpu
+            mse = float(diff.pow(2).mean().item())
+            mae = float(diff.abs().mean().item())
+            cosine = 1.0
+            flat_ref = dense_ref_cpu.reshape(1, -1)
+            flat_out = approx_cpu.reshape(1, -1)
+            if float(flat_ref.norm().item()) > 0.0 and float(flat_out.norm().item()) > 0.0:
+                cosine = float(F.cosine_similarity(flat_out, flat_ref, dim=1).item())
+            self.mse_sum += mse
+            self.mae_sum += mae
+            self.cosine_sum += cosine
+            self.max_abs_error = max(self.max_abs_error, float(diff.abs().max().item()))
+            self.samples_tracked += 1
 
         # No CPU accuracy summary in GPU-only mode
 
@@ -300,6 +345,9 @@ def collect_bsi_error_stats(model: nn.Module) -> List[Dict[str, float]]:
                 "name": name,
                 "decimalPlaces": module.decimalPlaces,
                 "compress_threshold": module.compress_threshold,
+                "query_bits": module.query_bits,
+                "key_bits": module.key_bits,
+                "pack_layout": module.pack_layout,
                 "samples_tracked": samples,
                 "mse": module.mse_sum / samples,
                 "mae": module.mae_sum / samples,
@@ -331,6 +379,9 @@ def summarize_bsi_model(model: nn.Module) -> Dict[str, Any]:
                 "out_features": module.out_features,
                 "decimalPlaces": module.decimalPlaces,
                 "compress_threshold": module.compress_threshold,
+                "query_bits": module.query_bits,
+                "key_bits": module.key_bits,
+                "pack_layout": module.pack_layout,
                 "weight_bsi_bytes": module.weight_bsi_memory_bytes,
                 "weight_dense_bytes": module.weight_dense_memory_bytes,
                 "bias_bytes": module.bias_memory_bytes,
@@ -441,7 +492,27 @@ def _resolve_layer_value(config: Union[float, Dict[str, float]], layer_kind: str
     return float(config)
 
 
-def quantize_model_bsi(model, decimalPlaces=2, skip_lm_head=True, scope='all', compress_threshold=0.2, prefer_cuda: bool=False):
+def _resolve_layer_bits(config: Union[int, Dict[str, int], None], layer_kind: str, fallback: int) -> int:
+    if config is None:
+        return int(fallback)
+    if isinstance(config, dict):
+        if layer_kind == 'attention':
+            return int(config.get('attention', config.get('default', fallback)))
+        if layer_kind == 'mlp':
+            return int(config.get('mlp', config.get('default', fallback)))
+        return int(config.get('default', fallback))
+    return int(config)
+
+
+def quantize_model_bsi(model,
+                       decimalPlaces=2,
+                       skip_lm_head=True,
+                       scope='all',
+                       compress_threshold=0.2,
+                       prefer_cuda: bool=False,
+                       query_bits: Union[int, Dict[str, int], None] = None,
+                       key_bits: Union[int, Dict[str, int], None] = None,
+                       pack_layout: str = "sm90_b1_u32_tm256"):
     """Replace linear layers with BSI quantized versions.
 
     scope options:
@@ -461,6 +532,8 @@ def quantize_model_bsi(model, decimalPlaces=2, skip_lm_head=True, scope='all', c
     threshold_config = compress_threshold
     default_decimal = float(decimal_config if isinstance(decimal_config, (int, float)) else decimal_config.get('default', 2))
     default_threshold = float(threshold_config if isinstance(threshold_config, (int, float)) else threshold_config.get('default', 0.2))
+    default_query_bits = int(query_bits if isinstance(query_bits, int) else (query_bits.get('default', -1) if isinstance(query_bits, dict) else -1))
+    default_key_bits = int(key_bits if isinstance(key_bits, int) else (key_bits.get('default', -1) if isinstance(key_bits, dict) else -1))
 
     layer_count = 0
     for name, module in model.named_modules():
@@ -480,9 +553,23 @@ def quantize_model_bsi(model, decimalPlaces=2, skip_lm_head=True, scope='all', c
             layer_kind = 'attention' if is_attention_linear(name) else 'mlp' if is_mlp_linear(name) else 'other'
             decimal_layer = _resolve_layer_value(decimal_config, layer_kind, default_decimal)
             threshold_layer = _resolve_layer_value(threshold_config, layer_kind, default_threshold)
-            setattr(parent, module_name, BSIQuantizedLinear(module, decimalPlaces=decimal_layer, compress_threshold=threshold_layer, prefer_cuda=prefer_cuda))
+            query_bits_layer = _resolve_layer_bits(query_bits, layer_kind, default_query_bits)
+            key_bits_layer = _resolve_layer_bits(key_bits, layer_kind, default_key_bits)
+            setattr(parent, module_name, BSIQuantizedLinear(
+                module,
+                decimalPlaces=decimal_layer,
+                compress_threshold=threshold_layer,
+                prefer_cuda=prefer_cuda,
+                query_bits=query_bits_layer,
+                key_bits=key_bits_layer,
+                pack_layout=pack_layout,
+            ))
             layer_count += 1
-    print(f"Quantized {layer_count} linear layers to BSI with decimalPlaces={decimal_config} (scope={scope})")
+    print(
+        f"Quantized {layer_count} linear layers to BSI with "
+        f"decimalPlaces={decimal_config}, query_bits={query_bits}, key_bits={key_bits}, "
+        f"pack_layout={pack_layout} (scope={scope})"
+    )
     return model
 
 class Evaluator:

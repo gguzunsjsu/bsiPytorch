@@ -37,13 +37,15 @@ extern "C" void launch_ewah_decompress(
 
 extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     const unsigned long long* A,
-    const unsigned long long* A_tc_fixed76,
+    const unsigned int* A_packed_u32,
     const float* Aw,
     const float* A_chunk_scales,
     int A_scale_stride,
     int Sa,
     int W,
+    int packed_chunks,
     const unsigned long long* B,
+    const unsigned int* B_packed_u32,
     const float* Bw,
     int Sb,
     int R,
@@ -56,6 +58,8 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     int R_total,
     float* out_global,
     cudaStream_t stream);
+
+extern "C" pybind11::dict bsi_get_last_dot_launch_stats_cuda();
 
 template <typename T>
 inline T* tensor_data_ptr(torch::Tensor& t) {
@@ -149,6 +153,7 @@ struct KeyMeta {
     int offset = 0;
     bool twos = true;
     int decimals = 0;
+    int fixed_bits = 0;
 };
 
 struct PrebuiltBSIKeysCUDA {
@@ -158,6 +163,7 @@ struct PrebuiltBSIKeysCUDA {
     std::vector<BsiVectorCudaData> device_views;
     // Grouped, contiguous views by Sb to avoid per-call stacking
     std::unordered_map<int, at::Tensor> grouped_words;   // Sb -> [R_sb, Sb, W]
+    std::unordered_map<int, at::Tensor> grouped_words_tc_packed_u32; // Sb -> [R_tiles8, chunks, Sb, 8, 8]
     std::unordered_map<int, at::Tensor> grouped_weights; // Sb -> [R_sb, Sb]
     std::unordered_map<int, std::vector<int64_t>> grouped_indices; // Sb -> original key indices
     std::unordered_map<int, at::Tensor> grouped_indices_dev; // Sb -> [R_sb] int64 cuda
@@ -168,13 +174,17 @@ struct PrebuiltBSIKeysCUDA {
     int single_rg = 0;
     bool single_indices_identity = true;
     at::Tensor single_words;   // [Rg, Sb, W]
+    at::Tensor single_words_tc_packed_u32; // [R_tiles8, chunks, Sb, 8, 8]
     at::Tensor single_weights; // [Rg, Sb]
     at::Tensor single_indices_dev; // [Rg] int64 cuda if non-identity
     int W = 0;
     int64_t d = 0;
     int64_t num_keys = 0;
     int decimals = 0;
+    int fixed_bits = 0;
+    int packed_chunks = 0;
     float threshold = 0.2f;
+    std::string pack_layout;
 };
 
 static PrebuiltBSIKeysCUDA* capsule_to_keys_cuda(const pybind11::capsule& cap) {
@@ -202,14 +212,17 @@ static PrebuiltBSIQueryCUDA* capsule_to_query_cuda(const pybind11::capsule& cap)
 // - re-stacking Q small tensors inside the dot-product path.
 struct PrebuiltBSIQueryBatchCUDA {
     at::Tensor words;         // [Q, Sa, W] int64 cuda
-    at::Tensor words_tc_fixed76; // [Q_tiles, chunks, Sa, 32, 4] int64 cuda or undefined
+    at::Tensor words_tc_packed_u32; // [Q_tiles, chunks, Sa, 32, 8] int32 cuda or undefined
     at::Tensor slice_weights; // [Q, Sa] float32 cuda
     at::Tensor chunk_scales;  // [Q, chunks] float32 cuda or undefined
     int Sa = 0;
     int W = 0;
     int decimals = 0;
+    int fixed_bits = 0;
+    int packed_chunks = 0;
     int64_t Q = 0;
     size_t mem_bytes = 0;
+    std::string pack_layout;
 };
 
 static PrebuiltBSIQueryBatchCUDA* capsule_to_query_batch_cuda(const pybind11::capsule& cap) {
@@ -271,8 +284,15 @@ static pybind11::tuple build_bsi_query_cuda(torch::Tensor q, int decimalPlaces, 
     return pybind11::make_tuple(cap, static_cast<uint64_t>(holder->mem_bytes), holder->S, holder->W);
 }
 
-static pybind11::list build_bsi_queries_cuda_batch(torch::Tensor q2d, int decimalPlaces, float compress_threshold = 0.2f) {
+static pybind11::list build_bsi_queries_cuda_batch(torch::Tensor q2d,
+                                                   int decimalPlaces,
+                                                   float compress_threshold = 0.2f,
+                                                   int fixed_bits = -1,
+                                                   const std::string& pack_layout = "") {
     TORCH_CHECK(q2d.dim() == 2, "q must be 2D [Q, d]");
+    TORCH_CHECK(pack_layout.empty(),
+                "build_bsi_queries_cuda_batch returns generic per-query capsules only; "
+                "use build_bsi_queries_cuda_batch_packed for SM90 packed layouts");
     (void)compress_threshold;
     auto device = torch::Device(torch::kCUDA, c10::cuda::current_device());
     bool verbose = bsi_cuda_should_log();
@@ -280,7 +300,7 @@ static pybind11::list build_bsi_queries_cuda_batch(torch::Tensor q2d, int decima
     pybind11::list out;
     if (bsi_cuda_query_batch()) {
         auto batch = build_bsi_queries_cuda_batch_data(
-            q2d.detach(), decimalPlaces, device, verbose, /*for_keys=*/false);
+            q2d.detach(), decimalPlaces, device, verbose, /*for_keys=*/false, fixed_bits, pack_layout);
         const int S = batch.slices;
         const int W = batch.words_per_slice;
         auto words = batch.words.contiguous();
@@ -348,18 +368,28 @@ static pybind11::list build_bsi_queries_cuda_batch(torch::Tensor q2d, int decima
 
 static pybind11::capsule build_bsi_queries_cuda_batch_packed(torch::Tensor q2d,
                                                              int decimalPlaces,
-                                                             float compress_threshold = 0.2f) {
+                                                             float compress_threshold = 0.2f,
+                                                             int fixed_bits = -1,
+                                                             const std::string& pack_layout = "sm90_b1_u32_tm256",
+                                                             bool reuse_workspace = true) {
     TORCH_CHECK(q2d.dim() == 2, "q must be 2D [Q, d]");
     (void)compress_threshold;
+    (void)reuse_workspace;
     auto device = torch::Device(torch::kCUDA, c10::cuda::current_device());
     bool verbose = bsi_cuda_should_log();
 
     auto batch = build_bsi_queries_cuda_batch_data_packed(
-        q2d.detach(), decimalPlaces, device, verbose);
+        q2d.detach(), decimalPlaces, device, verbose, fixed_bits, pack_layout);
+    TORCH_CHECK(
+        pack_layout.empty() || batch.pack_layout == pack_layout,
+        "Requested packed query layout '", pack_layout,
+        "' but the CUDA builder could not materialize it for this device/config");
     auto* holder = new PrebuiltBSIQueryBatchCUDA();
-    holder->words = batch.words.contiguous();
-    if (batch.words_tc_fixed76.defined() && batch.words_tc_fixed76.numel() > 0) {
-        holder->words_tc_fixed76 = batch.words_tc_fixed76.contiguous();
+    if (batch.words.defined() && batch.words.numel() > 0) {
+        holder->words = batch.words.contiguous();
+    }
+    if (batch.words_tc_packed_u32.defined() && batch.words_tc_packed_u32.numel() > 0) {
+        holder->words_tc_packed_u32 = batch.words_tc_packed_u32.contiguous();
     }
     holder->slice_weights = batch.slice_weights.contiguous();
     if (batch.chunk_scales.defined() && batch.chunk_scales.numel() > 0) {
@@ -368,12 +398,17 @@ static pybind11::capsule build_bsi_queries_cuda_batch_packed(torch::Tensor q2d,
     holder->Sa = batch.slices;
     holder->W = batch.words_per_slice;
     holder->decimals = int(decimalPlaces);
+    holder->fixed_bits = batch.fixed_bits;
+    holder->packed_chunks = batch.packed_chunks;
     holder->Q = q2d.size(0);
-    holder->mem_bytes = static_cast<size_t>(holder->words.numel() * holder->words.element_size()) +
-        static_cast<size_t>(holder->slice_weights.numel() * holder->slice_weights.element_size());
-    if (holder->words_tc_fixed76.defined() && holder->words_tc_fixed76.numel() > 0) {
+    holder->pack_layout = batch.pack_layout;
+    holder->mem_bytes = static_cast<size_t>(holder->slice_weights.numel() * holder->slice_weights.element_size());
+    if (holder->words.defined() && holder->words.numel() > 0) {
+        holder->mem_bytes += static_cast<size_t>(holder->words.numel() * holder->words.element_size());
+    }
+    if (holder->words_tc_packed_u32.defined() && holder->words_tc_packed_u32.numel() > 0) {
         holder->mem_bytes +=
-            static_cast<size_t>(holder->words_tc_fixed76.numel() * holder->words_tc_fixed76.element_size());
+            static_cast<size_t>(holder->words_tc_packed_u32.numel() * holder->words_tc_packed_u32.element_size());
     }
     if (holder->chunk_scales.defined() && holder->chunk_scales.numel() > 0) {
         holder->mem_bytes += static_cast<size_t>(holder->chunk_scales.numel() * holder->chunk_scales.element_size());
@@ -587,7 +622,9 @@ struct TempGroup {
                 A_scale_stride,
                 pg.S,
                 keys->W,
+                std::max(1, (keys->W + 3) / 4),
                 B_words,
+                nullptr,
                 Bw_ptr,
                 Sb,
                 Rg,
@@ -626,7 +663,9 @@ struct TempGroup {
                     A_scale_stride,
                     pg.S,
                     keys->W,
+                    std::max(1, (keys->W + 3) / 4),
                     B_words,
+                    nullptr,
                     Bw_ptr,
                     Sb,
                     Rg,
@@ -675,16 +714,24 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
     auto* qb = capsule_to_query_batch_cuda(query_batch_cap);
     TORCH_CHECK(qb != nullptr, "Invalid CUDA query-batch capsule");
 
-    TORCH_CHECK(qb->words.defined() && qb->slice_weights.defined(),
-                "Query batch tensors are not defined");
-    TORCH_CHECK(qb->words.is_cuda() && qb->slice_weights.is_cuda(),
-                "Query batch tensors must be CUDA tensors");
-    TORCH_CHECK(qb->words.dim() == 3, "Query batch words must be [Q, Sa, W]");
+    TORCH_CHECK(qb->slice_weights.defined(), "Query batch slice_weights are not defined");
+    TORCH_CHECK(qb->slice_weights.is_cuda(), "Query batch slice_weights must be CUDA tensors");
     TORCH_CHECK(qb->slice_weights.dim() == 2, "Query batch slice_weights must be [Q, Sa]");
+    const bool have_generic_words = qb->words.defined() && qb->words.numel() > 0;
+    const bool have_packed_words = qb->words_tc_packed_u32.defined() && qb->words_tc_packed_u32.numel() > 0;
+    TORCH_CHECK(have_generic_words || have_packed_words,
+                "Query batch must provide either generic words or SM90 packed words");
 
-    const int64_t Q = qb->words.size(0);
-    const int64_t Sa = qb->words.size(1);
-    const int64_t W = qb->words.size(2);
+    int64_t Q = qb->Q;
+    int64_t Sa = qb->Sa;
+    int64_t W = qb->W;
+    if (have_generic_words) {
+        TORCH_CHECK(qb->words.is_cuda(), "Query batch words must be CUDA tensors");
+        TORCH_CHECK(qb->words.dim() == 3, "Query batch words must be [Q, Sa, W]");
+        Q = qb->words.size(0);
+        Sa = qb->words.size(1);
+        W = qb->words.size(2);
+    }
     TORCH_CHECK(Q > 0 && Sa > 0 && W > 0, "Empty query batch");
     TORCH_CHECK(W == keys->W, "Word count mismatch between query batch and keys");
     TORCH_CHECK(qb->slice_weights.size(0) == Q && qb->slice_weights.size(1) == Sa,
@@ -707,27 +754,24 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
             cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, dev);
             TORCH_CHECK(major >= 9, "Chunk scales require SM90+ (Hopper) tensor-core path");
         }
-        TORCH_CHECK(keys->W % 4 == 0, "Chunk scales require W64 multiple of 4");
-        TORCH_CHECK(qb->chunk_scales.size(1) == (keys->W / 4),
+        const int expected_chunks = (qb->packed_chunks > 0) ? qb->packed_chunks : std::max(1, (keys->W + 3) / 4);
+        TORCH_CHECK(qb->chunk_scales.size(1) == expected_chunks,
                     "Chunk scale stride mismatch: got ", qb->chunk_scales.size(1),
-                    " expected ", (keys->W / 4));
+                    " expected ", expected_chunks);
         A_chunk_scales = tensor_data_ptr<float>(qb->chunk_scales);
         A_scale_stride = static_cast<int>(qb->chunk_scales.size(1));
     }
-    const unsigned long long* A_tc_fixed76 = nullptr;
-    if (qb->words_tc_fixed76.defined() && qb->words_tc_fixed76.numel() > 0) {
-        TORCH_CHECK(qb->words_tc_fixed76.is_cuda(), "words_tc_fixed76 must be a CUDA tensor");
-        TORCH_CHECK(qb->words_tc_fixed76.dim() == 5, "words_tc_fixed76 must be [Q_tiles, chunks, Sa, 32, 4]");
-        TORCH_CHECK((Q & 31) == 0, "words_tc_fixed76 requires Q multiple of 32");
-        TORCH_CHECK((W & 3) == 0, "words_tc_fixed76 requires W64 multiple of 4");
-        TORCH_CHECK(qb->words_tc_fixed76.size(0) == (Q / 32), "words_tc_fixed76 Q_tiles mismatch");
-        TORCH_CHECK(qb->words_tc_fixed76.size(1) == (W / 4), "words_tc_fixed76 chunk count mismatch");
-        TORCH_CHECK(qb->words_tc_fixed76.size(2) == Sa, "words_tc_fixed76 slice count mismatch");
-        TORCH_CHECK(qb->words_tc_fixed76.size(3) == 32, "words_tc_fixed76 TM dimension mismatch");
-        TORCH_CHECK(qb->words_tc_fixed76.size(4) == 4, "words_tc_fixed76 K_WORDS64 mismatch");
-        TORCH_CHECK(A_chunk_scales != nullptr && A_scale_stride > 0,
-                    "words_tc_fixed76 requires chunk scales for the fixed76 Hopper path");
-        A_tc_fixed76 = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(qb->words_tc_fixed76));
+    const unsigned int* A_packed_u32 = nullptr;
+    int packed_chunks = (qb->packed_chunks > 0) ? qb->packed_chunks : std::max(1, (keys->W + 3) / 4);
+    if (have_packed_words) {
+        TORCH_CHECK(qb->words_tc_packed_u32.is_cuda(), "words_tc_packed_u32 must be a CUDA tensor");
+        TORCH_CHECK(qb->words_tc_packed_u32.dim() == 5, "words_tc_packed_u32 must be [Q_tiles, chunks, Sa, 32, 8]");
+        TORCH_CHECK(qb->words_tc_packed_u32.size(0) == ((Q + 31) / 32), "words_tc_packed_u32 Q_tiles mismatch");
+        TORCH_CHECK(qb->words_tc_packed_u32.size(1) == packed_chunks, "words_tc_packed_u32 chunk count mismatch");
+        TORCH_CHECK(qb->words_tc_packed_u32.size(2) == Sa, "words_tc_packed_u32 slice count mismatch");
+        TORCH_CHECK(qb->words_tc_packed_u32.size(3) == 32, "words_tc_packed_u32 row tile mismatch");
+        TORCH_CHECK(qb->words_tc_packed_u32.size(4) == 8, "words_tc_packed_u32 k-word32 mismatch");
+        A_packed_u32 = reinterpret_cast<const unsigned int*>(tensor_data_ptr<int32_t>(qb->words_tc_packed_u32));
     }
 
     // Output: [Q, R_total] (full keyset width).
@@ -749,14 +793,28 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
         cudaEventRecord(start_evt, stream.stream());
     }
 
-    const auto* A = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(qb->words));
+    const unsigned long long* A = nullptr;
+    if (have_generic_words) {
+        A = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(qb->words));
+    }
     const auto* Aw = tensor_data_ptr<float>(qb->slice_weights);
     const long long* indices_q = nullptr; // identity mapping in packed batch mode
 
     if (keys->single_group) {
         const int Sb = keys->single_sb;
         const int Rg = keys->single_rg;
-        const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(keys->single_words));
+        const unsigned long long* B_words = nullptr;
+        if (keys->single_words.defined() && keys->single_words.numel() > 0) {
+            B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(keys->single_words));
+        }
+        const unsigned int* B_packed_u32 = nullptr;
+        if (keys->single_words_tc_packed_u32.defined() && keys->single_words_tc_packed_u32.numel() > 0) {
+            B_packed_u32 = reinterpret_cast<const unsigned int*>(tensor_data_ptr<int32_t>(keys->single_words_tc_packed_u32));
+        }
+        if (have_packed_words || !qb->pack_layout.empty()) {
+            TORCH_CHECK(B_packed_u32 != nullptr,
+                        "SM90 packed query batch requires packed key layout; rebuild keys with pack_layout='sm90_b1_u32_tm256'");
+        }
         const auto* Bw_ptr = tensor_data_ptr<float>(keys->single_weights);
         const long long* r_idx_ptr = nullptr;
         if (!keys->single_indices_identity) {
@@ -764,13 +822,15 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
         }
         launch_popcount_weighted_keys_literal_fused_multiq(
             A,
-            A_tc_fixed76,
+            A_packed_u32,
             Aw,
             A_chunk_scales,
             A_scale_stride,
             static_cast<int>(Sa),
             keys->W,
+            packed_chunks,
             B_words,
+            B_packed_u32,
             Bw_ptr,
             Sb,
             Rg,
@@ -792,6 +852,16 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
             const auto& words = keys->grouped_words.at(Sb);
             const auto& Bw_stacked = keys->grouped_weights.at(Sb);
             const auto* B_words = reinterpret_cast<const unsigned long long*>(tensor_data_ptr<int64_t>(words));
+            const unsigned int* B_packed_u32 = nullptr;
+            auto packed_it = keys->grouped_words_tc_packed_u32.find(Sb);
+            if (packed_it != keys->grouped_words_tc_packed_u32.end() &&
+                packed_it->second.defined() && packed_it->second.numel() > 0) {
+                B_packed_u32 = reinterpret_cast<const unsigned int*>(tensor_data_ptr<int32_t>(packed_it->second));
+            }
+            if (have_packed_words || !qb->pack_layout.empty()) {
+                TORCH_CHECK(B_packed_u32 != nullptr,
+                            "SM90 packed query batch requires packed key layout for every Sb group");
+            }
             const auto* Bw_ptr = tensor_data_ptr<float>(Bw_stacked);
             const bool identity_r = (keys->grouped_indices_identity.count(Sb) > 0)
                 ? keys->grouped_indices_identity.at(Sb)
@@ -803,13 +873,15 @@ static pybind11::tuple batch_dot_product_multiquery_cuda_batch_caps(pybind11::ca
             }
             launch_popcount_weighted_keys_literal_fused_multiq(
                 A,
-                A_tc_fixed76,
+                A_packed_u32,
                 Aw,
                 A_chunk_scales,
                 A_scale_stride,
                 static_cast<int>(Sa),
                 keys->W,
+                packed_chunks,
                 B_words,
+                B_packed_u32,
                 Bw_ptr,
                 Sb,
                 Rg,
@@ -856,6 +928,9 @@ static pybind11::dict bsi_keys_cuda_stats(pybind11::capsule keyset_cuda_cap) {
     out["d"] = pybind11::int_(keys->d);
     out["num_keys"] = pybind11::int_(keys->num_keys);
     out["decimals"] = pybind11::int_(keys->decimals);
+    out["fixed_bits"] = pybind11::int_(keys->fixed_bits);
+    out["packed_chunks"] = pybind11::int_(keys->packed_chunks);
+    out["pack_layout"] = pybind11::str(keys->pack_layout);
     out["threshold"] = pybind11::float_(keys->threshold);
     out["Sb_counts"] = sb_counts;
     return out;
@@ -890,18 +965,30 @@ static pybind11::dict bsi_query_caps_stats(pybind11::list query_caps_list) {
     return out;
 }
 
-static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, float compress_threshold) {
+static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K,
+                                           int decimalPlaces,
+                                           float compress_threshold,
+                                           int fixed_bits = -1,
+                                           const std::string& pack_layout = "sm90_b1_u32_tm256") {
     TORCH_CHECK(K.dim() == 2, "K must be 2D [num_keys, d]");
+    const int requested_fixed_bits = (fixed_bits >= 0) ? fixed_bits : bsi_cuda_fixed_bits_keys_env();
+    TORCH_CHECK(
+        pack_layout.empty() || requested_fixed_bits > 0,
+        "Packed SM90 key layouts require explicit fixed_bits > 0");
     // Fixed-bit mode: build key bitplanes directly on CUDA to ensure
     // keys and queries use the same quantization/scaling behavior.
-    if (bsi_cuda_fixed_bits_keys_env() > 0) {
+    if (requested_fixed_bits > 0) {
         const int64_t num_keys = K.size(0);
         const int64_t d = K.size(1);
         auto device = torch::Device(torch::kCUDA, c10::cuda::current_device());
         bool verbose = bsi_cuda_should_log();
 
         auto batch = build_bsi_queries_cuda_batch_data(
-            K.detach(), decimalPlaces, device, verbose, /*for_keys=*/true);
+            K.detach(), decimalPlaces, device, verbose, /*for_keys=*/true, requested_fixed_bits, pack_layout);
+        TORCH_CHECK(
+            pack_layout.empty() || batch.pack_layout == pack_layout,
+            "Requested packed key layout '", pack_layout,
+            "' but the CUDA builder could not materialize it for this device/config");
         TORCH_CHECK(batch.rows == num_keys, "CUDA fixed-bit key build row mismatch");
         TORCH_CHECK(batch.words_per_slice == static_cast<int>((d + 63) / 64),
                     "CUDA fixed-bit key build word count mismatch");
@@ -911,10 +998,18 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
         holder->d = d;
         holder->W = batch.words_per_slice;
         holder->decimals = decimalPlaces;
+        holder->fixed_bits = requested_fixed_bits;
+        holder->packed_chunks = batch.packed_chunks;
         holder->threshold = compress_threshold;
+        holder->pack_layout = batch.pack_layout;
 
         const int Sb = batch.slices;
-        holder->grouped_words[Sb] = batch.words.contiguous();
+        if (batch.words.defined() && batch.words.numel() > 0) {
+            holder->grouped_words[Sb] = batch.words.contiguous();
+        }
+        if (batch.words_tc_packed_u32.defined() && batch.words_tc_packed_u32.numel() > 0) {
+            holder->grouped_words_tc_packed_u32[Sb] = batch.words_tc_packed_u32.contiguous();
+        }
         holder->grouped_weights[Sb] = batch.slice_weights.contiguous();
 
         std::vector<int64_t> idxs(static_cast<size_t>(num_keys));
@@ -925,11 +1020,24 @@ static pybind11::tuple build_bsi_keys_cuda(torch::Tensor K, int decimalPlaces, f
         holder->single_sb = Sb;
         holder->single_rg = static_cast<int>(num_keys);
         holder->single_indices_identity = true;
-        holder->single_words = holder->grouped_words[Sb];
+        if (holder->grouped_words.count(Sb) > 0) {
+            holder->single_words = holder->grouped_words[Sb];
+        }
+        if (holder->grouped_words_tc_packed_u32.count(Sb) > 0) {
+            holder->single_words_tc_packed_u32 = holder->grouped_words_tc_packed_u32[Sb];
+        }
         holder->single_weights = holder->grouped_weights[Sb];
 
-        uint64_t total_mem_bytes = static_cast<uint64_t>(
-            holder->grouped_words[Sb].numel() * holder->grouped_words[Sb].element_size());
+        uint64_t total_mem_bytes = 0;
+        if (holder->grouped_words.count(Sb) > 0) {
+            total_mem_bytes += static_cast<uint64_t>(
+                holder->grouped_words[Sb].numel() * holder->grouped_words[Sb].element_size());
+        }
+        if (holder->grouped_words_tc_packed_u32.count(Sb) > 0) {
+            total_mem_bytes += static_cast<uint64_t>(
+                holder->grouped_words_tc_packed_u32[Sb].numel() *
+                holder->grouped_words_tc_packed_u32[Sb].element_size());
+        }
 
         pybind11::capsule cap(holder, "PrebuiltBSIKeysCUDA",
             [](PyObject* capsule){
@@ -1057,12 +1165,17 @@ void register_bsi_cuda(pybind11::module& m) {
         pybind11::arg("q2d"),
         pybind11::arg("decimal_places"),
         pybind11::arg("compress_threshold") = 0.2f,
+        pybind11::arg("fixed_bits") = -1,
+        pybind11::arg("pack_layout") = "",
         "Build BSI queries for a batch on CUDA");
     m.def("build_bsi_queries_cuda_batch_packed",
         &build_bsi_queries_cuda_batch_packed,
         pybind11::arg("q2d"),
         pybind11::arg("decimal_places"),
         pybind11::arg("compress_threshold") = 0.2f,
+        pybind11::arg("fixed_bits") = -1,
+        pybind11::arg("pack_layout") = "sm90_b1_u32_tm256",
+        pybind11::arg("reuse_workspace") = true,
         "Build a packed (batched) BSI query object on CUDA (no per-row capsules)");
     m.def("get_last_query_build_profile_cuda",
         &bsi_cuda_get_last_query_build_profile,
@@ -1090,6 +1203,9 @@ void register_bsi_cuda(pybind11::module& m) {
         pybind11::arg("query_batch_cap"),
         pybind11::arg("keyset_cuda_cap"),
         "Packed-batch multi-query dot product with fused kernel (avoids stacking + Python capsules)");
+    m.def("get_last_dot_launch_stats_cuda",
+        &bsi_get_last_dot_launch_stats_cuda,
+        "Return launch diagnostics for the last CUDA dot kernel");
     m.def("bsi_keys_cuda_stats",
         &bsi_keys_cuda_stats,
         pybind11::arg("keyset_cuda_cap"),
@@ -1105,5 +1221,7 @@ void register_bsi_cuda(pybind11::module& m) {
         pybind11::arg("K"),
         pybind11::arg("decimal_places"),
         pybind11::arg("compress_threshold") = 0.2f,
+        pybind11::arg("fixed_bits") = -1,
+        pybind11::arg("pack_layout") = "sm90_b1_u32_tm256",
         "Build BSI keys and prepack to CUDA");
 }
