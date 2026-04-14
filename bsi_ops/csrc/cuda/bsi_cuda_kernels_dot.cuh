@@ -3106,7 +3106,7 @@ __device__ __forceinline__ void bsi_bmma_tm32_accum_hot(
                 sum10 = __fmaf_rn(static_cast<float>(c2), bw0, sum10);
                 sum11 = __fmaf_rn(static_cast<float>(c3), bw1, sum11);
             }
-            if constexpr (j + 1 < SB) {
+            if (j + 1 < SB) {
                 const uint32_t* b_col = b_col_base + (j + 1) * b_slice_stride;
                 const uint32_t b0 = b_col[threadID];
                 const uint32_t b1 = b_col[threadID + 4];
