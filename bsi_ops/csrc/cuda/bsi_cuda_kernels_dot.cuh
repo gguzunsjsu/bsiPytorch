@@ -3073,20 +3073,6 @@ __device__ __forceinline__ void bsi_bmma_tm32_accum_hot(
     constexpr int K_STRIDE32 = 12;
     const int b_slice_stride = TN * K_STRIDE32;
 
-    uint32_t b0_cache[SB];
-    uint32_t b1_cache[SB];
-    float bw0_cache[SB];
-    float bw1_cache[SB];
-
-#pragma unroll
-    for (int j = 0; j < SB; ++j) {
-        const uint32_t* b_col = b_col_base + j * b_slice_stride;
-        b0_cache[j] = b_col[threadID];
-        b1_cache[j] = b_col[threadID + 4];
-        bw0_cache[j] = bw_col0[j];
-        bw1_cache[j] = bw_col1[j];
-    }
-
     float chunk00 = 0.0f, chunk01 = 0.0f, chunk10 = 0.0f, chunk11 = 0.0f;
 #pragma unroll
     for (int i = 0; i < SA; ++i) {
@@ -3098,22 +3084,49 @@ __device__ __forceinline__ void bsi_bmma_tm32_accum_hot(
 
         float sum00 = 0.0f, sum01 = 0.0f, sum10 = 0.0f, sum11 = 0.0f;
 #pragma unroll
-        for (int j = 0; j < SB; ++j) {
-            int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
-            asm volatile(
-                "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
-                "{%0, %1, %2, %3}, "
-                "{%4, %5, %6, %7}, "
-                "{%8, %9}, "
-                "{%0, %1, %2, %3};\n"
-                : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
-                : "r"(a0), "r"(a1), "r"(a2), "r"(a3),
-                  "r"(b0_cache[j]), "r"(b1_cache[j]));
+        for (int j = 0; j < SB; j += 2) {
+            {
+                const uint32_t* b_col = b_col_base + j * b_slice_stride;
+                const uint32_t b0 = b_col[threadID];
+                const uint32_t b1 = b_col[threadID + 4];
+                const float bw0 = __ldg(&bw_col0[j]);
+                const float bw1 = __ldg(&bw_col1[j]);
+                int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
+                asm volatile(
+                    "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
+                    "{%0, %1, %2, %3}, "
+                    "{%4, %5, %6, %7}, "
+                    "{%8, %9}, "
+                    "{%0, %1, %2, %3};\n"
+                    : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
+                    : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0), "r"(b1));
 
-            sum00 = __fmaf_rn(static_cast<float>(c0), bw0_cache[j], sum00);
-            sum01 = __fmaf_rn(static_cast<float>(c1), bw1_cache[j], sum01);
-            sum10 = __fmaf_rn(static_cast<float>(c2), bw0_cache[j], sum10);
-            sum11 = __fmaf_rn(static_cast<float>(c3), bw1_cache[j], sum11);
+                sum00 = __fmaf_rn(static_cast<float>(c0), bw0, sum00);
+                sum01 = __fmaf_rn(static_cast<float>(c1), bw1, sum01);
+                sum10 = __fmaf_rn(static_cast<float>(c2), bw0, sum10);
+                sum11 = __fmaf_rn(static_cast<float>(c3), bw1, sum11);
+            }
+            if constexpr (j + 1 < SB) {
+                const uint32_t* b_col = b_col_base + (j + 1) * b_slice_stride;
+                const uint32_t b0 = b_col[threadID];
+                const uint32_t b1 = b_col[threadID + 4];
+                const float bw0 = __ldg(&bw_col0[j + 1]);
+                const float bw1 = __ldg(&bw_col1[j + 1]);
+                int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
+                asm volatile(
+                    "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
+                    "{%0, %1, %2, %3}, "
+                    "{%4, %5, %6, %7}, "
+                    "{%8, %9}, "
+                    "{%0, %1, %2, %3};\n"
+                    : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
+                    : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0), "r"(b1));
+
+                sum00 = __fmaf_rn(static_cast<float>(c0), bw0, sum00);
+                sum01 = __fmaf_rn(static_cast<float>(c1), bw1, sum01);
+                sum10 = __fmaf_rn(static_cast<float>(c2), bw0, sum10);
+                sum11 = __fmaf_rn(static_cast<float>(c3), bw1, sum11);
+            }
         }
 
         const float aw0 = Aw_tile[(size_t)m0 * (size_t)SA + (size_t)i];
