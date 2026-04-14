@@ -423,8 +423,7 @@ __global__ void quantize_shift_pack_chunk_batch_oneshot_kernel(
     double dec_scale,
     int fixed_bits,
     const int* __restrict__ shifts,
-    unsigned long long* __restrict__ out,
-    unsigned long long* __restrict__ out_tc_fixed76) {
+    unsigned long long* __restrict__ out) {
     const int q = blockIdx.z;
     if (q >= Q) return;
 
@@ -485,21 +484,6 @@ __global__ void quantize_shift_pack_chunk_batch_oneshot_kernel(
                 static_cast<unsigned long long>(lo) | (static_cast<unsigned long long>(hi) << 32);
             out_q[static_cast<size_t>(slice) * static_cast<size_t>(words_per_slice) +
                   static_cast<size_t>(word_idx)] = packed_word;
-            if (out_tc_fixed76 != nullptr) {
-                constexpr int TM_TOTAL = 32;
-                constexpr int K_WORDS64 = 4;
-                const int q_tile = q / TM_TOTAL;
-                const int m = q & (TM_TOTAL - 1);
-                const int chunk = word_idx / K_WORDS64;
-                const int k64 = word_idx & (K_WORDS64 - 1);
-                const int chunks_per_row = words_per_slice / K_WORDS64;
-                out_tc_fixed76[
-                    (((((size_t)q_tile * (size_t)chunks_per_row + (size_t)chunk) * (size_t)slices + (size_t)slice) *
-                       (size_t)TM_TOTAL +
-                      (size_t)m) *
-                     (size_t)K_WORDS64) +
-                    (size_t)k64] = packed_word;
-            }
         }
     }
 }
@@ -623,7 +607,6 @@ extern "C" void launch_quantize_shift_pack_chunk_batch(
     int fixed_bits,
     const int* shifts,
     unsigned long long* out,
-    unsigned long long* out_tc_fixed76,
     cudaStream_t stream) {
     if (Q <= 0 || d <= 0 || chunks <= 0 || slices <= 0 || words_per_slice <= 0) return;
     const int warps_per_block = 8;
@@ -633,22 +616,22 @@ extern "C" void launch_quantize_shift_pack_chunk_batch(
         case 0:
             quantize_shift_pack_chunk_batch_oneshot_kernel<float><<<grid, block, 0, stream>>>(
                 reinterpret_cast<const float*>(input),
-                Q, d, chunks, slices, words_per_slice, value_mask, dec_scale, fixed_bits, shifts, out, out_tc_fixed76);
+                Q, d, chunks, slices, words_per_slice, value_mask, dec_scale, fixed_bits, shifts, out);
             break;
         case 1:
             quantize_shift_pack_chunk_batch_oneshot_kernel<half><<<grid, block, 0, stream>>>(
                 reinterpret_cast<const half*>(input),
-                Q, d, chunks, slices, words_per_slice, value_mask, dec_scale, fixed_bits, shifts, out, out_tc_fixed76);
+                Q, d, chunks, slices, words_per_slice, value_mask, dec_scale, fixed_bits, shifts, out);
             break;
         case 2:
             quantize_shift_pack_chunk_batch_oneshot_kernel<__nv_bfloat16><<<grid, block, 0, stream>>>(
                 reinterpret_cast<const __nv_bfloat16*>(input),
-                Q, d, chunks, slices, words_per_slice, value_mask, dec_scale, fixed_bits, shifts, out, out_tc_fixed76);
+                Q, d, chunks, slices, words_per_slice, value_mask, dec_scale, fixed_bits, shifts, out);
             break;
         default:
             quantize_shift_pack_chunk_batch_oneshot_kernel<float><<<grid, block, 0, stream>>>(
                 reinterpret_cast<const float*>(input),
-                Q, d, chunks, slices, words_per_slice, value_mask, dec_scale, fixed_bits, shifts, out, out_tc_fixed76);
+                Q, d, chunks, slices, words_per_slice, value_mask, dec_scale, fixed_bits, shifts, out);
             break;
     }
 }

@@ -22,6 +22,14 @@ def _run_dot_packed(*, query_batch, keys_cap):
     return out, int(dot_ns_total), float(dot_ns_per_query), float(dot_ns_per_scalar)
 
 
+def _run_dot_packed_reference(*, query_batch, keys_cap):
+    out, dot_ns_total, dot_ns_per_query, dot_ns_per_scalar = (
+        bsi_ops.batch_dot_product_multiquery_cuda_batch_caps(query_batch, keys_cap, True)
+    )
+    torch.cuda.synchronize()
+    return out, int(dot_ns_total), float(dot_ns_per_query), float(dot_ns_per_scalar)
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="Verify TC BMMA dot matches baseline dot")
     p.add_argument("--Q", type=int, default=64)
@@ -47,29 +55,23 @@ def main() -> None:
 
     # Keys are built on CPU (builder moves to CUDA internally).
     K = torch.randn(args.R, args.D, dtype=torch.float32, device="cpu")
-    keys_cap_ref, *_ = bsi_ops.build_bsi_keys_cuda(
-        K, args.decimal_places, float(args.compress_threshold), args.key_bits, ""
-    )
     keys_cap_packed, *_ = bsi_ops.build_bsi_keys_cuda(
         K, args.decimal_places, float(args.compress_threshold), args.key_bits, args.pack_layout
     )
 
     # Queries are built on CUDA.
     Q = torch.randn(args.Q, args.D, dtype=torch.float32, device=device)
-    query_caps = bsi_ops.build_bsi_queries_cuda_batch(
-        Q, args.decimal_places, float(args.compress_threshold), args.query_bits, ""
-    )
     query_batch = bsi_ops.build_bsi_queries_cuda_batch_packed(
         Q, args.decimal_places, float(args.compress_threshold), args.query_bits, args.pack_layout, True
     )
 
     # Warmup both paths to avoid one-time overhead in the timings.
     for _ in range(max(0, args.warmup)):
-        bsi_ops.batch_dot_product_multiquery_cuda_caps(query_caps, keys_cap_ref)
+        _run_dot_packed_reference(query_batch=query_batch, keys_cap=keys_cap_packed)
         _run_dot_packed(query_batch=query_batch, keys_cap=keys_cap_packed)
 
     (ref, _, _, _), ref_ms = _time_cuda_call(
-        lambda: bsi_ops.batch_dot_product_multiquery_cuda_caps(query_caps, keys_cap_ref)
+        lambda: bsi_ops.batch_dot_product_multiquery_cuda_batch_caps(query_batch, keys_cap_packed, True)
     )
     (tc, _, _, _), tc_ms = _time_cuda_call(
         lambda: bsi_ops.batch_dot_product_multiquery_cuda_batch_caps(query_batch, keys_cap_packed)

@@ -280,11 +280,11 @@ void repack_words_to_sm90_key_u32_kernel(
     const int chunk = blockIdx.x;
     const int slice = blockIdx.y;
     const int t = threadIdx.x;
-    if (t >= 64 || slice >= slices) return;
+    if (t >= 256 || slice >= slices) return;
 
-    const int row = t >> 3;   // 0..7
+    const int row = t >> 3;   // 0..31
     const int w32 = t & 7;    // 0..7
-    const int r = r_tile * 8 + row;
+    const int r = r_tile * 32 + row;
     const int w64 = chunk * 4 + (w32 >> 1);
 
     unsigned int v = 0u;
@@ -298,7 +298,7 @@ void repack_words_to_sm90_key_u32_kernel(
 
     const size_t dst_idx =
         (((((size_t)r_tile * (size_t)chunks + (size_t)chunk) * (size_t)slices + (size_t)slice) *
-          8ull +
+          32ull +
           (size_t)row) *
          8ull) +
         (size_t)w32;
@@ -331,8 +331,8 @@ extern "C" void launch_repack_words_to_sm90_key_u32(
 {
     if (words == nullptr || out == nullptr || R <= 0 || slices <= 0 || words_per_slice <= 0) return;
     const int chunks = (words_per_slice + 3) / 4;
-    dim3 block(64);
-    dim3 grid(chunks, slices, (R + 7) / 8);
+    dim3 block(256);
+    dim3 grid(chunks, slices, (R + 31) / 32);
     repack_words_to_sm90_key_u32_kernel<<<grid, block, 0, stream>>>(
         words, R, slices, words_per_slice, chunks, out);
 }

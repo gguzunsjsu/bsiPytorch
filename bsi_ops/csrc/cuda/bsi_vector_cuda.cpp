@@ -206,7 +206,6 @@ extern "C" void launch_quantize_shift_pack_chunk_batch(
     int fixed_bits,
     const int* shifts,
     unsigned long long* out,
-    unsigned long long* out_tc_fixed76,
     cudaStream_t stream);
 
 extern "C" void launch_repack_words_to_sm90_query_u32(
@@ -519,7 +518,6 @@ static bool bsi_cuda_build_fixed_query_words_fused(const torch::Tensor& input,
             fixed_bits,
             shifts.data_ptr<int>(),
             reinterpret_cast<unsigned long long*>(tensor_data_ptr<int64_t>(words_out)),
-            nullptr,
             stream.stream());
         if (profile_cuda) {
             cudaEventRecord(pack_end_evt, stream.stream());

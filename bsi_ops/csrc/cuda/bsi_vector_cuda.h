@@ -37,7 +37,7 @@ struct BsiQueryBatchCudaData {
     int packed_chunks = 0;
     torch::Tensor words;         // [Q, slices, words_per_slice]
     // Optional SM90 packed layout for the runtime-bit BMMA path.
-    // Shape: [Q_tiles, chunks, slices, 32, 8] where Q_tiles = ceil(Q / 32).
+    // Shape: [row_tiles32, chunks, slices, 32, 8].
     // Stored as int32 for direct uint32 reinterpretation in CUDA.
     torch::Tensor words_tc_packed_u32; // int32 cuda or undefined
     torch::Tensor slice_weights; // [Q, slices]

@@ -191,7 +191,7 @@ void popcount_weighted_keys_literal_fused_multiq_kernel(
 // NOTE: Legacy non-TC "warp-out" dot kernels were removed to reduce code size.
 // The fallback kernel for non-TC execution is `popcount_weighted_keys_literal_fused_multiq_kernel`.
 // Tensor-core BMMA path (SM90+): 8 warps per block (32x32 output tile).
-template <int SA, int SB>
+template <int SA, int SB, int TM_ROWS>
 __device__ __forceinline__ void bsi_bmma_tm32_accum_hot(
     const uint32_t* __restrict__ A_bits,
     const float* __restrict__ Aw_tile,
@@ -232,9 +232,424 @@ __device__ __forceinline__ const uint32_t* bsi_sm90_key_packed_row_ptr(
     int j)
 {
     return B_packed +
-        (((((size_t)(r >> 3) * (size_t)packed_chunks + (size_t)chunk) * (size_t)Sb + (size_t)j) * 8ull +
-          (size_t)(r & 7)) *
+        (((((size_t)(r >> 5) * (size_t)packed_chunks + (size_t)chunk) * (size_t)Sb + (size_t)j) * 32ull +
+          (size_t)(r & 31)) *
          8ull);
+}
+
+extern "C" __global__ __launch_bounds__(128)
+void popcount_weighted_keys_literal_fused_packed_reference_kernel(
+    const uint32_t* __restrict__ A_packed_u32,   // [Q_tiles32, chunks, Sa, 32, 8]
+    const float* __restrict__ Aw,                // [Q, Sa]
+    const float* __restrict__ A_chunk_scales,    // [Q, chunks] or nullptr
+    int A_scale_stride,                          // chunks or 0
+    int Sa,
+    int packed_chunks,
+    const uint32_t* __restrict__ B_packed_u32,   // [R_tiles32, chunks, Sb, 32, 8]
+    const float* __restrict__ Bw,                // [R, Sb]
+    int Sb,
+    int q_begin,
+    int q_count,
+    int r_begin,
+    int r_count,
+    const long long* __restrict__ key_indices,   // [r_count] or identity
+    const long long* __restrict__ query_indices, // [q_count] or identity
+    float scale_inv,
+    int R_total,
+    float* __restrict__ out_global)
+{
+#if defined(__CUDA_ARCH__)
+    const int q_local = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
+    const int r_local = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+    if (q_local >= q_count || r_local >= r_count) return;
+
+    const int q = q_begin + q_local;
+    const int r = r_begin + r_local;
+
+    float acc = 0.0f;
+    for (int chunk = 0; chunk < packed_chunks; ++chunk) {
+        const float qscale =
+            (A_chunk_scales != nullptr && A_scale_stride > 0)
+                ? __ldg(&A_chunk_scales[(size_t)q * (size_t)A_scale_stride + (size_t)chunk])
+                : 1.0f;
+
+        for (int i = 0; i < Sa; ++i) {
+            const float aw = __ldg(&Aw[(size_t)q * (size_t)Sa + (size_t)i]) * qscale;
+            const uint32_t* a_row = bsi_sm90_query_packed_row_ptr(A_packed_u32, packed_chunks, Sa, q, chunk, i);
+            for (int j = 0; j < Sb; ++j) {
+                const float bw = __ldg(&Bw[(size_t)r * (size_t)Sb + (size_t)j]);
+                const uint32_t* b_row = bsi_sm90_key_packed_row_ptr(B_packed_u32, packed_chunks, Sb, r, chunk, j);
+                int cnt = 0;
+#pragma unroll
+                for (int w32 = 0; w32 < 8; ++w32) {
+                    cnt += __popc(a_row[w32] & b_row[w32]);
+                }
+                acc = __fmaf_rn(static_cast<float>(cnt), aw * bw, acc);
+            }
+        }
+    }
+
+    const long long gq = query_indices ? __ldg(query_indices + q_local) : static_cast<long long>(q);
+    const long long gr = key_indices ? __ldg(key_indices + r_local) : static_cast<long long>(r);
+    out_global[(size_t)gq * (size_t)R_total + (size_t)gr] = acc * scale_inv;
+#else
+    (void)A_packed_u32;
+    (void)Aw;
+    (void)A_chunk_scales;
+    (void)A_scale_stride;
+    (void)Sa;
+    (void)packed_chunks;
+    (void)B_packed_u32;
+    (void)Bw;
+    (void)Sb;
+    (void)q_begin;
+    (void)q_count;
+    (void)r_begin;
+    (void)r_count;
+    (void)key_indices;
+    (void)query_indices;
+    (void)scale_inv;
+    (void)R_total;
+    (void)out_global;
+#endif
+}
+
+extern "C" __global__ __launch_bounds__(128, 2)
+void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tile16x32(
+    const uint32_t* __restrict__ A_packed_u32,   // [Q_tiles32, chunks, Sa, 32, 8]
+    const float* __restrict__ Aw,                // [Q, Sa]
+    const float* __restrict__ A_chunk_scales,    // [Q, chunks] or nullptr
+    int A_scale_stride,                          // chunks (W64/4) or 0
+    int Sa,
+    int packed_chunks,
+    const uint32_t* __restrict__ B_packed_u32,   // [R_tiles32, chunks, Sb, 32, 8]
+    const float* __restrict__ Bw,                // [R, Sb]
+    int Sb,
+    int R,
+    int Q,
+    const long long* __restrict__ key_indices,   // [R]
+    const long long* __restrict__ query_indices, // [Q]
+    float scale_inv,
+    int R_total,
+    float* __restrict__ out_global,
+    int use_cpasync)
+{
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900)
+    constexpr int TM = 16;
+    constexpr int TN = 32;
+    constexpr int K_WORDS32 = 8;
+    constexpr int K_STRIDE32 = K_WORDS32 + 4;
+    constexpr int K_SEGMENTS = 2;
+
+    if (blockDim.x != 128) return;
+
+    const int lane = threadIdx.x & 31;
+    const int warp_id = threadIdx.x >> 5;  // 0..3
+    const int groupID = lane >> 2;         // 0..7
+    const int threadID = lane & 3;         // 0..3
+    const int row0 = groupID;
+    const int row1 = groupID + 8;
+    const int col_base = warp_id * 8;
+    const int col0 = col_base + threadID * 2;
+    const int col1 = col0 + 1;
+
+    const int q0 = blockIdx.y * TM;
+    const int r0 = blockIdx.x * TN;
+    if ((q0 + TM) > Q || (r0 + TN) > R) return;
+
+    extern __shared__ unsigned char smem_raw[];
+    uintptr_t p = reinterpret_cast<uintptr_t>(smem_raw);
+    p = (p + 15u) & ~uintptr_t(15u);
+
+    const int stages = (use_cpasync != 0 && packed_chunks > 1) ? 2 : 1;
+    const size_t A_words = (size_t)Sa * (size_t)TM * (size_t)K_STRIDE32;
+    const size_t B_words = (size_t)Sb * (size_t)TN * (size_t)K_STRIDE32;
+    auto* A_bits0 = reinterpret_cast<uint32_t*>(p);
+    p += (size_t)stages * A_words * sizeof(uint32_t);
+    auto* B_bits0 = reinterpret_cast<uint32_t*>(p);
+    (void)p;
+
+    const bool can_cpasync = (stages == 2);
+
+    if (can_cpasync) {
+        uint32_t* A_bits = A_bits0;
+        uint32_t* B_bits = B_bits0;
+        for (int idx = threadIdx.x; idx < TM * Sa * K_SEGMENTS; idx += blockDim.x) {
+            int t = idx;
+            const int seg = t & (K_SEGMENTS - 1);
+            t >>= 1;
+            const int m = t & (TM - 1);
+            const int i = t >> 4; // /16
+            const int base = ((i * TM + m) * K_STRIDE32) + (seg << 2);
+            const uint32_t* a_row = bsi_sm90_query_packed_row_ptr(A_packed_u32, packed_chunks, Sa, q0 + m, 0, i);
+            bsi_cp_async_cg_16B(A_bits + base, a_row + (seg << 2));
+        }
+        for (int idx = threadIdx.x; idx < TM * Sa * (K_STRIDE32 - K_WORDS32); idx += blockDim.x) {
+            int t = idx;
+            const int pad = t & ((K_STRIDE32 - K_WORDS32) - 1);
+            t >>= 2;
+            const int m = t & (TM - 1);
+            const int i = t >> 4;
+            const int base = ((i * TM + m) * K_STRIDE32) + K_WORDS32 + pad;
+            A_bits[base] = 0u;
+        }
+        for (int idx = threadIdx.x; idx < TN * Sb * K_SEGMENTS; idx += blockDim.x) {
+            int t = idx;
+            const int seg = t & (K_SEGMENTS - 1);
+            t >>= 1;
+            const int n = t & (TN - 1);
+            const int j = t >> 5; // /32
+            const int base = ((j * TN + n) * K_STRIDE32) + (seg << 2);
+            const uint32_t* b_row = bsi_sm90_key_packed_row_ptr(B_packed_u32, packed_chunks, Sb, r0 + n, 0, j);
+            bsi_cp_async_cg_16B(B_bits + base, b_row + (seg << 2));
+        }
+        for (int idx = threadIdx.x; idx < TN * Sb * (K_STRIDE32 - K_WORDS32); idx += blockDim.x) {
+            int t = idx;
+            const int pad = t & ((K_STRIDE32 - K_WORDS32) - 1);
+            t >>= 2;
+            const int n = t & (TN - 1);
+            const int j = t >> 5;
+            const int base = ((j * TN + n) * K_STRIDE32) + K_WORDS32 + pad;
+            B_bits[base] = 0u;
+        }
+        bsi_cp_async_commit_group();
+        bsi_cp_async_wait_all();
+        __syncthreads();
+    }
+
+    float acc00 = 0.0f;
+    float acc01 = 0.0f;
+    float acc10 = 0.0f;
+    float acc11 = 0.0f;
+    int stage = 0;
+
+    for (int chunk = 0; chunk < packed_chunks; ++chunk) {
+        uint32_t* A_bits = (stage == 0) ? A_bits0 : (A_bits0 + A_words);
+        uint32_t* B_bits = (stage == 0) ? B_bits0 : (B_bits0 + B_words);
+
+        if (!can_cpasync) {
+            for (int idx = threadIdx.x; idx < TM * Sa * K_WORDS32; idx += blockDim.x) {
+                int t = idx;
+                const int w32_i = t & (K_WORDS32 - 1);
+                t >>= 3;
+                const int m = t & (TM - 1);
+                const int i = t >> 4;
+                const uint32_t* a_row = bsi_sm90_query_packed_row_ptr(A_packed_u32, packed_chunks, Sa, q0 + m, chunk, i);
+                const int base = ((i * TM + m) * K_STRIDE32) + w32_i;
+                A_bits[base] = __ldg(a_row + w32_i);
+            }
+            for (int idx = threadIdx.x; idx < TM * Sa * (K_STRIDE32 - K_WORDS32); idx += blockDim.x) {
+                int t = idx;
+                const int pad = t & ((K_STRIDE32 - K_WORDS32) - 1);
+                t >>= 2;
+                const int m = t & (TM - 1);
+                const int i = t >> 4;
+                const int base = ((i * TM + m) * K_STRIDE32) + K_WORDS32 + pad;
+                A_bits[base] = 0u;
+            }
+            for (int idx = threadIdx.x; idx < TN * Sb * K_WORDS32; idx += blockDim.x) {
+                int t = idx;
+                const int w32_i = t & (K_WORDS32 - 1);
+                t >>= 3;
+                const int n = t & (TN - 1);
+                const int j = t >> 5;
+                const uint32_t* b_row = bsi_sm90_key_packed_row_ptr(B_packed_u32, packed_chunks, Sb, r0 + n, chunk, j);
+                const int base = ((j * TN + n) * K_STRIDE32) + w32_i;
+                B_bits[base] = __ldg(b_row + w32_i);
+            }
+            for (int idx = threadIdx.x; idx < TN * Sb * (K_STRIDE32 - K_WORDS32); idx += blockDim.x) {
+                int t = idx;
+                const int pad = t & ((K_STRIDE32 - K_WORDS32) - 1);
+                t >>= 2;
+                const int n = t & (TN - 1);
+                const int j = t >> 5;
+                const int base = ((j * TN + n) * K_STRIDE32) + K_WORDS32 + pad;
+                B_bits[base] = 0u;
+            }
+            __syncthreads();
+        } else if (chunk + 1 < packed_chunks) {
+            const int next_stage = stage ^ 1;
+            uint32_t* A_bits_next = (next_stage == 0) ? A_bits0 : (A_bits0 + A_words);
+            uint32_t* B_bits_next = (next_stage == 0) ? B_bits0 : (B_bits0 + B_words);
+            const int next_chunk = chunk + 1;
+            for (int idx = threadIdx.x; idx < TM * Sa * K_SEGMENTS; idx += blockDim.x) {
+                int t = idx;
+                const int seg = t & (K_SEGMENTS - 1);
+                t >>= 1;
+                const int m = t & (TM - 1);
+                const int i = t >> 4;
+                const int base = ((i * TM + m) * K_STRIDE32) + (seg << 2);
+                const uint32_t* a_row =
+                    bsi_sm90_query_packed_row_ptr(A_packed_u32, packed_chunks, Sa, q0 + m, next_chunk, i);
+                bsi_cp_async_cg_16B(A_bits_next + base, a_row + (seg << 2));
+            }
+            for (int idx = threadIdx.x; idx < TM * Sa * (K_STRIDE32 - K_WORDS32); idx += blockDim.x) {
+                int t = idx;
+                const int pad = t & ((K_STRIDE32 - K_WORDS32) - 1);
+                t >>= 2;
+                const int m = t & (TM - 1);
+                const int i = t >> 4;
+                const int base = ((i * TM + m) * K_STRIDE32) + K_WORDS32 + pad;
+                A_bits_next[base] = 0u;
+            }
+            for (int idx = threadIdx.x; idx < TN * Sb * K_SEGMENTS; idx += blockDim.x) {
+                int t = idx;
+                const int seg = t & (K_SEGMENTS - 1);
+                t >>= 1;
+                const int n = t & (TN - 1);
+                const int j = t >> 5;
+                const int base = ((j * TN + n) * K_STRIDE32) + (seg << 2);
+                const uint32_t* b_row =
+                    bsi_sm90_key_packed_row_ptr(B_packed_u32, packed_chunks, Sb, r0 + n, next_chunk, j);
+                bsi_cp_async_cg_16B(B_bits_next + base, b_row + (seg << 2));
+            }
+            for (int idx = threadIdx.x; idx < TN * Sb * (K_STRIDE32 - K_WORDS32); idx += blockDim.x) {
+                int t = idx;
+                const int pad = t & ((K_STRIDE32 - K_WORDS32) - 1);
+                t >>= 2;
+                const int n = t & (TN - 1);
+                const int j = t >> 5;
+                const int base = ((j * TN + n) * K_STRIDE32) + K_WORDS32 + pad;
+                B_bits_next[base] = 0u;
+            }
+            bsi_cp_async_commit_group();
+        }
+
+        const bool use_chunk_scale = (A_chunk_scales != nullptr) && (A_scale_stride > 0);
+        float qscale_m0 = 1.0f;
+        float qscale_m1 = 1.0f;
+        if (use_chunk_scale) {
+            if (threadID == 0) {
+                qscale_m0 = __ldg(&A_chunk_scales[(size_t)(q0 + row0) * (size_t)A_scale_stride + (size_t)chunk]);
+                qscale_m1 = __ldg(&A_chunk_scales[(size_t)(q0 + row1) * (size_t)A_scale_stride + (size_t)chunk]);
+            }
+            qscale_m0 = __shfl_sync(0xffffffff, qscale_m0, lane & ~3);
+            qscale_m1 = __shfl_sync(0xffffffff, qscale_m1, lane & ~3);
+        }
+
+        const uint32_t* b_col_base = B_bits + (size_t)(col_base + groupID) * (size_t)K_STRIDE32;
+        const float* bw_col0 = Bw + (size_t)(r0 + col0) * (size_t)Sb;
+        const float* bw_col1 = Bw + (size_t)(r0 + col1) * (size_t)Sb;
+        const float* Aw_tile = Aw + (size_t)q0 * (size_t)Sa;
+        const int b_slice_stride = TN * K_STRIDE32;
+
+        if (Sa == 7 && Sb == 7) {
+            bsi_bmma_tm32_accum_hot<7, 7, 16>(
+                A_bits, Aw_tile, b_col_base, bw_col0, bw_col1, threadID, row0, row1,
+                use_chunk_scale, qscale_m0, qscale_m1, acc00, acc01, acc10, acc11);
+        } else if (Sa == 7 && Sb == 6) {
+            bsi_bmma_tm32_accum_hot<7, 6, 16>(
+                A_bits, Aw_tile, b_col_base, bw_col0, bw_col1, threadID, row0, row1,
+                use_chunk_scale, qscale_m0, qscale_m1, acc00, acc01, acc10, acc11);
+        } else if (Sa == 8 && Sb == 7) {
+            bsi_bmma_tm32_accum_hot<8, 7, 16>(
+                A_bits, Aw_tile, b_col_base, bw_col0, bw_col1, threadID, row0, row1,
+                use_chunk_scale, qscale_m0, qscale_m1, acc00, acc01, acc10, acc11);
+        } else if (Sa == 6 && Sb == 5) {
+            bsi_bmma_tm32_accum_hot<6, 5, 16>(
+                A_bits, Aw_tile, b_col_base, bw_col0, bw_col1, threadID, row0, row1,
+                use_chunk_scale, qscale_m0, qscale_m1, acc00, acc01, acc10, acc11);
+        } else {
+            for (int i = 0; i < Sa; ++i) {
+                const float aw0 = __ldg(&Aw_tile[(size_t)row0 * (size_t)Sa + (size_t)i]) * qscale_m0;
+                const float aw1 = __ldg(&Aw_tile[(size_t)row1 * (size_t)Sa + (size_t)i]) * qscale_m1;
+                const uint32_t* A_i = A_bits + (size_t)i * (size_t)TM * (size_t)K_STRIDE32;
+                const uint32_t a0 = A_i[(size_t)row0 * (size_t)K_STRIDE32 + (size_t)threadID];
+                const uint32_t a1 = A_i[(size_t)row1 * (size_t)K_STRIDE32 + (size_t)threadID];
+                const uint32_t a2 = A_i[(size_t)row0 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+                const uint32_t a3 = A_i[(size_t)row1 * (size_t)K_STRIDE32 + (size_t)(threadID + 4)];
+
+                float sum00 = 0.0f;
+                float sum01 = 0.0f;
+                float sum10 = 0.0f;
+                float sum11 = 0.0f;
+                for (int j = 0; j < Sb; ++j) {
+                    const uint32_t* b_col = b_col_base + (size_t)j * (size_t)b_slice_stride;
+                    int c0 = 0, c1 = 0, c2 = 0, c3 = 0;
+                    asm volatile(
+                        "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc "
+                        "{%0, %1, %2, %3}, "
+                        "{%4, %5, %6, %7}, "
+                        "{%8, %9}, "
+                        "{%0, %1, %2, %3};\n"
+                        : "+r"(c0), "+r"(c1), "+r"(c2), "+r"(c3)
+                        : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b_col[threadID]), "r"(b_col[threadID + 4]));
+
+                    const float bw0 = __ldg(&bw_col0[j]);
+                    const float bw1 = __ldg(&bw_col1[j]);
+                    sum00 = __fmaf_rn(static_cast<float>(c0), bw0, sum00);
+                    sum01 = __fmaf_rn(static_cast<float>(c1), bw1, sum01);
+                    sum10 = __fmaf_rn(static_cast<float>(c2), bw0, sum10);
+                    sum11 = __fmaf_rn(static_cast<float>(c3), bw1, sum11);
+                }
+
+                acc00 = __fmaf_rn(aw0, sum00, acc00);
+                acc01 = __fmaf_rn(aw0, sum01, acc01);
+                acc10 = __fmaf_rn(aw1, sum10, acc10);
+                acc11 = __fmaf_rn(aw1, sum11, acc11);
+            }
+        }
+
+        if (can_cpasync) {
+            bsi_cp_async_wait_all();
+            __syncthreads();
+            stage ^= 1;
+        }
+    }
+
+    const int q_out0 = q0 + row0;
+    const int q_out1 = q0 + row1;
+    const int r_out0 = r0 + col0;
+    const int r_out1 = r0 + col1;
+    const bool identity_q = (query_indices == nullptr);
+    const bool identity_r = (key_indices == nullptr);
+
+    if (identity_q && identity_r) {
+        out_global[(size_t)q_out0 * (size_t)R_total + (size_t)r_out0] = acc00 * scale_inv;
+        out_global[(size_t)q_out0 * (size_t)R_total + (size_t)r_out1] = acc01 * scale_inv;
+        out_global[(size_t)q_out1 * (size_t)R_total + (size_t)r_out0] = acc10 * scale_inv;
+        out_global[(size_t)q_out1 * (size_t)R_total + (size_t)r_out1] = acc11 * scale_inv;
+    } else {
+        long long gq0 = 0, gq1 = 0;
+        if (threadID == 0) {
+            gq0 = bsi_load_index_or_identity(query_indices, q_out0);
+            gq1 = bsi_load_index_or_identity(query_indices, q_out1);
+        }
+        gq0 = __shfl_sync(0xffffffff, gq0, lane & ~3);
+        gq1 = __shfl_sync(0xffffffff, gq1, lane & ~3);
+
+        long long gr0 = 0, gr1 = 0;
+        if (groupID == 0) {
+            gr0 = bsi_load_index_or_identity(key_indices, r_out0);
+            gr1 = bsi_load_index_or_identity(key_indices, r_out1);
+        }
+        gr0 = __shfl_sync(0xffffffff, gr0, threadID);
+        gr1 = __shfl_sync(0xffffffff, gr1, threadID);
+
+        out_global[(size_t)gq0 * (size_t)R_total + (size_t)gr0] = acc00 * scale_inv;
+        out_global[(size_t)gq0 * (size_t)R_total + (size_t)gr1] = acc01 * scale_inv;
+        out_global[(size_t)gq1 * (size_t)R_total + (size_t)gr0] = acc10 * scale_inv;
+        out_global[(size_t)gq1 * (size_t)R_total + (size_t)gr1] = acc11 * scale_inv;
+    }
+#else
+    (void)A_packed_u32;
+    (void)Aw;
+    (void)A_chunk_scales;
+    (void)A_scale_stride;
+    (void)Sa;
+    (void)packed_chunks;
+    (void)B_packed_u32;
+    (void)Bw;
+    (void)Sb;
+    (void)R;
+    (void)Q;
+    (void)key_indices;
+    (void)query_indices;
+    (void)scale_inv;
+    (void)R_total;
+    (void)out_global;
+    (void)use_cpasync;
+#endif
 }
 
 extern "C" __global__ __launch_bounds__(256)
@@ -672,7 +1087,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
             // Sb==7/6 are hot configurations (fixed-bit weights) and tend to regress if the compiler
             // can't specialize away the tail checks. Keep explicit fast paths.
             if (Sa == 7 && Sb == 7) {
-                bsi_bmma_tm32_accum_hot<7, 7>(
+                bsi_bmma_tm32_accum_hot<7, 7, 32>(
                     A_bits,
                     Aw_tile,
                     b_col_base,
@@ -689,7 +1104,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                     acc10,
                     acc11);
             } else if (Sa == 7 && Sb == 6) {
-                bsi_bmma_tm32_accum_hot<7, 6>(
+                bsi_bmma_tm32_accum_hot<7, 6, 32>(
                     A_bits,
                     Aw_tile,
                     b_col_base,
@@ -706,7 +1121,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                     acc10,
                     acc11);
             } else if (Sa == 8 && Sb == 7) {
-                bsi_bmma_tm32_accum_hot<8, 7>(
+                bsi_bmma_tm32_accum_hot<8, 7, 32>(
                     A_bits,
                     Aw_tile,
                     b_col_base,
@@ -723,7 +1138,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32(
                     acc10,
                     acc11);
             } else if (Sa == 6 && Sb == 5) {
-                bsi_bmma_tm32_accum_hot<6, 5>(
+                bsi_bmma_tm32_accum_hot<6, 5, 32>(
                     A_bits,
                     Aw_tile,
                     b_col_base,
@@ -2632,7 +3047,7 @@ void popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32_fixed76_chunkscale
 }
 
 
-template <int SA, int SB>
+template <int SA, int SB, int TM_ROWS>
 __device__ __forceinline__ void bsi_bmma_tm32_accum_hot(
     const uint32_t* __restrict__ A_bits,
     const float* __restrict__ Aw_tile,
@@ -2653,7 +3068,7 @@ __device__ __forceinline__ void bsi_bmma_tm32_accum_hot(
 #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900)
     static_assert(SA >= 4 && SA <= 10, "SA must be in [4, 10]");
     static_assert(SB >= 4 && SB <= 10, "SB must be in [4, 10]");
-    constexpr int TM_TOTAL = 32;
+    constexpr int TM_TOTAL = TM_ROWS;
     constexpr int TN = 32;
     constexpr int K_STRIDE32 = 12;
     const int b_slice_stride = TN * K_STRIDE32;
@@ -2941,18 +3356,28 @@ static inline void* bsi_get_or_create_b_fixed76_rsweep_tensor_map(
 namespace {
 static int g_last_dot_predicted_active_blocks_per_sm = 0;
 static size_t g_last_dot_dynamic_shared_bytes = 0;
+static int g_last_dot_registers_per_thread = 0;
 static int g_last_dot_used_sm90_packed = 0;
 static int g_last_dot_used_cpasync = 0;
+static int g_last_dot_used_tma = 0;
 static int g_last_dot_packed_chunks = 0;
+static const char* g_last_dot_kernel_kind = "none";
+static const char* g_last_dot_tile_shape = "";
+static const char* g_last_dot_pack_layout = "sm90_b1_u32_tile32_v2";
 }
 
 extern "C" pybind11::dict bsi_get_last_dot_launch_stats_cuda() {
     pybind11::dict out;
     out["predicted_active_blocks_per_sm"] = pybind11::int_(g_last_dot_predicted_active_blocks_per_sm);
     out["dynamic_shared_bytes"] = pybind11::int_(static_cast<long long>(g_last_dot_dynamic_shared_bytes));
+    out["registers_per_thread"] = pybind11::int_(g_last_dot_registers_per_thread);
     out["used_sm90_packed"] = pybind11::bool_(g_last_dot_used_sm90_packed != 0);
     out["used_cpasync"] = pybind11::bool_(g_last_dot_used_cpasync != 0);
+    out["used_tma"] = pybind11::bool_(g_last_dot_used_tma != 0);
     out["packed_chunks"] = pybind11::int_(g_last_dot_packed_chunks);
+    out["kernel_kind"] = pybind11::str(g_last_dot_kernel_kind);
+    out["tile_shape"] = pybind11::str(g_last_dot_tile_shape);
+    out["pack_layout"] = pybind11::str(g_last_dot_pack_layout);
     return out;
 }
 #endif
@@ -2980,110 +3405,182 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
     float scale_inv,
     int R_total,
     float* out_global,
-    cudaStream_t stream)
+    cudaStream_t stream,
+    int reference_only)
 {
     const bool use_sm90_packed = (A_packed_u32 != nullptr) && (B_packed_u32 != nullptr) && (packed_chunks > 0);
 #if !defined(__CUDA_ARCH__)
     g_last_dot_predicted_active_blocks_per_sm = 0;
     g_last_dot_dynamic_shared_bytes = 0;
+    g_last_dot_registers_per_thread = 0;
     g_last_dot_used_sm90_packed = 0;
     g_last_dot_used_cpasync = 0;
+    g_last_dot_used_tma = 0;
     g_last_dot_packed_chunks = packed_chunks;
+    g_last_dot_kernel_kind = "none";
+    g_last_dot_tile_shape = "";
 #endif
-    // SM90 packed path is the only intended performance path on this branch.
-    const int use_tc = (use_sm90_packed || (A_chunk_scales != nullptr && A_scale_stride > 0)) ? 1 : 0;
-    if (use_tc) {
-        static int cached_tc_ok = -1;
-        if (cached_tc_ok < 0) {
-            int dev = 0;
-            cudaGetDevice(&dev);
-            int major = 0;
-            cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, dev);
-            cached_tc_ok = (major >= 9) ? 1 : 0;
-        }
-        if (cached_tc_ok && Sa > 0 && Sb > 0 && ((use_sm90_packed && packed_chunks > 0) || ((W % 4 == 0) && W >= 4))) {
-            constexpr int K_WORDS32 = 8;           // 256 bits / 32
-            constexpr int K_STRIDE32 = K_WORDS32 + 4; // padding to reduce bank conflicts
+    const bool use_tc = use_sm90_packed || (A_chunk_scales != nullptr && A_scale_stride > 0);
+    static int cached_tc_ok = -1;
+    if (cached_tc_ok < 0) {
+        int dev = 0;
+        cudaGetDevice(&dev);
+        int major = 0;
+        cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, dev);
+        cached_tc_ok = (major >= 9) ? 1 : 0;
+    }
 
-            const auto& smem_limits = bsi_get_shared_limits_cached();
-            const int max_shared_default = smem_limits.max_shared_default;
-            const int max_shared = smem_limits.max_shared;
+    auto launch_packed_reference = [&](int q_begin, int q_count, int r_begin, int r_count) {
+        if (q_count <= 0 || r_count <= 0) return;
+        dim3 block_ref(16, 8, 1);
+        dim3 grid_ref((r_count + block_ref.x - 1) / block_ref.x, (q_count + block_ref.y - 1) / block_ref.y, 1);
+        popcount_weighted_keys_literal_fused_packed_reference_kernel<<<grid_ref, block_ref, 0, stream>>>(
+            A_packed_u32,
+            Aw,
+            A_chunk_scales,
+            A_scale_stride,
+            Sa,
+            packed_chunks,
+            B_packed_u32,
+            Bw,
+            Sb,
+            q_begin,
+            q_count,
+            r_begin,
+            r_count,
+            indices_r ? (indices_r + r_begin) : nullptr,
+            indices_q ? (indices_q + q_begin) : nullptr,
+            scale_inv,
+            R_total,
+            out_global);
+    };
 
+    if (use_tc && cached_tc_ok && use_sm90_packed && Sa > 0 && Sb > 0) {
+        const int Q_full = (Q / 16) * 16;
+        const int R_full = (R / 32) * 32;
+        const auto& smem_limits = bsi_get_shared_limits_cached();
+        const int max_shared_default = smem_limits.max_shared_default;
+        const int max_shared = smem_limits.max_shared;
+
+        auto try_tile16x32 = [&]() -> bool {
+            constexpr int TM = 16;
+            constexpr int TN = 32;
+            constexpr int K_WORDS32 = 8;
+            constexpr int K_STRIDE32 = K_WORDS32 + 4;
+            dim3 block_tc(128, 1, 1);
             const int use_cpasync_requested = 1;
-
-            auto try_tm32 = [&]() -> bool {
-                constexpr int TM_TOTAL = 32;
-                constexpr int TN = 32;
-                dim3 block_tc(256, 1, 1);
-                dim3 grid_tc((R + TN - 1) / TN, (Q + TM_TOTAL - 1) / TM_TOTAL, 1);
-                int use_cpasync = use_cpasync_requested;
-                const int stages = use_cpasync ? 2 : 1;
-                size_t shared_bytes =
+            int use_cpasync = use_cpasync_requested;
+            const int stages = use_cpasync ? 2 : 1;
+            size_t shared_bytes =
+                16u +
+                (size_t)stages * (size_t)Sa * (size_t)TM * (size_t)K_STRIDE32 * sizeof(uint32_t) +
+                (size_t)stages * (size_t)Sb * (size_t)TN * (size_t)K_STRIDE32 * sizeof(uint32_t);
+            if (shared_bytes > (size_t)max_shared && use_cpasync) {
+                use_cpasync = 0;
+                shared_bytes =
                     16u +
-                    (size_t)stages * (size_t)Sa * (size_t)TM_TOTAL * (size_t)K_STRIDE32 * sizeof(uint32_t) +
-                    (size_t)stages * (size_t)Sb * (size_t)TN * (size_t)K_STRIDE32 * sizeof(uint32_t) +
-                    (size_t)TM_TOTAL * (size_t)Sa * sizeof(float) +
-                    (size_t)TN * (size_t)Sb * sizeof(float);
+                    (size_t)Sa * (size_t)TM * (size_t)K_STRIDE32 * sizeof(uint32_t) +
+                    (size_t)Sb * (size_t)TN * (size_t)K_STRIDE32 * sizeof(uint32_t);
+            }
+            if (shared_bytes > (size_t)max_shared) return false;
 
-                // If the pipelined (double-buffered) version doesn't fit, retry with stages=1.
-                if (shared_bytes > (size_t)max_shared && use_cpasync) {
-                    use_cpasync = 0;
-                    shared_bytes =
-                        16u +
-                        (size_t)Sa * (size_t)TM_TOTAL * (size_t)K_STRIDE32 * sizeof(uint32_t) +
-                        (size_t)Sb * (size_t)TN * (size_t)K_STRIDE32 * sizeof(uint32_t) +
-                        (size_t)TM_TOTAL * (size_t)Sa * sizeof(float) +
-                        (size_t)TN * (size_t)Sb * sizeof(float);
-                }
+            static size_t configured_shared_tile16x32 = 0;
+            if (shared_bytes > (size_t)max_shared_default && shared_bytes > configured_shared_tile16x32) {
+                cudaFuncSetAttribute(
+                    popcount_weighted_keys_literal_fused_bmma_tc_kernel_tile16x32,
+                    cudaFuncAttributeMaxDynamicSharedMemorySize,
+                    (int)shared_bytes);
+                cudaFuncSetAttribute(
+                    popcount_weighted_keys_literal_fused_bmma_tc_kernel_tile16x32,
+                    cudaFuncAttributePreferredSharedMemoryCarveout,
+                    100);
+                configured_shared_tile16x32 = shared_bytes;
+            }
 
-                if (shared_bytes <= (size_t)max_shared) {
-                    static size_t configured_shared_tm32 = 0;
-                    if (shared_bytes > (size_t)max_shared_default && shared_bytes > configured_shared_tm32) {
-                        cudaFuncSetAttribute(
-                            popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32,
-                            cudaFuncAttributeMaxDynamicSharedMemorySize,
-                            (int)shared_bytes);
-                        configured_shared_tm32 = shared_bytes;
-                    }
 #if !defined(__CUDA_ARCH__)
-                    int predicted_blocks = 0;
-                    cudaOccupancyMaxActiveBlocksPerMultiprocessor(
-                        &predicted_blocks,
-                        popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32,
-                        block_tc.x,
-                        shared_bytes);
-                    g_last_dot_predicted_active_blocks_per_sm = predicted_blocks;
-                    g_last_dot_dynamic_shared_bytes = shared_bytes;
-                    g_last_dot_used_sm90_packed = use_sm90_packed ? 1 : 0;
-                    g_last_dot_used_cpasync = use_cpasync;
+            cudaFuncAttributes attrs{};
+            cudaFuncGetAttributes(&attrs, popcount_weighted_keys_literal_fused_bmma_tc_kernel_tile16x32);
+            int predicted_blocks = 0;
+            cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+                &predicted_blocks,
+                popcount_weighted_keys_literal_fused_bmma_tc_kernel_tile16x32,
+                block_tc.x,
+                shared_bytes);
+            g_last_dot_predicted_active_blocks_per_sm = predicted_blocks;
+            g_last_dot_dynamic_shared_bytes = shared_bytes;
+            g_last_dot_registers_per_thread = attrs.numRegs;
+            g_last_dot_used_sm90_packed = 1;
+            g_last_dot_used_cpasync = use_cpasync;
+            g_last_dot_used_tma = 0;
+            g_last_dot_tile_shape = "16x32x256";
+            if (reference_only) {
+                g_last_dot_kernel_kind = "reference_only";
+            } else if (Sa == 7 && Sb == 6) {
+                g_last_dot_kernel_kind = "specialized_7_6";
+            } else if (Sa == 8 && Sb == 7) {
+                g_last_dot_kernel_kind = "specialized_8_7";
+            } else if (Sa == 6 && Sb == 5) {
+                g_last_dot_kernel_kind = "specialized_6_5";
+            } else if (Sa == 7 && Sb == 7) {
+                g_last_dot_kernel_kind = "specialized_7_7";
+            } else {
+                g_last_dot_kernel_kind = "generic";
+            }
 #endif
-                    popcount_weighted_keys_literal_fused_bmma_tc_kernel_tm32<<<grid_tc, block_tc, shared_bytes, stream>>>(
-                        A,
-                        A_packed_u32,
-                        Aw,
-                        A_chunk_scales,
-                        A_scale_stride,
-                        Sa,
-                        W,
-                        B,
-                        B_packed_u32,
-                        Bw,
-                        Sb,
-                        R,
-                        Q,
-                        packed_chunks,
-                        indices_r,
-                        indices_q,
-                        scale_inv,
-                        R_total,
-                        out_global,
-                        use_cpasync);
-                    return true;
-                }
-                return false;
-            };
-            if (try_tm32()) return;
-        }
+            if (reference_only) {
+#if !defined(__CUDA_ARCH__)
+                g_last_dot_predicted_active_blocks_per_sm = 0;
+                g_last_dot_dynamic_shared_bytes = 0;
+                g_last_dot_registers_per_thread = 0;
+                g_last_dot_used_cpasync = 0;
+                g_last_dot_kernel_kind = "reference_only";
+                g_last_dot_tile_shape = "scalar";
+#endif
+                launch_packed_reference(0, Q, 0, R);
+                return true;
+            }
+            if (Q_full > 0 && R_full > 0) {
+                dim3 grid_tc(R_full / TN, Q_full / TM, 1);
+                popcount_weighted_keys_literal_fused_bmma_tc_kernel_tile16x32<<<grid_tc, block_tc, shared_bytes, stream>>>(
+                    A_packed_u32,
+                    Aw,
+                    A_chunk_scales,
+                    A_scale_stride,
+                    Sa,
+                    packed_chunks,
+                    B_packed_u32,
+                    Bw,
+                    Sb,
+                    R_full,
+                    Q_full,
+                    indices_r,
+                    indices_q,
+                    scale_inv,
+                    R_total,
+                    out_global,
+                    use_cpasync);
+            }
+            if (R_full < R) {
+                launch_packed_reference(0, Q, R_full, R - R_full);
+            }
+            if (Q_full < Q) {
+                launch_packed_reference(Q_full, Q - Q_full, 0, R_full);
+            }
+            return true;
+        };
+        if (try_tile16x32()) return;
+    }
+
+    if (use_sm90_packed) {
+#if !defined(__CUDA_ARCH__)
+        g_last_dot_kernel_kind = "reference_fallback";
+        g_last_dot_tile_shape = "scalar";
+        g_last_dot_used_sm90_packed = 1;
+        g_last_dot_used_cpasync = 0;
+        g_last_dot_used_tma = 0;
+#endif
+        launch_packed_reference(0, Q, 0, R);
+        return;
     }
 
     const int tile_q = (q_tile > 0) ? q_tile : 1;
@@ -3096,6 +3593,10 @@ extern "C" void launch_popcount_weighted_keys_literal_fused_multiq(
         ((size_t)Sa * (size_t)W + (size_t)Sb * (size_t)W) * sizeof(unsigned long long) +
         (size_t)Sa * (size_t)Sb * (sizeof(float) + 2 * sizeof(int)) +
         ((size_t)Sa + (size_t)Sb) * sizeof(float);
+#if !defined(__CUDA_ARCH__)
+    g_last_dot_kernel_kind = "generic_scalar";
+    g_last_dot_tile_shape = "legacy";
+#endif
     popcount_weighted_keys_literal_fused_multiq_kernel<<<grid, block, shared_bytes, stream>>>(
         A, Aw, Sa, W, B, Bw, Sb, R, Q, tile_q, tile_r, indices_r, indices_q, scale_inv, R_total, out_global);
 }
